@@ -1,122 +1,449 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useState, useEffect, useCallback } from "react";
 
-function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+// ── Storage Polyfill
+if (typeof window !== 'undefined' && !window.storage) {
+  window.storage = {
+    get: async (key) => {
+      const val = localStorage.getItem(key);
+      return val ? { value: val } : null;
+    },
+    set: async (key, value) => {
+      localStorage.setItem(key, value);
+    }
+  };
 }
 
-export default App
+// ── Design Tokens
+const LIME = "#aaff00";
+const BG = "#080808";
+const SURF = "#111111";
+const SURF2 = "#1a1a1a";
+const BORDER = "#1f1f1f";
+const DIM = "#555555";
+const WARM_C = "#ff7a3d";
+const COLD_C = "#4da6ff";
+const GREEN_WA = "#25D366";
+const FONT = "'DM Mono', 'Courier New', monospace";
+
+// ── Helpers
+const todayStr = () => new Date().toISOString().split("T")[0];
+const KEY = "solo-sales-os-v1";
+
+function fmtDate(d) {
+  const dt = new Date(d + "T00:00:00");
+  const isToday = d === todayStr();
+  if (isToday) return "Today";
+  return dt.toLocaleDateString("en-UG", { weekday: "short", day: "numeric", month: "short" });
+}
+
+function toWaNumber(phone) {
+  const c = phone.replace(/\D/g, "");
+  if (c.startsWith("256")) return c;
+  if (c.startsWith("0")) return "256" + c.slice(1);
+  return "256" + c;
+}
+
+function getPending(clients) {
+  return Object.entries(clients).flatMap(([date, arr]) =>
+    arr.filter(c => c.followUp === "needed").map(c => ({ ...c, date }))
+  );
+}
+
+// ── Storage
+async function load() {
+  try { const r = await window.storage.get(KEY); return r ? JSON.parse(r.value) : null; }
+  catch { return null; }
+}
+async function persist(data) {
+  try { await window.storage.set(KEY, JSON.stringify(data)); } catch { }
+}
+
+// ══════════════════════════════════════════════════════════
+export default function App() {
+  const [data, setData] = useState(null);
+  const [tab, setTab] = useState("today");
+  const [showForm, setShowForm] = useState(false);
+  const [histSel, setHistSel] = useState(null);
+  const [banner, setBanner] = useState(null);
+  const today = todayStr();
+
+  useEffect(() => {
+    load().then(d => {
+      const base = d || { clients: {}, target: 5 };
+      setData(base);
+      const p = getPending(base.clients);
+      if (p.length) setBanner(`⚡ ${p.length} client${p.length !== 1 ? "s" : ""} still need follow-up`);
+    });
+  }, []);
+
+  const save = useCallback((next) => { setData(next); persist(next); }, []);
+
+  const addClient = (fields) => {
+    const client = { id: Date.now().toString(), ...fields, time: new Date().toLocaleTimeString("en-UG", { hour: "2-digit", minute: "2-digit" }) };
+    const next = { ...data, clients: { ...data.clients, [today]: [...(data.clients[today] || []), client] } };
+    save(next); setShowForm(false);
+  };
+
+  const updateClient = (date, id, updates) => {
+    const next = { ...data, clients: { ...data.clients, [date]: data.clients[date].map(c => c.id === id ? { ...c, ...updates } : c) } };
+    save(next);
+  };
+
+  const setTarget = t => save({ ...data, target: Math.max(1, t) });
+
+  if (!data) return (
+    <div style={{ background: BG, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: LIME, fontFamily: FONT, fontSize: 11, letterSpacing: 4 }}>
+      LOADING...
+    </div>
+  );
+
+  const todayC = data.clients[today] || [];
+  const pending = getPending(data.clients);
+  const sortedDates = Object.keys(data.clients).sort((a, b) => b.localeCompare(a));
+
+  return (
+    <div style={{ background: BG, minHeight: "100vh", color: "#fff", fontFamily: FONT, maxWidth: 480, margin: "0 auto", position: "relative" }}>
+
+      {/* Notification Banner */}
+      {banner && (
+        <div style={{ background: LIME, color: "#000", padding: "9px 16px", fontSize: 11, fontWeight: "bold", letterSpacing: 0.5, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>{banner}</span>
+          <span onClick={() => setBanner(null)} style={{ cursor: "pointer", fontSize: 16, lineHeight: 1 }}>✕</span>
+        </div>
+      )}
+
+      {/* Header */}
+      <div style={{ padding: "18px 16px 0", borderBottom: `1px solid ${BORDER}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div>
+            <div style={{ color: LIME, fontSize: 9, letterSpacing: 4, marginBottom: 4 }}>SOLO — SALES OS</div>
+            <div style={{ fontSize: 18, fontWeight: "bold", letterSpacing: -0.5 }}>
+              {tab === "today" ? "Today's Session" : tab === "history" ? "History" : "Follow-Ups"}
+            </div>
+          </div>
+          {tab === "today" && <TargetCtrl target={data.target} onChange={setTarget} />}
+        </div>
+        <div style={{ display: "flex" }}>
+          {[
+            { k: "today", l: "Today" },
+            { k: "history", l: "History" },
+            { k: "followups", l: pending.length ? `Follow-Ups (${pending.length})` : "Follow-Ups" },
+          ].map(({ k, l }) => (
+            <button key={k} onClick={() => setTab(k)} style={{
+              flex: 1, padding: "10px 0", background: "none", border: "none",
+              borderBottom: tab === k ? `2px solid ${LIME}` : "2px solid transparent",
+              color: tab === k ? LIME : DIM, fontSize: 10, letterSpacing: 1,
+              textTransform: "uppercase", cursor: "pointer", fontFamily: FONT, transition: "all 0.15s"
+            }}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* View */}
+      <div style={{ padding: "16px 16px 100px" }}>
+        {tab === "today" && <TodayView clients={todayC} target={data.target} today={today} onUpdate={(id, u) => updateClient(today, id, u)} />}
+        {tab === "history" && <HistoryView clients={data.clients} sortedDates={sortedDates} today={today} selected={histSel} onSelect={setHistSel} onUpdate={updateClient} />}
+        {tab === "followups" && <FollowupsView pending={pending} onUpdate={updateClient} />}
+      </div>
+
+      {/* FAB */}
+      {tab === "today" && !showForm && (
+        <button onClick={() => setShowForm(true)} style={{
+          position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+          background: LIME, color: "#000", border: "none", borderRadius: 50,
+          padding: "13px 30px", fontSize: 12, fontWeight: "bold", letterSpacing: 1.5,
+          cursor: "pointer", boxShadow: `0 0 28px rgba(170,255,0,0.3)`,
+          fontFamily: FONT, whiteSpace: "nowrap", zIndex: 50
+        }}>+ ADD CLIENT</button>
+      )}
+
+      {showForm && <ClientForm onAdd={addClient} onClose={() => setShowForm(false)} />}
+    </div>
+  );
+}
+
+// ── Target Control
+function TargetCtrl({ target, onChange }) {
+  return (
+    <div style={{ textAlign: "right" }}>
+      <div style={{ color: DIM, fontSize: 9, letterSpacing: 2, marginBottom: 4 }}>DAILY TARGET</div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end" }}>
+        <SmBtn onClick={() => onChange(target - 1)}>−</SmBtn>
+        <span style={{ color: LIME, fontWeight: "bold", fontSize: 22, minWidth: 26, textAlign: "center" }}>{target}</span>
+        <SmBtn onClick={() => onChange(target + 1)}>+</SmBtn>
+      </div>
+    </div>
+  );
+}
+
+// ── Today View
+function TodayView({ clients, target, today, onUpdate }) {
+  const pct = Math.min(1, clients.length / target);
+  const hit = clients.length >= target;
+  return (
+    <div>
+      {/* Dashboard Card */}
+      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+          <span style={{ fontSize: 10, color: DIM, letterSpacing: 1 }}>TODAY'S PROGRESS</span>
+          <span style={{ fontSize: 12, color: hit ? LIME : "#fff", fontWeight: "bold" }}>
+            {clients.length} / {target} {hit ? "✓ HIT" : ""}
+          </span>
+        </div>
+        <div style={{ background: BORDER, borderRadius: 4, height: 5, overflow: "hidden", marginBottom: 12 }}>
+          <div style={{ height: "100%", borderRadius: 4, background: LIME, width: `${pct * 100}%`, transition: "width 0.4s ease" }} />
+        </div>
+        <div style={{ display: "flex", gap: 16 }}>
+          <Pill label="Warm" count={clients.filter(c => c.temp === "warm").length} color={WARM_C} />
+          <Pill label="Cold" count={clients.filter(c => c.temp === "cold").length} color={COLD_C} />
+          <Pill label="Pending" count={clients.filter(c => c.followUp === "needed").length} color={LIME} />
+          <Pill label="Done" count={clients.filter(c => c.followUp === "done").length} color={DIM} />
+        </div>
+      </div>
+
+      {clients.length === 0
+        ? <Empty text="No clients yet today. Tap + ADD CLIENT to start." />
+        : clients.map(c => <ClientCard key={c.id} client={c} date={today} onUpdate={onUpdate} />)
+      }
+    </div>
+  );
+}
+
+// ── History View
+function HistoryView({ clients, sortedDates, today, selected, onSelect, onUpdate }) {
+  const dates = sortedDates.filter(d => d !== today);
+  if (selected) {
+    const dc = clients[selected] || [];
+    return (
+      <div>
+        <button onClick={() => onSelect(null)} style={{ background: "none", border: "none", color: LIME, fontFamily: FONT, fontSize: 11, cursor: "pointer", letterSpacing: 1, padding: 0, marginBottom: 12 }}>← BACK</button>
+        <div style={{ fontSize: 13, fontWeight: "bold", marginBottom: 14, color: "#fff" }}>{fmtDate(selected)}</div>
+        {dc.length === 0 ? <Empty text="No clients for this day." /> : dc.map(c => <ClientCard key={c.id} client={c} date={selected} onUpdate={(id, u) => onUpdate(selected, id, u)} />)}
+      </div>
+    );
+  }
+  if (dates.length === 0) return <Empty text="No past sessions yet." />;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {dates.map(date => {
+        const dc = clients[date] || [];
+        const warm = dc.filter(c => c.temp === "warm").length;
+        const pend = dc.filter(c => c.followUp === "needed").length;
+        return (
+          <div key={date} onClick={() => onSelect(date)} style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "14px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 3 }}>{fmtDate(date)}</div>
+              <div style={{ fontSize: 10, color: DIM }}>{dc.length} client{dc.length !== 1 ? "s" : ""}</div>
+            </div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              {warm > 0 && <Bdg color={WARM_C}>{warm} warm</Bdg>}
+              {pend > 0 && <Bdg color={LIME}>{pend} pending</Bdg>}
+              <span style={{ color: DIM, fontSize: 18 }}>›</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Follow-Ups View
+function FollowupsView({ pending, onUpdate }) {
+  if (pending.length === 0) return <Empty text="All caught up. No pending follow-ups 🎯" />;
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: DIM, letterSpacing: 2, marginBottom: 12 }}>{pending.length} PENDING</div>
+      {pending.map(c => <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} highlight />)}
+    </div>
+  );
+}
+
+// ── Client Card
+function ClientCard({ client: c, date, onUpdate, highlight }) {
+  const [exp, setExp] = useState(false);
+  return (
+    <div style={{
+      background: SURF, borderRadius: 10, marginBottom: 10, overflow: "hidden",
+      border: highlight && c.followUp === "needed" ? `1px solid ${LIME}44` : `1px solid ${BORDER}`,
+      boxShadow: highlight && c.followUp === "needed" ? `0 0 14px ${LIME}15` : "none"
+    }}>
+      {/* Top */}
+      <div style={{ padding: "12px 14px 8px", cursor: "pointer" }} onClick={() => setExp(e => !e)}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 2 }}>
+              <span style={{ fontSize: 13, fontWeight: "bold" }}>{c.name}</span>
+              <TempBadge temp={c.temp} />
+              {c.followUp === "needed" && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 10, background: LIME + "22", color: LIME, letterSpacing: 0.5 }}>FOLLOW-UP</span>}
+            </div>
+            <div style={{ fontSize: 10, color: DIM }}>{c.business || "—"}{c.businessType ? ` · ${c.businessType}` : ""}</div>
+          </div>
+          <div style={{ textAlign: "right", marginLeft: 8 }}>
+            <div style={{ fontSize: 9, color: DIM }}>{c.time}</div>
+            {c.date && c.date !== todayStr() && <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>{fmtDate(c.date)}</div>}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 5, marginTop: 8, flexWrap: "wrap" }}>
+          <Chip>{c.pitchMethod}</Chip>
+          <Chip>{c.package || "Undecided"}</Chip>
+          <Chip style={{ background: c.demoShown === "yes" ? LIME + "18" : SURF2, color: c.demoShown === "yes" ? LIME : DIM }}>
+            Demo {c.demoShown === "yes" ? "✓" : "✗"}
+          </Chip>
+          {c.notes && <Chip style={{ color: DIM }}>📝 Notes {exp ? "▲" : "▼"}</Chip>}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div style={{ padding: "0 14px 12px", display: "flex", gap: 7, flexWrap: "wrap" }}>
+        <ABtn color={GREEN_WA + "22"} tc={GREEN_WA}
+          onClick={() => window.open(`https://wa.me/${toWaNumber(c.phone)}`, "_blank")}>
+          📲 WhatsApp
+        </ABtn>
+        <ABtn
+          color={c.followUp === "needed" ? LIME + "22" : SURF2}
+          tc={c.followUp === "needed" ? LIME : DIM}
+          onClick={() => onUpdate(c.id, { followUp: c.followUp === "needed" ? "done" : "needed" })}>
+          {c.followUp === "needed" ? "✓ Mark Done" : "↩ Follow-Up"}
+        </ABtn>
+        <ABtn
+          color={c.temp === "warm" ? WARM_C + "22" : COLD_C + "22"}
+          tc={c.temp === "warm" ? WARM_C : COLD_C}
+          onClick={() => onUpdate(c.id, { temp: c.temp === "warm" ? "cold" : "warm" })}>
+          {c.temp === "warm" ? "🔥 Warm" : "❄️ Cold"}
+        </ABtn>
+      </div>
+
+      {/* Notes */}
+      {exp && c.notes && (
+        <div style={{ padding: "10px 14px 12px", borderTop: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 5 }}>NOTES</div>
+          <div style={{ fontSize: 11, color: "#ccc", lineHeight: 1.7 }}>{c.notes}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Client Form
+function ClientForm({ onAdd, onClose }) {
+  const [f, setF] = useState({
+    name: "", business: "", businessType: "", phone: "",
+    pitchMethod: "In-Person", package: "Undecided",
+    demoShown: "no", temp: "warm", followUp: "needed", notes: ""
+  });
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  const submit = () => {
+    if (!f.name.trim()) return alert("Client name is required.");
+    if (!f.phone.trim()) return alert("Phone number is required.");
+    onAdd(f);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div style={{ background: "#0f0f0f", borderRadius: "16px 16px 0 0", width: "100%", maxWidth: 480, padding: "20px 16px 36px", maxHeight: "92vh", overflowY: "auto", border: `1px solid ${BORDER}`, borderBottom: "none" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <span style={{ fontWeight: "bold", fontSize: 14, letterSpacing: -0.3 }}>New Client</span>
+          <span onClick={onClose} style={{ color: DIM, cursor: "pointer", fontSize: 20, lineHeight: 1 }}>✕</span>
+        </div>
+
+        <Lbl>Full Name *</Lbl>
+        <Inp value={f.name} onChange={v => set("name", v)} placeholder="e.g. Sarah Nakato" />
+
+        <Lbl>Business Name</Lbl>
+        <Inp value={f.business} onChange={v => set("business", v)} placeholder="e.g. Nakato Hair Salon" />
+
+        <Lbl>Business Type</Lbl>
+        <Inp value={f.businessType} onChange={v => set("businessType", v)} placeholder="e.g. Beauty Salon, Restaurant..." />
+
+        <Lbl>Phone Number *</Lbl>
+        <Inp value={f.phone} onChange={v => set("phone", v)} placeholder="e.g. 0701234567" type="tel" />
+
+        <Lbl>Pitched Via</Lbl>
+        <Tog value={f.pitchMethod} opts={["In-Person", "WhatsApp"]} onChange={v => set("pitchMethod", v)} />
+
+        <Lbl>Package They Reacted To</Lbl>
+        <Tog value={f.package} opts={["Basic", "Standard", "Premium", "Undecided"]} onChange={v => set("package", v)} />
+
+        <Lbl>Showed Demo Site? (solomantalgo.online)</Lbl>
+        <Tog value={f.demoShown} opts={["yes", "no"]} onChange={v => set("demoShown", v)} colors={{ yes: LIME, no: DIM }} />
+
+        <Lbl>Lead Temperature</Lbl>
+        <Tog value={f.temp} opts={["warm", "cold"]} onChange={v => set("temp", v)} colors={{ warm: WARM_C, cold: COLD_C }} />
+
+        <Lbl>Follow-Up Needed?</Lbl>
+        <Tog value={f.followUp} opts={["needed", "done"]} onChange={v => set("followUp", v)} colors={{ needed: LIME, done: DIM }} />
+
+        <Lbl>Notes (optional)</Lbl>
+        <textarea value={f.notes} onChange={e => set("notes", e.target.value)}
+          placeholder="Key hesitations, what got them interested, anything to remember..."
+          style={{ width: "100%", background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 8, color: "#fff", padding: "10px 12px", fontSize: 12, fontFamily: FONT, resize: "vertical", minHeight: 72, boxSizing: "border-box", marginBottom: 18 }} />
+
+        <button onClick={submit} style={{ width: "100%", background: LIME, color: "#000", border: "none", borderRadius: 8, padding: 14, fontSize: 12, fontWeight: "bold", letterSpacing: 1.5, cursor: "pointer", fontFamily: FONT }}>
+          SAVE CLIENT
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Micro components
+const Pill = ({ label, count, color }) => (
+  <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+    <div style={{ width: 6, height: 6, borderRadius: "50%", background: color }} />
+    <span style={{ fontSize: 9, color: DIM }}>{label}</span>
+    <span style={{ fontSize: 12, fontWeight: "bold", color }}>{count}</span>
+  </div>
+);
+
+const TempBadge = ({ temp }) => (
+  <span style={{ fontSize: 8, padding: "2px 7px", borderRadius: 20, background: temp === "warm" ? WARM_C + "22" : COLD_C + "22", color: temp === "warm" ? WARM_C : COLD_C, letterSpacing: 0.5 }}>
+    {temp === "warm" ? "🔥 WARM" : "❄️ COLD"}
+  </span>
+);
+
+const Bdg = ({ children, color }) => (
+  <span style={{ fontSize: 9, padding: "3px 8px", borderRadius: 20, background: color + "22", color }}>{children}</span>
+);
+
+const Chip = ({ children, style }) => (
+  <span style={{ fontSize: 9, padding: "3px 8px", borderRadius: 4, background: SURF2, color: DIM, letterSpacing: 0.3, ...style }}>{children}</span>
+);
+
+const ABtn = ({ children, onClick, color, tc }) => (
+  <button onClick={onClick} style={{ background: color || SURF2, color: tc || "#fff", border: "none", borderRadius: 6, padding: "7px 11px", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT, letterSpacing: 0.5 }}>{children}</button>
+);
+
+const SmBtn = ({ children, onClick }) => (
+  <button onClick={onClick} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: "#fff", width: 26, height: 26, borderRadius: 6, cursor: "pointer", fontFamily: FONT, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>{children}</button>
+);
+
+const Lbl = ({ children }) => (
+  <div style={{ color: DIM, fontSize: 9, letterSpacing: 2, marginBottom: 5, marginTop: 13 }}>{children}</div>
+);
+
+const Inp = ({ value, onChange, placeholder, type }) => (
+  <input type={type || "text"} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+    style={{ width: "100%", background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 8, color: "#fff", padding: "10px 12px", fontSize: 12, fontFamily: FONT, boxSizing: "border-box", outline: "none", caretColor: LIME }} />
+);
+
+const Tog = ({ value, opts, onChange, colors = {} }) => (
+  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+    {opts.map(o => {
+      const active = value === o;
+      const col = colors[o] || LIME;
+      return (
+        <button key={o} onClick={() => onChange(o)} style={{
+          padding: "7px 13px", borderRadius: 6, fontSize: 11, cursor: "pointer", fontFamily: FONT,
+          background: active ? col + "22" : SURF2,
+          border: active ? `1px solid ${col}` : `1px solid ${BORDER}`,
+          color: active ? col : DIM, fontWeight: active ? "bold" : "normal", transition: "all 0.12s"
+        }}>{o}</button>
+      );
+    })}
+  </div>
+);
+
+const Empty = ({ text }) => (
+  <div style={{ textAlign: "center", color: DIM, fontSize: 11, padding: "44px 0", letterSpacing: 0.5, lineHeight: 1.8 }}>{text}</div>
+);
