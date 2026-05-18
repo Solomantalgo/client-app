@@ -25,6 +25,44 @@ const COLD_C = "#4da6ff";
 const GREEN_WA = "#25D366";
 const FONT = "'DM Mono', 'Courier New', monospace";
 
+const PACKAGE_TEMPLATES = [
+  {
+    match: /rest(?:aurant)?|cafe|eatery|food|bar|diner/i,
+    name: "🍔 Restaurant Setup",
+    services: "website/menu, QR ordering, WhatsApp ordering, basic flyer, hosting setup",
+    price: "250k - 450k UGX",
+    color: "#FFB74D",
+  },
+  {
+    match: /saloon|salon|spa|beauty|hair|nails/i,
+    name: "💇 Salon / Spa Setup",
+    services: "service showcase, gallery, WhatsApp booking, contact/location, social links",
+    price: "200k - 400k UGX",
+    color: "#F48FB1",
+  },
+  {
+    match: /hotel|apart|motel|lodge|bnb|guest/i,
+    name: "🏨 Hotel / Apartment Setup",
+    services: "rooms showcase, inquiry form, maps/location, WhatsApp inquiry, gallery",
+    price: "350k - 700k UGX",
+    color: "#64B5F6",
+  },
+  {
+    match: /laundry|wash|dry|clean/i,
+    name: "🧺 Laundry Setup",
+    services: "services, pickup request, WhatsApp contact, pricing section",
+    price: "180k - 350k UGX",
+    color: "#4DD0E1",
+  },
+  {
+    match: /clinic|pharmacy|hospital|medical|dental/i,
+    name: "🏥 Clinic / Pharmacy Setup",
+    services: "services, booking/contact, Google Maps, WhatsApp",
+    price: "250k - 500k UGX",
+    color: "#E57373",
+  }
+];
+
 // ── Helpers
 const todayStr = () => new Date().toISOString().split("T")[0];
 const KEY = "solo-sales-os-v1";
@@ -118,7 +156,7 @@ export default function App() {
           <div>
             <div style={{ color: LIME, fontSize: 9, letterSpacing: 4, marginBottom: 4 }}>SOLO — SALES OS</div>
             <div style={{ fontSize: 18, fontWeight: "bold", letterSpacing: -0.5 }}>
-              {tab === "today" ? "Today's Session" : tab === "history" ? "History" : "Follow-Ups"}
+              {tab === "today" ? "Today's Session" : tab === "history" ? "History" : tab === "flow" ? "System Flow" : "Follow-Ups"}
             </div>
           </div>
           {tab === "today" && <TargetCtrl target={data.target} onChange={setTarget} />}
@@ -128,6 +166,7 @@ export default function App() {
             { k: "today", l: "Today" },
             { k: "history", l: "History" },
             { k: "followups", l: pending.length ? `Follow-Ups (${pending.length})` : "Follow-Ups" },
+            { k: "flow", l: "Flow" },
           ].map(({ k, l }) => (
             <button key={k} onClick={() => setTab(k)} style={{
               flex: 1, padding: "10px 0", background: "none", border: "none",
@@ -144,6 +183,7 @@ export default function App() {
         {tab === "today" && <TodayView clients={todayC} target={data.target} today={today} onUpdate={(id, u) => updateClient(today, id, u)} />}
         {tab === "history" && <HistoryView clients={data.clients} sortedDates={sortedDates} today={today} selected={histSel} onSelect={setHistSel} onUpdate={updateClient} />}
         {tab === "followups" && <FollowupsView pending={pending} onUpdate={updateClient} />}
+        {tab === "flow" && <SystemFlowView />}
       </div>
 
       {/* FAB */}
@@ -261,11 +301,30 @@ function FollowupsView({ pending, onUpdate }) {
 // ── Client Card
 function ClientCard({ client: c, date, onUpdate, highlight }) {
   const [exp, setExp] = useState(false);
+
+  const textToMatch = c.businessType || c.business || "";
+  const packageMatch = PACKAGE_TEMPLATES.find(p => p.match.test(textToMatch));
+  const accentColor = packageMatch ? packageMatch.color : null;
+
+  const autoSuggest = (e) => {
+    e.stopPropagation();
+    if (!textToMatch) return alert("This client needs a business name or type to auto-suggest.");
+    
+    if (packageMatch) {
+      onUpdate(c.id, { servicesToOffer: packageMatch.services, quotedPrice: packageMatch.price });
+    } else {
+      alert("No exact match found based on their business type.");
+    }
+  };
+
+  const isHighlighted = highlight && c.followUp === "needed";
+
   return (
     <div style={{
       background: SURF, borderRadius: 10, marginBottom: 10, overflow: "hidden",
-      border: highlight && c.followUp === "needed" ? `1px solid ${LIME}44` : `1px solid ${BORDER}`,
-      boxShadow: highlight && c.followUp === "needed" ? `0 0 14px ${LIME}15` : "none"
+      border: isHighlighted ? `1px solid ${LIME}44` : `1px solid ${BORDER}`,
+      borderLeft: accentColor ? `3px solid ${accentColor}` : (isHighlighted ? `1px solid ${LIME}44` : `1px solid ${BORDER}`),
+      boxShadow: isHighlighted ? `0 0 14px ${LIME}15` : "none"
     }}>
       {/* Top */}
       <div style={{ padding: "12px 14px 8px", cursor: "pointer" }} onClick={() => setExp(e => !e)}>
@@ -286,10 +345,11 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
         <div style={{ display: "flex", gap: 5, marginTop: 8, flexWrap: "wrap" }}>
           <Chip>{c.pitchMethod}</Chip>
           <Chip>{c.package || "Undecided"}</Chip>
+          {c.quotedPrice && <Chip style={{ color: LIME }}>💰 {c.quotedPrice}</Chip>}
           <Chip style={{ background: c.demoShown === "yes" ? LIME + "18" : SURF2, color: c.demoShown === "yes" ? LIME : DIM }}>
             Demo {c.demoShown === "yes" ? "✓" : "✗"}
           </Chip>
-          {c.notes && <Chip style={{ color: DIM }}>📝 Notes {exp ? "▲" : "▼"}</Chip>}
+          {(c.notes || c.servicesToOffer) && <Chip style={{ color: DIM }}>📝 Details {exp ? "▲" : "▼"}</Chip>}
         </div>
       </div>
 
@@ -311,13 +371,28 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
           onClick={() => onUpdate(c.id, { temp: c.temp === "warm" ? "cold" : "warm" })}>
           {c.temp === "warm" ? "🔥 Warm" : "❄️ Cold"}
         </ABtn>
+        {(!c.quotedPrice || !c.servicesToOffer) && (
+          <ABtn color={SURF2} tc={LIME} onClick={autoSuggest}>
+            ✨ Suggest Setup
+          </ABtn>
+        )}
       </div>
 
       {/* Notes */}
-      {exp && c.notes && (
+      {exp && (c.notes || c.servicesToOffer) && (
         <div style={{ padding: "10px 14px 12px", borderTop: `1px solid ${BORDER}` }}>
-          <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 5 }}>NOTES</div>
-          <div style={{ fontSize: 11, color: "#ccc", lineHeight: 1.7 }}>{c.notes}</div>
+          {c.servicesToOffer && (
+            <div style={{ marginBottom: c.notes ? 10 : 0 }}>
+              <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 3 }}>SERVICES TO OFFER</div>
+              <div style={{ fontSize: 11, color: "#ccc", lineHeight: 1.5 }}>{c.servicesToOffer}</div>
+            </div>
+          )}
+          {c.notes && (
+            <div>
+              <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 3 }}>NOTES</div>
+              <div style={{ fontSize: 11, color: "#ccc", lineHeight: 1.5 }}>{c.notes}</div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -329,9 +404,24 @@ function ClientForm({ onAdd, onClose }) {
   const [f, setF] = useState({
     name: "", business: "", businessType: "", phone: "",
     pitchMethod: "In-Person", package: "Undecided",
+    servicesToOffer: "", quotedPrice: "",
     demoShown: "no", temp: "warm", followUp: "needed", notes: ""
   });
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  const autoSuggest = () => {
+    if (!f.businessType) return alert("Please enter a Business Type first.");
+    const match = PACKAGE_TEMPLATES.find(p => p.match.test(f.businessType));
+    if (match) {
+      setF(prev => ({
+        ...prev,
+        servicesToOffer: match.services,
+        quotedPrice: match.price
+      }));
+    } else {
+      alert("No exact match found. You can enter services and price manually.");
+    }
+  };
 
   const submit = () => {
     if (!f.name.trim()) return alert("Client name is required.");
@@ -354,7 +444,18 @@ function ClientForm({ onAdd, onClose }) {
         <Inp value={f.business} onChange={v => set("business", v)} placeholder="e.g. Nakato Hair Salon" />
 
         <Lbl>Business Type</Lbl>
-        <Inp value={f.businessType} onChange={v => set("businessType", v)} placeholder="e.g. Beauty Salon, Restaurant..." />
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <Inp value={f.businessType} onChange={v => set("businessType", v)} placeholder="e.g. Beauty Salon, Restaurant..." />
+          </div>
+          <button onClick={autoSuggest} style={{ background: SURF2, border: `1px solid ${LIME}`, color: LIME, borderRadius: 8, padding: "0 12px", fontSize: 10, cursor: "pointer", fontFamily: FONT, fontWeight: "bold" }}>✨ Suggest</button>
+        </div>
+
+        <Lbl>Suggested Services</Lbl>
+        <textarea value={f.servicesToOffer} onChange={e => set("servicesToOffer", e.target.value)} placeholder="Editable services list..." style={{ width: "100%", background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 8, color: "#fff", padding: "10px 12px", fontSize: 12, fontFamily: FONT, resize: "vertical", minHeight: 48, boxSizing: "border-box" }} />
+
+        <Lbl>Quoted Price (UGX)</Lbl>
+        <Inp value={f.quotedPrice} onChange={v => set("quotedPrice", v)} placeholder="e.g. 250k - 450k UGX" />
 
         <Lbl>Phone Number *</Lbl>
         <Inp value={f.phone} onChange={v => set("phone", v)} placeholder="e.g. 0701234567" type="tel" />
@@ -447,3 +548,70 @@ const Tog = ({ value, opts, onChange, colors = {} }) => (
 const Empty = ({ text }) => (
   <div style={{ textAlign: "center", color: DIM, fontSize: 11, padding: "44px 0", letterSpacing: 0.5, lineHeight: 1.8 }}>{text}</div>
 );
+
+// ── System Flow View
+function SystemFlowView() {
+  return (
+    <div style={{ paddingBottom: 20 }}>
+      {/* Business Design Flow */}
+      <div style={{ marginBottom: 24, background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "16px" }}>
+        <h3 style={{ color: LIME, fontSize: 12, letterSpacing: 1, textTransform: "uppercase", borderBottom: `1px solid ${BORDER}`, paddingBottom: 8, marginTop: 0 }}>My Business Design Flow</h3>
+        
+        <div style={{ marginTop: 12 }}>
+          <div style={{ color: WARM_C, fontSize: 11, fontWeight: "bold", marginBottom: 6 }}>🚀 Client Flow</div>
+          <ol style={{ fontSize: 11, color: "#ccc", paddingLeft: 20, margin: 0, lineHeight: 1.6 }}>
+            <li>Meet client & Understand problem</li>
+            <li>Show relevant demo</li>
+            <li>Collect details</li>
+            <li>Build/customize</li>
+            <li>Review with client & Launch</li>
+            <li>Offer monthly support</li>
+          </ol>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <div style={{ color: COLD_C, fontSize: 11, fontWeight: "bold", marginBottom: 6 }}>📦 My Packages (Examples)</div>
+          <ul style={{ fontSize: 11, color: "#ccc", paddingLeft: 20, margin: 0, lineHeight: 1.6 }}>
+            <li><b>Restaurant Setup:</b> QR Menu, Whatsapp ordering, Flyer, Hosting</li>
+            <li><b>Salon Setup:</b> Booking, Whatsapp, Gallery</li>
+          </ul>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <div style={{ color: GREEN_WA, fontSize: 11, fontWeight: "bold", marginBottom: 6 }}>♻️ Reusable Assets (Time Savers)</div>
+          <div style={{ fontSize: 11, color: "#ccc", lineHeight: 1.6 }}>
+            Keep organized: demos, logos, QR templates, flyer templates, code templates.
+          </div>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <div style={{ color: LIME, fontSize: 11, fontWeight: "bold", marginBottom: 6 }}>💬 Communication Style</div>
+          <ul style={{ fontSize: 11, color: "#ccc", paddingLeft: 20, margin: 0, lineHeight: 1.6 }}>
+            <li>Don't pressure clients</li>
+            <li>Focus on business benefits</li>
+            <li>Guide confidently (Short followups)</li>
+          </ul>
+        </div>
+      </div>
+
+      {/* Recommended Pricing Structure */}
+      <div>
+        <h3 style={{ color: LIME, fontSize: 12, letterSpacing: 1, textTransform: "uppercase", borderBottom: `1px solid ${BORDER}`, paddingBottom: 8, marginLeft: 4 }}>Recommended Pricing</h3>
+        
+        {PACKAGE_TEMPLATES.map((p, i) => (
+          <div key={i} style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14, marginTop: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: "bold", color: "#fff", marginBottom: 6 }}>{p.name}</div>
+            <div style={{ fontSize: 11, color: DIM, marginBottom: 8, lineHeight: 1.4 }}>Includes: {p.services}</div>
+            <div style={{ fontSize: 12, color: LIME, fontWeight: "bold" }}>Charge: {p.price}</div>
+          </div>
+        ))}
+
+        <div style={{ background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14, marginTop: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: "bold", color: "#fff", marginBottom: 6 }}>🔄 Monthly Support</div>
+          <div style={{ fontSize: 11, color: DIM, marginBottom: 8, lineHeight: 1.4 }}>Includes: updates, small edits, promo banners, monitoring/help</div>
+          <div style={{ fontSize: 12, color: WARM_C, fontWeight: "bold" }}>Charge: 50k - 150k/month (based on activity)</div>
+        </div>
+      </div>
+    </div>
+  );
+}
