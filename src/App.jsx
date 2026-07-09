@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createClient } from "@supabase/supabase-js";
 
 // ── Storage Polyfill
 if (typeof window !== 'undefined' && !window.storage) {
@@ -66,6 +67,15 @@ const PACKAGE_TEMPLATES = [
 // ── Helpers
 const todayStr = () => new Date().toISOString().split("T")[0];
 const KEY = "solo-sales-os-v1";
+const CLOUD_CONFIG_KEY = "solo-sales-cloud-config";
+const CLOUD_URL_KEY = `${CLOUD_CONFIG_KEY}:url`;
+const CLOUD_KEY_KEY = `${CLOUD_CONFIG_KEY}:key`;
+const REMOTE_TABLE = "sales_os_state";
+const REMOTE_ROW_ID = "primary";
+const DEFAULT_DATA = { clients: {}, target: 5 };
+const DEFAULT_SUPABASE_URL = "https://ihjvvnnpyvdljzyfzclq.supabase.co";
+const DEFAULT_SUPABASE_KEY = "sb_publishable_3CTKaylVnQl3sQefNN5eZg_QmUVPcpt";
+let supabaseClient = null;
 
 function fmtDate(d) {
   const dt = new Date(d + "T00:00:00");
@@ -87,13 +97,90 @@ function getPending(clients) {
   );
 }
 
+function normalizeData(d) {
+  const source = d && typeof d === "object" ? d : {};
+  return {
+    ...source,
+    clients: source.clients || {},
+    target: source.target ?? 5,
+    meta: {
+      ...(source.meta || {}),
+      updatedAt: source.meta?.updatedAt || new Date().toISOString(),
+    },
+  };
+}
+
+function normalizeSupabaseUrl(rawUrl) {
+  if (!rawUrl) return "";
+  let url = rawUrl.trim();
+  if (url.includes("/rest/v1")) {
+    url = url.split("/rest/v1")[0];
+  }
+  return url.replace(/\/+$/, "");
+}
+
+function getStoredCloudConfig() {
+  if (typeof window === "undefined") return null;
+  const url = localStorage.getItem(CLOUD_URL_KEY);
+  const key = localStorage.getItem(CLOUD_KEY_KEY);
+  if (!url || !key) return null;
+  return { url: normalizeSupabaseUrl(url), key: key.trim() };
+}
+
+function buildSupabaseClient(config) {
+  const normalizedUrl = normalizeSupabaseUrl(config?.url);
+  const normalizedKey = config?.key?.trim();
+  if (!normalizedUrl || !normalizedKey) return null;
+  try {
+    const cacheKey = `${normalizedUrl}:${normalizedKey}`;
+    if (!supabaseClient || supabaseClient.__cacheKey !== cacheKey) {
+      supabaseClient = createClient(normalizedUrl, normalizedKey);
+      supabaseClient.__cacheKey = cacheKey;
+    }
+    return supabaseClient;
+  } catch {
+    return null;
+  }
+}
+
+async function loadRemote(config) {
+  const client = buildSupabaseClient(config);
+  if (!client) return { ok: false, reason: "Cloud not configured" };
+  try {
+    const { data, error } = await client.from(REMOTE_TABLE).select("payload, updated_at").eq("id", REMOTE_ROW_ID).maybeSingle();
+    if (error) {
+      return { ok: false, reason: error.message || "Cloud load failed" };
+    }
+    return { ok: true, data: data?.payload ? normalizeData(data.payload) : null };
+  } catch (err) {
+    return { ok: false, reason: err.message || "Cloud load failed" };
+  }
+}
+
+async function persistRemote(config, data) {
+  const client = buildSupabaseClient(config);
+  if (!client) return { ok: false, reason: "Cloud not configured" };
+  try {
+    const payload = normalizeData(data);
+    const { error } = await client.from(REMOTE_TABLE).upsert({
+      id: REMOTE_ROW_ID,
+      payload,
+      updated_at: payload.meta.updatedAt,
+    }, { onConflict: "id" });
+    if (error) return { ok: false, reason: error.message || "Cloud sync failed" };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err.message || "Cloud sync failed" };
+  }
+}
+
 // ── Storage
 async function load() {
-  try { const r = await window.storage.get(KEY); return r ? JSON.parse(r.value) : null; }
+  try { const r = await window.storage.get(KEY); return r ? normalizeData(JSON.parse(r.value)) : null; }
   catch { return null; }
 }
 async function persist(data) {
-  try { await window.storage.set(KEY, JSON.stringify(data)); } catch { }
+  try { await window.storage.set(KEY, JSON.stringify(normalizeData(data))); } catch { }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -103,31 +190,112 @@ export default function App() {
   const [showForm, setShowForm] = useState(false);
   const [histSel, setHistSel] = useState(null);
   const [banner, setBanner] = useState(null);
+  const [cloudConfig, setCloudConfig] = useState(getStoredCloudConfig() || { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY });
+  const [showCloudSetup, setShowCloudSetup] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState("Local only");
   const today = todayStr();
 
   useEffect(() => {
-    load().then(d => {
-      const base = d || { clients: {}, target: 5 };
+    if (!localStorage.getItem(CLOUD_URL_KEY) && !localStorage.getItem(CLOUD_KEY_KEY)) {
+      localStorage.setItem(CLOUD_URL_KEY, DEFAULT_SUPABASE_URL);
+      localStorage.setItem(CLOUD_KEY_KEY, DEFAULT_SUPABASE_KEY);
+    }
+
+    let alive = true;
+    const init = async () => {
+      const local = await load();
+      const base = normalizeData(local || DEFAULT_DATA);
+      if (!alive) return;
       setData(base);
       const p = getPending(base.clients);
       if (p.length) setBanner(`⚡ ${p.length} client${p.length !== 1 ? "s" : ""} still need follow-up`);
-    });
-  }, []);
 
-  const save = useCallback((next) => { setData(next); persist(next); }, []);
+      if (!cloudConfig) {
+        setCloudStatus("Cloud not configured");
+        return;
+      }
+
+      const remoteResult = await loadRemote(cloudConfig);
+      if (!alive) return;
+      if (remoteResult.ok && remoteResult.data) {
+        const remote = remoteResult.data;
+        const localTs = new Date(base.meta?.updatedAt || 0).getTime();
+        const remoteTs = new Date(remote.meta?.updatedAt || 0).getTime();
+        const winner = remoteTs >= localTs ? remote : base;
+        setData(winner);
+        setCloudStatus("Cloud connected");
+        if (remoteTs !== localTs) {
+          setBanner(remoteTs >= localTs ? "Loaded the latest cloud backup." : "Loaded your local changes. Use Sync to push them.");
+        }
+      } else {
+        setCloudStatus(remoteResult.reason || "Cloud ready");
+        if (remoteResult.reason) setBanner(`Cloud setup issue: ${remoteResult.reason}`);
+      }
+    };
+
+    init();
+    return () => { alive = false; };
+  }, [cloudConfig]);
+
+  const save = useCallback(async (next) => {
+    const normalized = normalizeData(next);
+    setData(normalized);
+    await persist(normalized);
+
+    if (!cloudConfig) {
+      setCloudStatus("Cloud not configured");
+      setBanner("Saved locally. Configure cloud sync to back up online.");
+      return;
+    }
+
+    const result = await persistRemote(cloudConfig, normalized);
+    if (result.ok) {
+      setCloudStatus("Cloud synced");
+      setBanner("Saved locally and synced to cloud.");
+    } else {
+      setCloudStatus("Cloud sync pending");
+      setBanner(`Saved locally. Cloud sync pending: ${result.reason}`);
+    }
+  }, [cloudConfig]);
+
+  const syncNow = useCallback(async () => {
+    if (!data) return;
+    const local = normalizeData(data);
+    setBanner("Syncing...");
+
+    if (!cloudConfig) {
+      setBanner("Add your Supabase URL and key first.");
+      return;
+    }
+
+    const remoteResult = await loadRemote(cloudConfig);
+    const remote = remoteResult.ok ? remoteResult.data : null;
+    const winner = remote && new Date(remote.meta?.updatedAt || 0).getTime() > new Date(local.meta?.updatedAt || 0).getTime() ? remote : local;
+    setData(winner);
+    await persist(winner);
+
+    const result = await persistRemote(cloudConfig, winner);
+    if (result.ok) {
+      setCloudStatus("Cloud synced");
+      setBanner(remote ? "Sync completed." : "Cloud backup created.");
+    } else {
+      setCloudStatus("Cloud sync pending");
+      setBanner(`Sync failed: ${result.reason}`);
+    }
+  }, [cloudConfig, data]);
 
   const addClient = (fields) => {
     const client = { id: Date.now().toString(), ...fields, time: new Date().toLocaleTimeString("en-UG", { hour: "2-digit", minute: "2-digit" }) };
     const next = { ...data, clients: { ...data.clients, [today]: [...(data.clients[today] || []), client] } };
-    save(next); setShowForm(false);
+    void save(next); setShowForm(false);
   };
 
   const updateClient = (date, id, updates) => {
     const next = { ...data, clients: { ...data.clients, [date]: data.clients[date].map(c => c.id === id ? { ...c, ...updates } : c) } };
-    save(next);
+    void save(next);
   };
 
-  const setTarget = t => save({ ...data, target: Math.max(1, t) });
+  const setTarget = t => void save({ ...data, target: Math.max(1, t) });
 
   if (!data) return (
     <div style={{ background: BG, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: LIME, fontFamily: FONT, fontSize: 11, letterSpacing: 4 }}>
@@ -159,7 +327,18 @@ export default function App() {
               {tab === "today" ? "Today's Session" : tab === "history" ? "History" : tab === "flow" ? "System Flow" : "Follow-Ups"}
             </div>
           </div>
-          {tab === "today" && <TargetCtrl target={data.target} onChange={setTarget} />}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={() => setShowCloudSetup(true)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 999, padding: "7px 10px", fontSize: 10, cursor: "pointer", fontFamily: FONT, letterSpacing: 0.5 }}>
+              ☁ {cloudConfig ? "Sync" : "Setup"}
+            </button>
+            {tab === "today" && <TargetCtrl target={data.target} onChange={setTarget} />}
+          </div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <span style={{ fontSize: 9, color: DIM, letterSpacing: 1 }}>{cloudStatus}</span>
+          <button onClick={syncNow} style={{ background: "none", border: "none", color: LIME, fontFamily: FONT, fontSize: 10, cursor: "pointer", letterSpacing: 0.5, padding: 0 }}>
+            ↻ Sync now
+          </button>
         </div>
         <div style={{ display: "flex" }}>
           {[
@@ -198,6 +377,7 @@ export default function App() {
       )}
 
       {showForm && <ClientForm onAdd={addClient} onClose={() => setShowForm(false)} />}
+      {showCloudSetup && <CloudSetupModal onClose={() => setShowCloudSetup(false)} onSaved={(cfg) => { setCloudConfig(cfg); setCloudStatus("Cloud connected"); setBanner("Cloud settings saved. Sync will use your Supabase project."); }} />}
     </div>
   );
 }
@@ -482,6 +662,43 @@ function ClientForm({ onAdd, onClose }) {
 
         <button onClick={submit} style={{ width: "100%", background: LIME, color: "#000", border: "none", borderRadius: 8, padding: 14, fontSize: 12, fontWeight: "bold", letterSpacing: 1.5, cursor: "pointer", fontFamily: FONT }}>
           SAVE CLIENT
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Cloud Setup Modal
+function CloudSetupModal({ onClose, onSaved }) {
+  const [url, setUrl] = useState(localStorage.getItem(CLOUD_URL_KEY) || DEFAULT_SUPABASE_URL);
+  const [key, setKey] = useState(localStorage.getItem(CLOUD_KEY_KEY) || DEFAULT_SUPABASE_KEY);
+
+  const save = () => {
+    const cleanUrl = normalizeSupabaseUrl(url);
+    const cleanKey = key.trim();
+    if (!cleanUrl || !cleanKey) return alert("Add your Supabase URL and anon key first.");
+    localStorage.setItem(CLOUD_URL_KEY, cleanUrl);
+    localStorage.setItem(CLOUD_KEY_KEY, cleanKey);
+    onSaved({ url: cleanUrl, key: cleanKey });
+    onClose();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 120, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 14, width: "100%", maxWidth: 420, padding: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: "bold" }}>Cloud backup (Supabase)</div>
+          <span onClick={onClose} style={{ color: DIM, cursor: "pointer", fontSize: 20 }}>✕</span>
+        </div>
+        <div style={{ fontSize: 10, color: DIM, lineHeight: 1.6, marginBottom: 12 }}>
+          Use Supabase’s free tier. Create a project, then add your project URL and anon key. Create a table named <b>sales_os_state</b> with these columns: <b>id</b> (text), <b>payload</b> (jsonb), <b>updated_at</b> (text). The app will use the row with <b>id = primary</b>.
+        </div>
+        <Lbl>Supabase URL</Lbl>
+        <Inp value={url} onChange={setUrl} placeholder="https://xyzcompany.supabase.co" />
+        <Lbl>Anon Key</Lbl>
+        <Inp value={key} onChange={setKey} placeholder="Paste your anon/public key" />
+        <button onClick={save} style={{ width: "100%", marginTop: 14, background: LIME, color: "#000", border: "none", borderRadius: 8, padding: 12, fontSize: 12, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>
+          Save cloud settings
         </button>
       </div>
     </div>
