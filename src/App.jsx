@@ -30,42 +30,82 @@ const PACKAGE_TEMPLATES = [
   {
     match: /rest(?:aurant)?|cafe|eatery|food|bar|diner/i,
     name: "🍔 Restaurant Setup",
-    services: "website/menu, QR ordering, WhatsApp ordering, basic flyer, hosting setup",
+    services: "Website Menu, QR Ordering, WhatsApp Ordering, Promo Flyer, Hosting Setup",
     price: "250k - 450k UGX",
     color: "#FFB74D",
   },
   {
     match: /saloon|salon|spa|beauty|hair|nails/i,
     name: "💇 Salon / Spa Setup",
-    services: "service showcase, gallery, WhatsApp booking, contact/location, social links",
+    services: "Service Showcase, Gallery, WhatsApp Booking, Contact/Location, Social Links",
     price: "200k - 400k UGX",
     color: "#F48FB1",
   },
   {
     match: /hotel|apart|motel|lodge|bnb|guest/i,
     name: "🏨 Hotel / Apartment Setup",
-    services: "rooms showcase, inquiry form, maps/location, WhatsApp inquiry, gallery",
+    services: "Rooms Showcase, Inquiry Form, Google Maps, WhatsApp Chat, Photo Gallery",
     price: "350k - 700k UGX",
     color: "#64B5F6",
   },
   {
     match: /laundry|wash|dry|clean/i,
     name: "🧺 Laundry Setup",
-    services: "services, pickup request, WhatsApp contact, pricing section",
+    services: "Service Menu, Pickup Request, WhatsApp Contact, Pricing Guide",
     price: "180k - 350k UGX",
     color: "#4DD0E1",
   },
   {
     match: /clinic|pharmacy|hospital|medical|dental/i,
     name: "🏥 Clinic / Pharmacy Setup",
-    services: "services, booking/contact, Google Maps, WhatsApp",
+    services: "Services List, Appointment Booking, Google Maps, WhatsApp Chat",
     price: "250k - 500k UGX",
     color: "#E57373",
+  },
+  {
+    match: /shop|store|retail|supermarket|boutique|sell|ecommerce|market/i,
+    name: "🛍️ E-commerce / Retail Shop",
+    services: "WhatsApp Catalog, Online Store, Mobile Money Payment, Inventory Setup, Promo Flyers",
+    price: "400k - 800k UGX",
+    color: "#81C784",
+  },
+  {
+    match: /school|college|uni|academy|educat|class|teach/i,
+    name: "🏫 School / Institution Setup",
+    services: "School Website, Online Admission Form, Contact/Map, Term Calendar, Gallery",
+    price: "500k - 1M UGX",
+    color: "#BA68C8",
+  },
+  {
+    match: /real|estate|broker|house|land|plot|rent|agent/i,
+    name: "🏢 Real Estate / Brokerage",
+    services: "Property Showcase, WhatsApp Inquiries, Agent Bio, Filter Search, Map Listings",
+    price: "450k - 900k UGX",
+    color: "#4DB6AC",
+  },
+  {
+    match: /tour|travel|safari|trip|guide|agency|agencies/i,
+    name: "🦁 Tourism & Travel Setup",
+    services: "Safari Packages, Itinerary Builder, Booking Form, Google Maps, Reviews",
+    price: "500k - 950k UGX",
+    color: "#AED581",
+  },
+  {
+    match: /gym|fitness|crossfit|workout|train|health/i,
+    name: "💪 Gym & Fitness Center",
+    services: "Workout Schedule, Membership Packages, Trainer Profiles, WhatsApp Booking",
+    price: "300k - 600k UGX",
+    color: "#FF8A65",
   }
 ];
 
 // ── Helpers
 const todayStr = () => new Date().toISOString().split("T")[0];
+const addDays = (days) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+};
 const KEY = "solo-sales-os-v1";
 const CLOUD_CONFIG_KEY = "solo-sales-cloud-config";
 const CLOUD_URL_KEY = `${CLOUD_CONFIG_KEY}:url`;
@@ -92,16 +132,52 @@ function toWaNumber(phone) {
 }
 
 function getPending(clients) {
+  const today = todayStr();
   return Object.entries(clients).flatMap(([date, arr]) =>
-    arr.filter(c => c.followUp === "needed").map(c => ({ ...c, date }))
+    arr.filter(c => {
+      const isLead = c.status !== "ongoing";
+      const needsFollowUp = c.followUp === "needed";
+      const followUpExpired = c.followUp === "done" && c.followUpDate && today >= c.followUpDate;
+      return isLead && (needsFollowUp || followUpExpired);
+    }).map(c => ({ ...c, date }))
   );
 }
 
 function normalizeData(d) {
   const source = d && typeof d === "object" ? d : {};
+  const normalizedClients = {};
+  if (source.clients) {
+    for (const [date, arr] of Object.entries(source.clients)) {
+      if (Array.isArray(arr)) {
+        normalizedClients[date] = arr.map(c => ({
+          id: c.id,
+          name: c.name || "Unnamed",
+          business: c.business || "",
+          businessType: c.businessType || "",
+          phone: c.phone || "",
+          pitchMethod: c.pitchMethod || "In-Person",
+          package: c.package || "Undecided",
+          servicesToOffer: c.servicesToOffer || "",
+          quotedPrice: c.quotedPrice || "",
+          demoShown: c.demoShown || "no",
+          temp: c.temp || "warm",
+          followUp: c.followUp || "needed",
+          notes: c.notes || "",
+          time: c.time || "12:00 PM",
+          status: c.status || "lead",
+          ownerAround: c.ownerAround || "unknown",
+          followUpDate: c.followUpDate || "",
+          hasWhatsApp: c.hasWhatsApp || "yes",
+          totalAgreedPrice: c.totalAgreedPrice || "",
+          amountPaid: c.amountPaid ?? 0,
+          payments: c.payments || []
+        }));
+      }
+    }
+  }
   return {
     ...source,
-    clients: source.clients || {},
+    clients: normalizedClients,
     target: source.target ?? 5,
     meta: {
       ...(source.meta || {}),
@@ -324,7 +400,7 @@ export default function App() {
           <div>
             <div style={{ color: LIME, fontSize: 9, letterSpacing: 4, marginBottom: 4 }}>SOLO — SALES OS</div>
             <div style={{ fontSize: 18, fontWeight: "bold", letterSpacing: -0.5 }}>
-              {tab === "today" ? "Today's Session" : tab === "history" ? "History" : tab === "flow" ? "System Flow" : "Follow-Ups"}
+              {tab === "today" ? "Today's Session" : tab === "history" ? "History" : tab === "followups" ? "Follow-Ups" : tab === "ongoing" ? "Ongoing Projects" : tab === "payments" ? "Payments Tracker" : tab === "stats" ? "Performance Stats" : "System Flow"}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -340,18 +416,22 @@ export default function App() {
             ↻ Sync now
           </button>
         </div>
-        <div style={{ display: "flex" }}>
+        <div style={{ display: "flex", overflowX: "auto", whiteSpace: "nowrap", gap: 14, paddingBottom: 6, scrollbarWidth: "none", msOverflowStyle: "none" }}>
           {[
             { k: "today", l: "Today" },
             { k: "history", l: "History" },
             { k: "followups", l: pending.length ? `Follow-Ups (${pending.length})` : "Follow-Ups" },
+            { k: "ongoing", l: "Ongoing" },
+            { k: "payments", l: "Payments" },
+            { k: "stats", l: "Stats" },
             { k: "flow", l: "Flow" },
           ].map(({ k, l }) => (
             <button key={k} onClick={() => setTab(k)} style={{
-              flex: 1, padding: "10px 0", background: "none", border: "none",
+              padding: "10px 4px", background: "none", border: "none",
               borderBottom: tab === k ? `2px solid ${LIME}` : "2px solid transparent",
               color: tab === k ? LIME : DIM, fontSize: 10, letterSpacing: 1,
-              textTransform: "uppercase", cursor: "pointer", fontFamily: FONT, transition: "all 0.15s"
+              textTransform: "uppercase", cursor: "pointer", fontFamily: FONT, transition: "all 0.15s",
+              flexShrink: 0
             }}>{l}</button>
           ))}
         </div>
@@ -362,6 +442,9 @@ export default function App() {
         {tab === "today" && <TodayView clients={todayC} target={data.target} today={today} onUpdate={(id, u) => updateClient(today, id, u)} />}
         {tab === "history" && <HistoryView clients={data.clients} sortedDates={sortedDates} today={today} selected={histSel} onSelect={setHistSel} onUpdate={updateClient} />}
         {tab === "followups" && <FollowupsView pending={pending} onUpdate={updateClient} />}
+        {tab === "ongoing" && <OngoingView clients={data.clients} onUpdate={updateClient} />}
+        {tab === "payments" && <PaymentsView clients={data.clients} onUpdate={updateClient} />}
+        {tab === "stats" && <StatsView clients={data.clients} target={data.target} />}
         {tab === "flow" && <SystemFlowView />}
       </div>
 
@@ -470,10 +553,36 @@ function HistoryView({ clients, sortedDates, today, selected, onSelect, onUpdate
 // ── Follow-Ups View
 function FollowupsView({ pending, onUpdate }) {
   if (pending.length === 0) return <Empty text="All caught up. No pending follow-ups 🎯" />;
+
+  const today = todayStr();
+  const overdue = pending.filter(c => c.followUpDate && today >= c.followUpDate);
+  const regular = pending.filter(c => !c.followUpDate || (c.followUp === "needed" && today < c.followUpDate));
+
   return (
     <div>
-      <div style={{ fontSize: 10, color: DIM, letterSpacing: 2, marginBottom: 12 }}>{pending.length} PENDING</div>
-      {pending.map(c => <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} highlight />)}
+      {overdue.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 10, color: WARM_C, letterSpacing: 2, marginBottom: 12, fontWeight: "bold", display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: WARM_C }} />
+            TIMELINE EXPIRED / RE-FOLLOWUP DUE ({overdue.length})
+          </div>
+          {overdue.map(c => (
+            <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} highlight />
+          ))}
+        </div>
+      )}
+
+      {regular.length > 0 && (
+        <div>
+          <div style={{ fontSize: 10, color: LIME, letterSpacing: 2, marginBottom: 12, fontWeight: "bold", display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: LIME }} />
+            ACTIVE LEADS ({regular.length})
+          </div>
+          {regular.map(c => (
+            <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} highlight={false} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -481,6 +590,19 @@ function FollowupsView({ pending, onUpdate }) {
 // ── Client Card
 function ClientCard({ client: c, date, onUpdate, highlight }) {
   const [exp, setExp] = useState(false);
+  const [isWinForm, setIsWinForm] = useState(false);
+  const [dealPrice, setDealPrice] = useState(c.quotedPrice ? c.quotedPrice.replace(/\D/g, "") : "");
+  const [deposit, setDeposit] = useState("0");
+
+  const [isRescheduleForm, setIsRescheduleForm] = useState(false);
+  const [newFollowDate, setNewFollowDate] = useState(c.followUpDate || todayStr());
+
+  const [isPaymentForm, setIsPaymentForm] = useState(false);
+  const [paymentAmt, setPaymentAmt] = useState("");
+  const [paymentNote, setPaymentNote] = useState("");
+
+  const [isEditDealForm, setIsEditDealForm] = useState(false);
+  const [editedPrice, setEditedPrice] = useState(c.totalAgreedPrice || "");
 
   const textToMatch = c.businessType || c.business || "";
   const packageMatch = PACKAGE_TEMPLATES.find(p => p.match.test(textToMatch));
@@ -497,23 +619,100 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
     }
   };
 
-  const isHighlighted = highlight && c.followUp === "needed";
+  const today = todayStr();
+  const isLead = c.status !== "ongoing";
+  const isHighlighted = highlight && isLead && (c.followUp === "needed" || (c.followUp === "done" && c.followUpDate && today >= c.followUpDate));
+  
+  // Followup expiration check
+  const isOverdue = c.followUpDate && today >= c.followUpDate;
+
+  const handleReschedule = (days) => {
+    const nextDate = addDays(days);
+    onUpdate(c.id, { followUp: "done", followUpDate: nextDate });
+    setIsRescheduleForm(false);
+  };
+
+  const handleCustomReschedule = () => {
+    if (!newFollowDate) return alert("Please select a date.");
+    onUpdate(c.id, { followUp: "done", followUpDate: newFollowDate });
+    setIsRescheduleForm(false);
+  };
+
+  const handleConvert = () => {
+    const parsedPrice = Number(dealPrice) || 0;
+    const parsedDeposit = Number(deposit) || 0;
+    if (parsedPrice <= 0) return alert("Please enter a valid agreed price.");
+    
+    const initialPayments = parsedDeposit > 0 
+      ? [{ id: Date.now().toString(), date: today, amount: parsedDeposit, note: "Initial Deposit" }]
+      : [];
+
+    onUpdate(c.id, {
+      status: "ongoing",
+      totalAgreedPrice: parsedPrice,
+      amountPaid: parsedDeposit,
+      payments: initialPayments,
+      followUp: "done"
+    });
+    setIsWinForm(false);
+  };
+
+  const handleRecordPayment = () => {
+    const amt = Number(paymentAmt) || 0;
+    if (amt <= 0) return alert("Please enter a valid payment amount.");
+    
+    const newPayment = {
+      id: Date.now().toString(),
+      date: today,
+      amount: amt,
+      note: paymentNote.trim() || "Payment"
+    };
+
+    const newPayments = [...(c.payments || []), newPayment];
+    const totalPaid = newPayments.reduce((sum, p) => sum + p.amount, 0);
+
+    onUpdate(c.id, {
+      payments: newPayments,
+      amountPaid: totalPaid
+    });
+
+    setPaymentAmt("");
+    setPaymentNote("");
+    setIsPaymentForm(false);
+  };
+
+  const handleSaveEditedPrice = () => {
+    const amt = Number(editedPrice) || 0;
+    if (amt <= 0) return alert("Please enter a valid price.");
+    onUpdate(c.id, { totalAgreedPrice: amt });
+    setIsEditDealForm(false);
+  };
+
+  const remainingBalance = isLead ? 0 : (c.totalAgreedPrice || 0) - (c.amountPaid || 0);
 
   return (
     <div style={{
       background: SURF, borderRadius: 10, marginBottom: 10, overflow: "hidden",
-      border: isHighlighted ? `1px solid ${LIME}44` : `1px solid ${BORDER}`,
-      borderLeft: accentColor ? `3px solid ${accentColor}` : (isHighlighted ? `1px solid ${LIME}44` : `1px solid ${BORDER}`),
-      boxShadow: isHighlighted ? `0 0 14px ${LIME}15` : "none"
+      border: isHighlighted ? `1px solid ${LIME}66` : `1px solid ${BORDER}`,
+      borderLeft: accentColor ? `3px solid ${accentColor}` : (isHighlighted ? `1px solid ${LIME}66` : `1px solid ${BORDER}`),
+      boxShadow: isHighlighted ? `0 0 16px ${LIME}22` : "none"
     }}>
       {/* Top */}
       <div style={{ padding: "12px 14px 8px", cursor: "pointer" }} onClick={() => setExp(e => !e)}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 2 }}>
+            <div style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 2, flexWrap: "wrap" }}>
               <span style={{ fontSize: 13, fontWeight: "bold" }}>{c.name}</span>
-              <TempBadge temp={c.temp} />
-              {c.followUp === "needed" && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 10, background: LIME + "22", color: LIME, letterSpacing: 0.5 }}>FOLLOW-UP</span>}
+              {isLead ? (
+                <>
+                  <TempBadge temp={c.temp} />
+                  {c.ownerAround === "yes" && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 10, background: LIME + "22", color: LIME, letterSpacing: 0.5 }}>👤 OWNER PRESENT</span>}
+                  {c.ownerAround === "no" && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 10, background: SURF2, color: DIM, letterSpacing: 0.5 }}>👥 STAFF ONLY</span>}
+                  {isHighlighted && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 10, background: WARM_C + "22", color: WARM_C, fontWeight: "bold", letterSpacing: 0.5 }}>⚡ FOLLOW-UP DUE</span>}
+                </>
+              ) : (
+                <span style={{ fontSize: 8, padding: "2px 7px", borderRadius: 20, background: LIME + "22", color: LIME, fontWeight: "bold", letterSpacing: 0.5 }}>🏆 ONGOING CLIENT</span>
+              )}
             </div>
             <div style={{ fontSize: 10, color: DIM }}>{c.business || "—"}{c.businessType ? ` · ${c.businessType}` : ""}</div>
           </div>
@@ -522,55 +721,228 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
             {c.date && c.date !== todayStr() && <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>{fmtDate(c.date)}</div>}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 5, marginTop: 8, flexWrap: "wrap" }}>
+        
+        {/* Status Indicators & Timeline Badges */}
+        <div style={{ display: "flex", gap: 5, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
           <Chip>{c.pitchMethod}</Chip>
-          <Chip>{c.package || "Undecided"}</Chip>
-          {c.quotedPrice && <Chip style={{ color: LIME }}>💰 {c.quotedPrice}</Chip>}
+          {isLead && <Chip>{c.package || "Undecided"}</Chip>}
+          {isLead && c.quotedPrice && <Chip style={{ color: LIME }}>💰 {c.quotedPrice}</Chip>}
+          
+          {!isLead && (
+            <>
+              <Chip style={{ color: "#fff", background: SURF2 }}>💰 Agreed: {(c.totalAgreedPrice || 0).toLocaleString()} UGX</Chip>
+              <Chip style={{ color: LIME, background: SURF2 }}>💵 Paid: {(c.amountPaid || 0).toLocaleString()} UGX</Chip>
+              <Chip style={{ 
+                color: remainingBalance > 0 ? WARM_C : LIME, 
+                background: remainingBalance > 0 ? WARM_C + "11" : LIME + "11",
+                border: `1px solid ${remainingBalance > 0 ? WARM_C + "22" : LIME + "22"}`
+              }}>
+                {remainingBalance > 0 ? `🔴 Bal: ${remainingBalance.toLocaleString()} UGX` : "✓ Paid in Full"}
+              </Chip>
+            </>
+          )}
+
           <Chip style={{ background: c.demoShown === "yes" ? LIME + "18" : SURF2, color: c.demoShown === "yes" ? LIME : DIM }}>
             Demo {c.demoShown === "yes" ? "✓" : "✗"}
           </Chip>
-          {(c.notes || c.servicesToOffer) && <Chip style={{ color: DIM }}>📝 Details {exp ? "▲" : "▼"}</Chip>}
+          
+          {isLead && c.followUpDate && (
+            <Chip style={{ 
+              color: isOverdue ? WARM_C : DIM, 
+              background: isOverdue ? WARM_C + "18" : SURF2,
+              fontWeight: isOverdue ? "bold" : "normal"
+            }}>
+              📅 {isOverdue ? "Overdue" : "Next"}: {fmtDate(c.followUpDate)}
+            </Chip>
+          )}
+
+          {(c.notes || c.servicesToOffer || (!isLead && c.payments && c.payments.length > 0)) && (
+            <Chip style={{ color: DIM }}>📝 Details {exp ? "▲" : "▼"}</Chip>
+          )}
         </div>
       </div>
 
-      {/* Actions */}
+      {/* Inline Forms */}
+      {isWinForm && (
+        <div style={{ padding: 14, background: SURF2, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>🏆 Win Deal — Convert to Ongoing Client</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>AGREED PRICE (UGX)</div>
+              <input type="number" value={dealPrice} onChange={e => setDealPrice(e.target.value)} placeholder="e.g. 350000" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>INITIAL DEPOSIT (UGX) - Optional</div>
+              <input type="number" value={deposit} onChange={e => setDeposit(e.target.value)} placeholder="e.g. 150000" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }} />
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button onClick={handleConvert} style={{ flex: 1, background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>Confirm Conversion</button>
+              <button onClick={() => setIsWinForm(false)} style={{ flex: 1, background: BORDER, color: "#fff", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isRescheduleForm && (
+        <div style={{ padding: 14, background: SURF2, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>📅 Set Follow-Up Timeline</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+            <button onClick={() => handleReschedule(3)} style={{ flex: 1, background: SURF, border: `1px solid ${BORDER}`, color: "#fff", padding: "6px 0", borderRadius: 4, fontSize: 9, fontFamily: FONT, cursor: "pointer" }}>+3 Days</button>
+            <button onClick={() => handleReschedule(7)} style={{ flex: 1, background: SURF, border: `1px solid ${BORDER}`, color: "#fff", padding: "6px 0", borderRadius: 4, fontSize: 9, fontFamily: FONT, cursor: "pointer" }}>+7 Days</button>
+            <button onClick={() => handleReschedule(14)} style={{ flex: 1, background: SURF, border: `1px solid ${BORDER}`, color: "#fff", padding: "6px 0", borderRadius: 4, fontSize: 9, fontFamily: FONT, cursor: "pointer" }}>+14 Days</button>
+            <button onClick={() => handleReschedule(30)} style={{ flex: 1, background: SURF, border: `1px solid ${BORDER}`, color: "#fff", padding: "6px 0", borderRadius: 4, fontSize: 9, fontFamily: FONT, cursor: "pointer" }}>+30 Days</button>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input type="date" value={newFollowDate} onChange={e => setNewFollowDate(e.target.value)} style={{ flex: 1, background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "6px 10px", fontSize: 11, fontFamily: FONT }} />
+            <button onClick={handleCustomReschedule} style={{ background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "0 14px", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>Save</button>
+            <button onClick={() => setIsRescheduleForm(false)} style={{ background: BORDER, color: "#fff", border: "none", borderRadius: 6, padding: "0 10px", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {isPaymentForm && (
+        <div style={{ padding: 14, background: SURF2, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>💰 Record Client Payment</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>PAYMENT AMOUNT (UGX)</div>
+              <input type="number" value={paymentAmt} onChange={e => setPaymentAmt(e.target.value)} placeholder="e.g. 50000" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>NOTES / REFERENCE</div>
+              <input type="text" value={paymentNote} onChange={e => setPaymentNote(e.target.value)} placeholder="e.g. Cash, Mobile Money, Second installment" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }} />
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button onClick={handleRecordPayment} style={{ flex: 1, background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>Save Payment</button>
+              <button onClick={() => setIsPaymentForm(false)} style={{ flex: 1, background: BORDER, color: "#fff", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isEditDealForm && (
+        <div style={{ padding: 14, background: SURF2, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>✏️ Edit Agreed Deal Price</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input type="number" value={editedPrice} onChange={e => setEditedPrice(e.target.value)} placeholder="Agreed Price (UGX)" style={{ flex: 1, background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "6px 10px", fontSize: 11, fontFamily: FONT }} />
+            <button onClick={handleSaveEditedPrice} style={{ background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "0 14px", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>Save</button>
+            <button onClick={() => setIsEditDealForm(false)} style={{ background: BORDER, color: "#fff", border: "none", borderRadius: 6, padding: "0 10px", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Action Buttons Row */}
       <div style={{ padding: "0 14px 12px", display: "flex", gap: 7, flexWrap: "wrap" }}>
-        <ABtn color={GREEN_WA + "22"} tc={GREEN_WA}
-          onClick={() => window.open(`https://wa.me/${toWaNumber(c.phone)}`, "_blank")}>
-          📲 WhatsApp
-        </ABtn>
-        <ABtn
-          color={c.followUp === "needed" ? LIME + "22" : SURF2}
-          tc={c.followUp === "needed" ? LIME : DIM}
-          onClick={() => onUpdate(c.id, { followUp: c.followUp === "needed" ? "done" : "needed" })}>
-          {c.followUp === "needed" ? "✓ Mark Done" : "↩ Follow-Up"}
-        </ABtn>
-        <ABtn
-          color={c.temp === "warm" ? WARM_C + "22" : COLD_C + "22"}
-          tc={c.temp === "warm" ? WARM_C : COLD_C}
-          onClick={() => onUpdate(c.id, { temp: c.temp === "warm" ? "cold" : "warm" })}>
-          {c.temp === "warm" ? "🔥 Warm" : "❄️ Cold"}
-        </ABtn>
-        {(!c.quotedPrice || !c.servicesToOffer) && (
-          <ABtn color={SURF2} tc={LIME} onClick={autoSuggest}>
-            ✨ Suggest Setup
-          </ABtn>
+        {c.phone ? (
+          <>
+            {(!c.hasWhatsApp || c.hasWhatsApp === "yes") && (
+              <ABtn color={GREEN_WA + "22"} tc={GREEN_WA}
+                onClick={() => window.open(`https://wa.me/${toWaNumber(c.phone)}`, "_blank")}>
+                📲 WhatsApp
+              </ABtn>
+            )}
+            <ABtn color={COLD_C + "22"} tc={COLD_C}
+              onClick={() => window.open(`tel:${c.phone}`, "_blank")}>
+              📞 Call
+            </ABtn>
+          </>
+        ) : (
+          <span style={{ fontSize: 9, padding: "7px 11px", color: DIM, background: SURF2, borderRadius: 6 }}>📵 Phone Unavailable</span>
+        )}
+
+        {isLead ? (
+          <>
+            <ABtn
+              color={c.followUp === "needed" ? LIME + "22" : SURF2}
+              tc={c.followUp === "needed" ? LIME : DIM}
+              onClick={() => {
+                const nextFollow = c.followUp === "needed" ? "done" : "needed";
+                // If marking done, clear followUpDate or prompt rescheduling
+                if (nextFollow === "done" && c.followUpDate) {
+                  const keep = confirm("Keep the follow-up date reminder active?\nClick OK to keep, Cancel to clear it.");
+                  onUpdate(c.id, { followUp: nextFollow, ...(keep ? {} : { followUpDate: "" }) });
+                } else {
+                  onUpdate(c.id, { followUp: nextFollow });
+                }
+              }}>
+              {c.followUp === "needed" ? "✓ Mark Done" : "↩ Follow-Up"}
+            </ABtn>
+            
+            <ABtn color={SURF2} tc={LIME} onClick={() => setIsRescheduleForm(true)}>
+              📅 Timeline
+            </ABtn>
+
+            <ABtn
+              color={c.temp === "warm" ? WARM_C + "22" : COLD_C + "22"}
+              tc={c.temp === "warm" ? WARM_C : COLD_C}
+              onClick={() => onUpdate(c.id, { temp: c.temp === "warm" ? "cold" : "warm" })}>
+              {c.temp === "warm" ? "🔥 Warm" : "❄️ Cold"}
+            </ABtn>
+
+            <ABtn color={LIME} tc="#000" onClick={() => setIsWinForm(true)}>
+              🏆 Won! Ongoing
+            </ABtn>
+
+            {(!c.quotedPrice || !c.servicesToOffer) && (
+              <ABtn color={SURF2} tc={LIME} onClick={autoSuggest}>
+                ✨ Suggest
+              </ABtn>
+            )}
+          </>
+        ) : (
+          <>
+            <ABtn color={LIME} tc="#000" onClick={() => setIsPaymentForm(true)}>
+              💰 Record Payment
+            </ABtn>
+            <ABtn color={SURF2} tc={LIME} onClick={() => { setEditedPrice(c.totalAgreedPrice || ""); setIsEditDealForm(true); }}>
+              ✏️ Edit Deal
+            </ABtn>
+            <ABtn color={SURF2} tc={DIM} onClick={() => {
+              if (confirm("Move this client back to follow-up status? This will delete ongoing transaction states.")) {
+                onUpdate(c.id, { status: "lead", totalAgreedPrice: "", amountPaid: 0, payments: [], followUp: "needed" });
+              }
+            }}>
+              ↩ Make Lead
+            </ABtn>
+          </>
         )}
       </div>
 
-      {/* Notes */}
-      {exp && (c.notes || c.servicesToOffer) && (
+      {/* Expanded Notes & Services */}
+      {exp && (c.notes || c.servicesToOffer || (!isLead && c.payments && c.payments.length > 0)) && (
         <div style={{ padding: "10px 14px 12px", borderTop: `1px solid ${BORDER}` }}>
           {c.servicesToOffer && (
-            <div style={{ marginBottom: c.notes ? 10 : 0 }}>
-              <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 3 }}>SERVICES TO OFFER</div>
-              <div style={{ fontSize: 11, color: "#ccc", lineHeight: 1.5 }}>{c.servicesToOffer}</div>
+            <div style={{ marginBottom: (c.notes || (!isLead && c.payments && c.payments.length > 0)) ? 12 : 0 }}>
+              <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 5 }}>SERVICES TO OFFER</div>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {c.servicesToOffer.split(",").map(s => s.trim()).filter(Boolean).map((s, i) => (
+                  <span key={i} style={{ 
+                    fontSize: 9, padding: "3px 8px", borderRadius: 4, 
+                    background: accentColor ? accentColor + "18" : SURF2, 
+                    color: accentColor || "#ccc",
+                    border: `1px solid ${accentColor ? accentColor + "33" : BORDER}`
+                  }}>{s}</span>
+                ))}
+              </div>
             </div>
           )}
           {c.notes && (
-            <div>
+            <div style={{ marginBottom: (!isLead && c.payments && c.payments.length > 0) ? 12 : 0 }}>
               <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 3 }}>NOTES</div>
               <div style={{ fontSize: 11, color: "#ccc", lineHeight: 1.5 }}>{c.notes}</div>
+            </div>
+          )}
+          {!isLead && c.payments && c.payments.length > 0 && (
+            <div>
+              <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 6 }}>TRANSACTION HISTORY</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {c.payments.map((p) => (
+                  <div key={p.id} style={{ display: "flex", justifyContent: "space-between", background: SURF2, borderRadius: 4, padding: "5px 8px", fontSize: 10 }}>
+                    <span style={{ color: DIM }}>{p.date} · <span style={{ color: "#fff" }}>{p.note}</span></span>
+                    <span style={{ color: LIME, fontWeight: "bold" }}>+{p.amount.toLocaleString()} UGX</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -585,7 +957,9 @@ function ClientForm({ onAdd, onClose }) {
     name: "", business: "", businessType: "", phone: "",
     pitchMethod: "In-Person", package: "Undecided",
     servicesToOffer: "", quotedPrice: "",
-    demoShown: "no", temp: "warm", followUp: "needed", notes: ""
+    demoShown: "no", temp: "warm", followUp: "needed", notes: "",
+    status: "lead", ownerAround: "yes", followUpDate: "", hasWhatsApp: "yes",
+    totalAgreedPrice: "", amountPaid: 0, payments: []
   });
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
 
@@ -605,7 +979,6 @@ function ClientForm({ onAdd, onClose }) {
 
   const submit = () => {
     if (!f.name.trim()) return alert("Client name is required.");
-    if (!f.phone.trim()) return alert("Phone number is required.");
     onAdd(f);
   };
 
@@ -613,7 +986,7 @@ function ClientForm({ onAdd, onClose }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
       <div style={{ background: "#0f0f0f", borderRadius: "16px 16px 0 0", width: "100%", maxWidth: 480, padding: "20px 16px 36px", maxHeight: "92vh", overflowY: "auto", border: `1px solid ${BORDER}`, borderBottom: "none" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <span style={{ fontWeight: "bold", fontSize: 14, letterSpacing: -0.3 }}>New Client</span>
+          <span style={{ fontWeight: "bold", fontSize: 14, letterSpacing: -0.3 }}>New Client Pitch</span>
           <span onClick={onClose} style={{ color: DIM, cursor: "pointer", fontSize: 20, lineHeight: 1 }}>✕</span>
         </div>
 
@@ -631,14 +1004,62 @@ function ClientForm({ onAdd, onClose }) {
           <button onClick={autoSuggest} style={{ background: SURF2, border: `1px solid ${LIME}`, color: LIME, borderRadius: 8, padding: "0 12px", fontSize: 10, cursor: "pointer", fontFamily: FONT, fontWeight: "bold" }}>✨ Suggest</button>
         </div>
 
+        {f.businessType && (() => {
+          const match = PACKAGE_TEMPLATES.find(p => p.match.test(f.businessType));
+          if (!match) return null;
+          const items = match.services.split(",").map(s => s.trim());
+          return (
+            <div style={{ marginTop: 8, padding: 10, background: SURF, borderRadius: 8, border: `1px solid ${BORDER}` }}>
+              <div style={{ fontSize: 9, color: LIME, letterSpacing: 1, marginBottom: 6, fontWeight: "bold" }}>SELECT SERVICES TO OFFER:</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {items.map(item => {
+                  const currentList = f.servicesToOffer.split(",").map(s => s.trim()).filter(Boolean);
+                  const active = currentList.includes(item);
+                  return (
+                    <button key={item} type="button" onClick={() => {
+                      let nextList;
+                      if (active) {
+                        nextList = currentList.filter(s => s !== item);
+                      } else {
+                        nextList = [...currentList, item];
+                      }
+                      set("servicesToOffer", nextList.join(", "));
+                    }} style={{
+                      padding: "5px 9px", borderRadius: 4, fontSize: 9, cursor: "pointer", fontFamily: FONT,
+                      background: active ? LIME + "22" : SURF2,
+                      border: active ? `1px solid ${LIME}` : `1px solid ${BORDER}`,
+                      color: active ? LIME : DIM, transition: "all 0.1s"
+                    }}>
+                      {active ? "✓ " : "+ "} {item}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
         <Lbl>Suggested Services</Lbl>
         <textarea value={f.servicesToOffer} onChange={e => set("servicesToOffer", e.target.value)} placeholder="Editable services list..." style={{ width: "100%", background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 8, color: "#fff", padding: "10px 12px", fontSize: 12, fontFamily: FONT, resize: "vertical", minHeight: 48, boxSizing: "border-box" }} />
 
         <Lbl>Quoted Price (UGX)</Lbl>
         <Inp value={f.quotedPrice} onChange={v => set("quotedPrice", v)} placeholder="e.g. 250k - 450k UGX" />
 
-        <Lbl>Phone Number *</Lbl>
+        <Lbl>Was the Owner Around?</Lbl>
+        <Tog value={f.ownerAround} opts={["yes", "no", "unknown"]} onChange={v => set("ownerAround", v)} colors={{ yes: LIME, no: DIM, unknown: DIM }} />
+
+        <Lbl>Phone Number (Optional)</Lbl>
         <Inp value={f.phone} onChange={v => set("phone", v)} placeholder="e.g. 0701234567" type="tel" />
+
+        {f.phone && (
+          <>
+            <Lbl>Does Client Have WhatsApp?</Lbl>
+            <Tog value={f.hasWhatsApp} opts={["yes", "no"]} onChange={v => set("hasWhatsApp", v)} colors={{ yes: GREEN_WA, no: DIM }} />
+          </>
+        )}
+
+        <Lbl>Follow-Up Target Date (Optional)</Lbl>
+        <Inp type="date" value={f.followUpDate} onChange={v => set("followUpDate", v)} />
 
         <Lbl>Pitched Via</Lbl>
         <Tog value={f.pitchMethod} opts={["In-Person", "WhatsApp"]} onChange={v => set("pitchMethod", v)} />
@@ -829,6 +1250,213 @@ function SystemFlowView() {
           <div style={{ fontSize: 12, color: WARM_C, fontWeight: "bold" }}>Charge: 50k - 150k/month (based on activity)</div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Ongoing View
+function OngoingView({ clients, onUpdate }) {
+  const ongoing = Object.entries(clients).flatMap(([date, arr]) =>
+    arr.filter(c => c.status === "ongoing").map(c => ({ ...c, date }))
+  );
+
+  if (ongoing.length === 0) {
+    return <Empty text="No ongoing projects yet. Win some deals to move them here! 🏆" />;
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: DIM, letterSpacing: 2, marginBottom: 12 }}>
+        {ongoing.length} ACTIVE PROJECT{ongoing.length !== 1 ? "S" : ""}
+      </div>
+      {ongoing.map(c => (
+        <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} />
+      ))}
+    </div>
+  );
+}
+
+// ── Payments View
+function PaymentsView({ clients, onUpdate }) {
+  const allClients = Object.entries(clients).flatMap(([date, arr]) =>
+    arr.map(c => ({ ...c, date }))
+  );
+
+  const ongoingClients = allClients.filter(c => c.status === "ongoing");
+  const totalInvoiced = ongoingClients.reduce((sum, c) => sum + (Number(c.totalAgreedPrice) || 0), 0);
+  const totalCollected = allClients.reduce((sum, c) => sum + (Number(c.amountPaid) || 0), 0);
+  const totalOutstanding = totalInvoiced - ongoingClients.reduce((sum, c) => sum + (Number(c.amountPaid) || 0), 0);
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
+          <div style={{ fontSize: 9, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TOTAL INVOICED</div>
+          <div style={{ fontSize: 16, fontWeight: "bold", color: "#fff" }}>{totalInvoiced.toLocaleString()} <span style={{ fontSize: 9, color: DIM }}>UGX</span></div>
+        </div>
+        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
+          <div style={{ fontSize: 9, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TOTAL COLLECTED</div>
+          <div style={{ fontSize: 16, fontWeight: "bold", color: LIME }}>{totalCollected.toLocaleString()} <span style={{ fontSize: 9, color: DIM }}>UGX</span></div>
+        </div>
+      </div>
+      
+      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14, marginBottom: 20 }}>
+        <div style={{ fontSize: 9, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TOTAL OUTSTANDING</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <div style={{ fontSize: 20, fontWeight: "bold", color: totalOutstanding > 0 ? WARM_C : LIME }}>
+            {totalOutstanding.toLocaleString()} <span style={{ fontSize: 10, color: DIM }}>UGX</span>
+          </div>
+          <div style={{ fontSize: 10, color: DIM }}>
+            {ongoingClients.length} Active Accounts
+          </div>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 10, color: DIM, letterSpacing: 2, marginBottom: 12 }}>CLIENT BALANCES</div>
+      {ongoingClients.length === 0 ? (
+        <Empty text="No payments recorded yet. Convert a lead to ongoing to begin tracking payments." />
+      ) : (
+        ongoingClients.map(c => (
+          <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} />
+        ))
+      )}
+    </div>
+  );
+}
+
+// ── Stats View
+function StatsView({ clients, target }) {
+  const allClients = Object.entries(clients).flatMap(([date, arr]) =>
+    arr.map(c => ({ ...c, date }))
+  );
+
+  const today = todayStr();
+  
+  const getDaysAgo = (days) => {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toISOString().split("T")[0];
+  };
+
+  const oneWeekAgo = getDaysAgo(7);
+  const oneMonthAgo = getDaysAgo(30);
+  const thisYearStart = `${new Date().getFullYear()}-01-01`;
+
+  const todayOutreaches = allClients.filter(c => c.date === today).length;
+  const weekOutreaches = allClients.filter(c => c.date >= oneWeekAgo).length;
+  const monthOutreaches = allClients.filter(c => c.date >= oneMonthAgo).length;
+  const yearOutreaches = allClients.filter(c => c.date >= thisYearStart).length;
+
+  const totalOutreaches = allClients.length;
+  const totalLeads = allClients.filter(c => c.status === "lead").length;
+  const totalOngoing = allClients.filter(c => c.status === "ongoing").length;
+  
+  const conversionRate = totalOutreaches > 0 
+    ? ((totalOngoing / totalOutreaches) * 100).toFixed(1) 
+    : "0.0";
+
+  const inPerson = allClients.filter(c => c.pitchMethod === "In-Person").length;
+  const whatsapp = allClients.filter(c => c.pitchMethod === "WhatsApp").length;
+
+  const warm = allClients.filter(c => c.temp === "warm").length;
+  const cold = allClients.filter(c => c.temp === "cold").length;
+
+  const ownerPresent = allClients.filter(c => c.ownerAround === "yes").length;
+  const ownerAbsent = allClients.filter(c => c.ownerAround === "no").length;
+
+  const todayPct = Math.min(1, todayOutreaches / target);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      
+      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+          <span style={{ fontSize: 10, color: DIM, letterSpacing: 1 }}>TODAY'S OUTREACH TARGET</span>
+          <span style={{ fontSize: 12, color: todayPct >= 1 ? LIME : "#fff", fontWeight: "bold" }}>
+            {todayOutreaches} / {target} ({Math.round(todayPct * 100)}%)
+          </span>
+        </div>
+        <div style={{ background: BORDER, borderRadius: 4, height: 6, overflow: "hidden" }}>
+          <div style={{ height: "100%", borderRadius: 4, background: LIME, width: `${todayPct * 100}%`, transition: "width 0.4s ease" }} />
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
+          <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TODAY</div>
+          <div style={{ fontSize: 20, fontWeight: "bold", color: LIME }}>{todayOutreaches}</div>
+          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>Target: {target}</div>
+        </div>
+        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
+          <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 4 }}>THIS WEEK (7D)</div>
+          <div style={{ fontSize: 20, fontWeight: "bold", color: "#fff" }}>{weekOutreaches}</div>
+          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>Avg: {(weekOutreaches / 7).toFixed(1)}/day</div>
+        </div>
+        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
+          <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 4 }}>THIS MONTH (30D)</div>
+          <div style={{ fontSize: 20, fontWeight: "bold", color: "#fff" }}>{monthOutreaches}</div>
+          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>Avg: {(monthOutreaches / 30).toFixed(1)}/day</div>
+        </div>
+        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
+          <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 4 }}>THIS YEAR</div>
+          <div style={{ fontSize: 20, fontWeight: "bold", color: "#fff" }}>{yearOutreaches}</div>
+          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>Total year pitches</div>
+        </div>
+      </div>
+
+      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "16px" }}>
+        <div style={{ fontSize: 10, color: DIM, letterSpacing: 1, marginBottom: 12 }}>CONVERSION PERFORMANCE</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: "bold", color: LIME }}>{conversionRate}%</div>
+            <div style={{ fontSize: 9, color: DIM }}>LEADS TO ONGOING</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 11, color: "#ccc" }}><b>{totalOngoing}</b> Won Clients</div>
+            <div style={{ fontSize: 11, color: "#ccc", marginTop: 2 }}><b>{totalLeads}</b> Active Leads</div>
+            <div style={{ fontSize: 10, color: DIM, marginTop: 4 }}>Out of {totalOutreaches} total pitches</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "16px" }}>
+        <div style={{ fontSize: 10, color: DIM, letterSpacing: 1, marginBottom: 12 }}>OUTREACH ANALYSIS</div>
+        
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
+            <span style={{ color: DIM }}>Pitch Method</span>
+            <span>In-Person: {inPerson} · WhatsApp: {whatsapp}</span>
+          </div>
+          <div style={{ background: BORDER, height: 6, borderRadius: 3, display: "flex", overflow: "hidden" }}>
+            <div style={{ background: LIME, width: `${totalOutreaches ? (inPerson / totalOutreaches) * 100 : 0}%` }} />
+            <div style={{ background: GREEN_WA, width: `${totalOutreaches ? (whatsapp / totalOutreaches) * 100 : 0}%` }} />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
+            <span style={{ color: DIM }}>Lead Temperature</span>
+            <span>Warm: {warm} · Cold: {cold}</span>
+          </div>
+          <div style={{ background: BORDER, height: 6, borderRadius: 3, display: "flex", overflow: "hidden" }}>
+            <div style={{ background: WARM_C, width: `${totalOutreaches ? (warm / totalOutreaches) * 100 : 0}%` }} />
+            <div style={{ background: COLD_C, width: `${totalOutreaches ? (cold / totalOutreaches) * 100 : 0}%` }} />
+          </div>
+        </div>
+
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
+            <span style={{ color: DIM }}>Decision Maker Presence</span>
+            <span>Owner Around: {ownerPresent} · Staff Only: {ownerAbsent}</span>
+          </div>
+          <div style={{ background: BORDER, height: 6, borderRadius: 3, display: "flex", overflow: "hidden" }}>
+            <div style={{ background: LIME, width: `${totalOutreaches ? (ownerPresent / totalOutreaches) * 100 : 0}%` }} />
+            <div style={{ background: DIM, width: `${totalOutreaches ? (ownerAbsent / totalOutreaches) * 100 : 0}%` }} />
+          </div>
+        </div>
+
+      </div>
+
     </div>
   );
 }
