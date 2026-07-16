@@ -136,9 +136,8 @@ function getPending(clients) {
   return Object.entries(clients).flatMap(([date, arr]) =>
     arr.filter(c => {
       const isLead = c.status !== "ongoing";
-      const needsFollowUp = c.followUp === "needed";
-      const followUpExpired = c.followUp === "done" && c.followUpDate && today >= c.followUpDate;
-      return isLead && (needsFollowUp || followUpExpired);
+      const hasExpiredFollowUp = c.followUpDate && today >= c.followUpDate;
+      return isLead && hasExpiredFollowUp;
     }).map(c => ({ ...c, date }))
   );
 }
@@ -179,6 +178,7 @@ function normalizeData(d) {
     ...source,
     clients: normalizedClients,
     target: source.target ?? 5,
+    expenses: source.expenses || [],
     meta: {
       ...(source.meta || {}),
       updatedAt: source.meta?.updatedAt || new Date().toISOString(),
@@ -313,6 +313,36 @@ export default function App() {
     return () => { alive = false; };
   }, [cloudConfig]);
 
+  useEffect(() => {
+    if (!cloudConfig || !data) return;
+    
+    const autoSync = async () => {
+      const remoteResult = await loadRemote(cloudConfig);
+      if (remoteResult.ok && remoteResult.data) {
+        const remote = remoteResult.data;
+        const localTs = new Date(data.meta?.updatedAt || 0).getTime();
+        const remoteTs = new Date(remote.meta?.updatedAt || 0).getTime();
+        
+        if (remoteTs > localTs) {
+          setData(remote);
+          await persist(remote);
+          setCloudStatus("Cloud connected");
+          setBanner("System auto-sync: loaded latest changes from cloud.");
+        } else if (remoteTs < localTs) {
+          const pushResult = await persistRemote(cloudConfig, data);
+          if (pushResult.ok) {
+            setCloudStatus("Cloud connected");
+          }
+        } else {
+          setCloudStatus("Cloud connected");
+        }
+      }
+    };
+
+    const timer = setInterval(autoSync, 30000);
+    return () => clearInterval(timer);
+  }, [cloudConfig, data]);
+
   const save = useCallback(async (next) => {
     const normalized = normalizeData(next);
     setData(normalized);
@@ -368,6 +398,11 @@ export default function App() {
 
   const updateClient = (date, id, updates) => {
     const next = { ...data, clients: { ...data.clients, [date]: data.clients[date].map(c => c.id === id ? { ...c, ...updates } : c) } };
+    void save(next);
+  };
+
+  const addExpense = (exp) => {
+    const next = { ...data, expenses: [...(data.expenses || []), { id: Date.now().toString(), date: todayStr(), ...exp }] };
     void save(next);
   };
 
@@ -443,7 +478,7 @@ export default function App() {
         {tab === "history" && <HistoryView clients={data.clients} sortedDates={sortedDates} today={today} selected={histSel} onSelect={setHistSel} onUpdate={updateClient} />}
         {tab === "followups" && <FollowupsView pending={pending} onUpdate={updateClient} />}
         {tab === "ongoing" && <OngoingView clients={data.clients} onUpdate={updateClient} />}
-        {tab === "payments" && <PaymentsView clients={data.clients} onUpdate={updateClient} />}
+        {tab === "payments" && <PaymentsView clients={data.clients} onUpdate={updateClient} expenses={data.expenses || []} onAddExpense={addExpense} />}
         {tab === "stats" && <StatsView clients={data.clients} target={data.target} />}
         {tab === "flow" && <SystemFlowView />}
       </div>
