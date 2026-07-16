@@ -622,6 +622,216 @@ function FollowupsView({ pending, onUpdate }) {
   );
 }
 
+// ── Print Helpers
+function getInvoiceNum(client) {
+  const year = client.date ? client.date.split("-")[0] : new Date().getFullYear();
+  const seq = String(client.id).slice(-3).replace(/\D/g, "0").padStart(3, "0");
+  return `SWD-${year}-${seq}`;
+}
+function getReceiptNum(payment) {
+  const year = payment.date ? payment.date.split("-")[0] : new Date().getFullYear();
+  const seq = String(payment.id).slice(-3).replace(/\D/g, "0").padStart(3, "0");
+  return `RCP-${year}-${seq}`;
+}
+function fmtUGX(n) {
+  return `UGX ${Number(n || 0).toLocaleString()}`;
+}
+function dueDateStr(issueDate) {
+  const d = issueDate ? new Date(issueDate + "T00:00:00") : new Date();
+  d.setDate(d.getDate() + 14);
+  return d.toISOString().split("T")[0];
+}
+
+function printInvoice(client) {
+  const invoiceNum = getInvoiceNum(client);
+  const issueDate = client.date || todayStr();
+  const dueDate = dueDateStr(issueDate);
+  const services = (client.servicesToOffer || "").split(",").map(s => s.trim()).filter(Boolean);
+  const total = Number(client.totalAgreedPrice) || 0;
+  const paid = Number(client.amountPaid) || 0;
+  const balance = total - paid;
+  const stamp = paid === 0 ? "AWAITING PAYMENT" : paid >= total ? "PAID IN FULL" : "PARTIAL PAYMENT RECEIVED";
+  const stampColor = paid >= total ? "#aaff00" : paid > 0 ? "#ff7a3d" : "#ff4444";
+
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+<title>Invoice ${invoiceNum} — ${client.name}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#fff;color:#111;font-family:'DM Mono',monospace;padding:40px;max-width:700px;margin:0 auto;font-size:12px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:36px;padding-bottom:20px;border-bottom:2px solid #111}
+  .brand{font-size:20px;font-weight:700;letter-spacing:-0.5px}
+  .brand-sub{font-size:10px;color:#555;margin-top:4px;line-height:1.6}
+  .doc-meta{text-align:right}
+  .doc-type{font-size:22px;font-weight:700;letter-spacing:2px;color:#111}
+  .doc-num{font-size:11px;color:#555;margin-top:4px}
+  .billed-section{display:flex;justify-content:space-between;margin-bottom:30px}
+  .label{font-size:9px;letter-spacing:2px;color:#888;margin-bottom:4px}
+  .value{font-size:12px;font-weight:500;color:#111;line-height:1.6}
+  table{width:100%;border-collapse:collapse;margin-bottom:24px}
+  th{text-align:left;font-size:9px;letter-spacing:2px;color:#888;padding:8px 10px;border-bottom:1px solid #ddd}
+  td{padding:10px;border-bottom:1px solid #f0f0f0;font-size:11px;color:#222}
+  .totals{margin-left:auto;width:280px}
+  .total-row{display:flex;justify-content:space-between;padding:6px 0;font-size:11px}
+  .total-row.grand{font-size:13px;font-weight:700;padding:10px 0;border-top:2px solid #111;margin-top:4px}
+  .total-row.balance{color:${balance > 0 ? "#ff7a3d" : "#aaff00"};font-weight:700}
+  .stamp{display:inline-block;border:3px solid ${stampColor};color:${stampColor};padding:8px 20px;font-size:14px;font-weight:700;letter-spacing:3px;transform:rotate(-5deg);opacity:0.9;margin-top:20px}
+  .stamp-wrap{text-align:center;margin:20px 0}
+  .footer{display:flex;justify-content:space-between;margin-top:40px;padding-top:20px;border-top:1px solid #ddd}
+  .sig-block{font-size:10px;color:#555}
+  .sig-line{border-top:1px solid #111;width:160px;margin-bottom:6px;margin-top:40px}
+  .terms{font-size:9px;color:#888;max-width:260px;line-height:1.6}
+  @media print{body{padding:20px}button{display:none!important}}
+</style></head><body>
+<div class="header">
+  <div>
+    <div class="brand">Solomantalgo Web Design</div>
+    <div class="brand-sub">Kampala, Uganda<br/>solomantalgo.com<br/>Owner: Solomon Kisense</div>
+  </div>
+  <div class="doc-meta">
+    <div class="doc-type">INVOICE</div>
+    <div class="doc-num">${invoiceNum}</div>
+    <div class="doc-num" style="margin-top:8px">Issued: ${issueDate}</div>
+    <div class="doc-num">Due: ${dueDate}</div>
+  </div>
+</div>
+
+<div class="billed-section">
+  <div>
+    <div class="label">BILLED TO</div>
+    <div class="value">${client.name}<br/>${client.business || "—"}</div>
+    ${client.phone ? `<div class="value" style="margin-top:4px;font-size:10px;color:#555">${client.phone}</div>` : ""}
+  </div>
+</div>
+
+<table>
+  <thead><tr><th>#</th><th>SERVICE / DESCRIPTION</th><th style="text-align:right">AMOUNT</th></tr></thead>
+  <tbody>
+    ${services.length > 1
+      ? services.map((s, i) => `<tr><td>${i + 1}</td><td>${s}</td><td style="text-align:right">—</td></tr>`).join("")
+      : `<tr><td>1</td><td>${client.servicesToOffer || "Web Design Services"}</td><td style="text-align:right">${fmtUGX(total)}</td></tr>`
+    }
+  </tbody>
+</table>
+
+<div class="totals">
+  <div class="total-row"><span>Subtotal</span><span>${fmtUGX(total)}</span></div>
+  <div class="total-row grand"><span>TOTAL</span><span>${fmtUGX(total)}</span></div>
+  <div class="total-row" style="color:#555"><span>Amount Paid</span><span>${fmtUGX(paid)}</span></div>
+  <div class="total-row balance"><span>BALANCE DUE</span><span>${fmtUGX(balance)}</span></div>
+</div>
+
+<div class="stamp-wrap"><div class="stamp">${stamp}</div></div>
+
+<div class="footer">
+  <div class="terms">
+    <b>Payment Terms</b><br/>
+    50% deposit required. 50% on delivery.<br/><br/>
+    <b>Payment Methods</b><br/>
+    Mobile Money (MTN / Airtel)<br/>
+    Bank Transfer
+  </div>
+  <div class="sig-block">
+    <div class="sig-line"></div>
+    <div><b>Solomon Kisense</b></div>
+    <div>Owner, Solomantalgo Web Design</div>
+  </div>
+</div>
+
+<div style="text-align:center;margin-top:24px;font-size:9px;color:#aaa">Thank you for choosing Solomantalgo Web Design.</div>
+<script>window.onload=()=>{window.print();}</script>
+</body></html>`;
+
+  const win = window.open("", "_blank", "width=780,height=900");
+  if (win) { win.document.write(html); win.document.close(); }
+}
+
+function printReceipt(client, payment) {
+  const invoiceNum = getInvoiceNum(client);
+  const receiptNum = getReceiptNum(payment);
+  const total = Number(client.totalAgreedPrice) || 0;
+  // Calculate running balance AFTER this payment
+  const paymentsUpTo = (client.payments || []);
+  const paidBeforeThis = paymentsUpTo
+    .filter(p => p.id !== payment.id && p.date <= payment.date)
+    .reduce((s, p) => s + Number(p.amount), 0);
+  const runningBalance = total - (paidBeforeThis + Number(payment.amount));
+  const isPaidFull = runningBalance <= 0;
+  const stamp = isPaidFull ? "PAID IN FULL" : `PARTIAL PAYMENT\nBALANCE DUE: ${fmtUGX(runningBalance)}`;
+  const stampColor = isPaidFull ? "#aaff00" : "#ff7a3d";
+
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+<title>Receipt ${receiptNum}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#fff;color:#111;font-family:'DM Mono',monospace;padding:40px;max-width:560px;margin:0 auto;font-size:12px}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:36px;padding-bottom:20px;border-bottom:2px solid #111}
+  .brand{font-size:18px;font-weight:700;letter-spacing:-0.5px}
+  .brand-sub{font-size:9px;color:#555;margin-top:4px;line-height:1.6}
+  .doc-meta{text-align:right}
+  .doc-type{font-size:20px;font-weight:700;letter-spacing:2px}
+  .doc-num{font-size:10px;color:#555;margin-top:4px}
+  .section{margin-bottom:20px}
+  .label{font-size:9px;letter-spacing:2px;color:#888;margin-bottom:3px}
+  .value{font-size:12px;font-weight:500;line-height:1.6}
+  .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:11px}
+  .row.highlight{font-size:14px;font-weight:700;border-bottom:2px solid #111;padding:12px 0}
+  .stamp{display:inline-block;border:3px solid ${stampColor};color:${stampColor};padding:10px 24px;font-size:13px;font-weight:700;letter-spacing:2px;transform:rotate(-4deg);opacity:0.85;white-space:pre-line;text-align:center;line-height:1.4}
+  .stamp-wrap{text-align:center;margin:28px 0}
+  .footer{display:flex;justify-content:space-between;margin-top:36px;padding-top:16px;border-top:1px solid #ddd;font-size:10px}
+  .sig-line{border-top:1px solid #111;width:140px;margin-bottom:5px;margin-top:36px}
+  .thanks{text-align:center;font-size:11px;color:#555;margin-top:20px;font-style:italic}
+  @media print{body{padding:20px}}
+</style></head><body>
+<div class="header">
+  <div>
+    <div class="brand">Solomantalgo Web Design</div>
+    <div class="brand-sub">Kampala, Uganda<br/>solomantalgo.com</div>
+  </div>
+  <div class="doc-meta">
+    <div class="doc-type">RECEIPT</div>
+    <div class="doc-num">${receiptNum}</div>
+    <div class="doc-num" style="margin-top:6px">Ref Invoice: ${invoiceNum}</div>
+    <div class="doc-num">Date: ${payment.date}</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">RECEIVED FROM</div>
+  <div class="value">${client.name}</div>
+  <div class="value" style="font-size:10px;color:#555">${client.business || ""}</div>
+</div>
+
+<div class="row"><span>Invoice Total</span><span>${fmtUGX(total)}</span></div>
+<div class="row"><span>Previously Paid</span><span>${fmtUGX(paidBeforeThis)}</span></div>
+<div class="row highlight"><span>AMOUNT RECEIVED</span><span>${fmtUGX(payment.amount)}</span></div>
+<div class="row" style="font-weight:600;color:${isPaidFull ? "#aaff00" : "#ff7a3d"}"><span>REMAINING BALANCE</span><span>${fmtUGX(Math.max(0, runningBalance))}</span></div>
+
+<div class="section" style="margin-top:16px">
+  <div class="label">PAYMENT METHOD</div>
+  <div class="value">${payment.note || "—"}</div>
+</div>
+
+<div class="stamp-wrap"><div class="stamp">${stamp}</div></div>
+
+<div class="footer">
+  <div></div>
+  <div>
+    <div class="sig-line"></div>
+    <div><b>Solomon Kisense</b></div>
+    <div style="color:#555">Owner, Solomantalgo Web Design</div>
+  </div>
+</div>
+
+<div class="thanks">Thank you for your business.</div>
+<script>window.onload=()=>{window.print();}</script>
+</body></html>`;
+
+  const win = window.open("", "_blank", "width=640,height=800");
+  if (win) { win.document.write(html); win.document.close(); }
+}
+
 // ── Client Card
 function ClientCard({ client: c, date, onUpdate, highlight }) {
   const [exp, setExp] = useState(false);
@@ -1312,19 +1522,38 @@ function OngoingView({ clients, onUpdate }) {
 }
 
 // ── Payments View
-function PaymentsView({ clients, onUpdate }) {
+function PaymentsView({ clients, onUpdate, expenses, onAddExpense }) {
+  const [showExpenseForm, setShowExpenseForm] = useState(false);
+  const [showExpenseList, setShowExpenseList] = useState(false);
+  const [expAmt, setExpAmt] = useState("");
+  const [expNote, setExpNote] = useState("");
+
   const allClients = Object.entries(clients).flatMap(([date, arr]) =>
     arr.map(c => ({ ...c, date }))
   );
 
   const ongoingClients = allClients.filter(c => c.status === "ongoing");
   const totalInvoiced = ongoingClients.reduce((sum, c) => sum + (Number(c.totalAgreedPrice) || 0), 0);
-  const totalCollected = allClients.reduce((sum, c) => sum + (Number(c.amountPaid) || 0), 0);
-  const totalOutstanding = totalInvoiced - ongoingClients.reduce((sum, c) => sum + (Number(c.amountPaid) || 0), 0);
+  const totalCollected = ongoingClients.reduce((sum, c) => sum + (Number(c.amountPaid) || 0), 0);
+  const totalOutstanding = totalInvoiced - totalCollected;
+  const totalSpent = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const cashInHand = totalCollected - totalSpent;
+
+  const owesBalance = ongoingClients.filter(c => (c.totalAgreedPrice || 0) - (c.amountPaid || 0) > 0);
+  const paidFull = ongoingClients.filter(c => (c.totalAgreedPrice || 0) - (c.amountPaid || 0) <= 0);
+
+  const handleAddExpense = () => {
+    const amt = Number(expAmt) || 0;
+    if (amt <= 0) return alert("Please enter a valid amount.");
+    if (!expNote.trim()) return alert("Please enter a description.");
+    onAddExpense({ amount: amt, note: expNote.trim() });
+    setExpAmt(""); setExpNote(""); setShowExpenseForm(false);
+  };
 
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+      {/* Top 2x2 Grid: Invoiced, Collected, Spent, Cash in Hand */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
         <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
           <div style={{ fontSize: 9, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TOTAL INVOICED</div>
           <div style={{ fontSize: 16, fontWeight: "bold", color: "#fff" }}>{totalInvoiced.toLocaleString()} <span style={{ fontSize: 9, color: DIM }}>UGX</span></div>
@@ -1333,27 +1562,108 @@ function PaymentsView({ clients, onUpdate }) {
           <div style={{ fontSize: 9, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TOTAL COLLECTED</div>
           <div style={{ fontSize: 16, fontWeight: "bold", color: LIME }}>{totalCollected.toLocaleString()} <span style={{ fontSize: 9, color: DIM }}>UGX</span></div>
         </div>
+        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
+          <div style={{ fontSize: 9, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TOTAL SPENT / USED</div>
+          <div style={{ fontSize: 16, fontWeight: "bold", color: WARM_C }}>{totalSpent.toLocaleString()} <span style={{ fontSize: 9, color: DIM }}>UGX</span></div>
+        </div>
+        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12, borderTop: `2px solid ${LIME}` }}>
+          <div style={{ fontSize: 9, color: LIME, letterSpacing: 1, marginBottom: 4, fontWeight: "bold" }}>💵 CASH IN HAND</div>
+          <div style={{ fontSize: 16, fontWeight: "bold", color: cashInHand >= 0 ? LIME : WARM_C }}>{cashInHand.toLocaleString()} <span style={{ fontSize: 9, color: DIM }}>UGX</span></div>
+        </div>
       </div>
-      
-      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14, marginBottom: 20 }}>
-        <div style={{ fontSize: 9, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TOTAL OUTSTANDING</div>
+
+      {/* Outstanding Banner */}
+      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14, marginBottom: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <div style={{ fontSize: 20, fontWeight: "bold", color: totalOutstanding > 0 ? WARM_C : LIME }}>
-            {totalOutstanding.toLocaleString()} <span style={{ fontSize: 10, color: DIM }}>UGX</span>
+          <div>
+            <div style={{ fontSize: 9, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TOTAL OUTSTANDING</div>
+            <div style={{ fontSize: 20, fontWeight: "bold", color: totalOutstanding > 0 ? WARM_C : LIME }}>
+              {totalOutstanding.toLocaleString()} <span style={{ fontSize: 10, color: DIM }}>UGX</span>
+            </div>
           </div>
-          <div style={{ fontSize: 10, color: DIM }}>
-            {ongoingClients.length} Active Accounts
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 10, color: DIM }}>{owesBalance.length} owe balance</div>
+            <div style={{ fontSize: 10, color: DIM, marginTop: 2 }}>{paidFull.length} paid in full</div>
           </div>
         </div>
       </div>
 
-      <div style={{ fontSize: 10, color: DIM, letterSpacing: 2, marginBottom: 12 }}>CLIENT BALANCES</div>
-      {ongoingClients.length === 0 ? (
+      {/* Expense Section */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontSize: 10, color: DIM, letterSpacing: 2 }}>EXPENSE LEDGER</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {expenses.length > 0 && (
+              <button onClick={() => setShowExpenseList(v => !v)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: DIM, borderRadius: 6, padding: "5px 10px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+                {showExpenseList ? "Hide" : `View ${expenses.length}`}
+              </button>
+            )}
+            <button onClick={() => setShowExpenseForm(v => !v)} style={{ background: SURF2, border: `1px solid ${WARM_C}44`, color: WARM_C, borderRadius: 6, padding: "5px 10px", fontSize: 9, cursor: "pointer", fontFamily: FONT, fontWeight: "bold" }}>
+              💸 {showExpenseForm ? "Cancel" : "Log Expense"}
+            </button>
+          </div>
+        </div>
+
+        {showExpenseForm && (
+          <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>AMOUNT SPENT (UGX)</div>
+                <input type="number" value={expAmt} onChange={e => setExpAmt(e.target.value)} placeholder="e.g. 15000" style={{ width: "100%", background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT, boxSizing: "border-box" }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>DESCRIPTION (What it was for)</div>
+                <input type="text" value={expNote} onChange={e => setExpNote(e.target.value)} placeholder="e.g. Fuel, Airtime, Flyer printing..." style={{ width: "100%", background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT, boxSizing: "border-box" }} />
+              </div>
+              <button onClick={handleAddExpense} style={{ background: WARM_C, color: "#000", border: "none", borderRadius: 6, padding: "9px 0", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>
+                Save Expense
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showExpenseList && expenses.length > 0 && (
+          <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {[...expenses].reverse().map(e => (
+                <div key={e.id} style={{ display: "flex", justifyContent: "space-between", background: SURF2, borderRadius: 4, padding: "6px 10px", fontSize: 10 }}>
+                  <span style={{ color: DIM }}>{e.date} · <span style={{ color: "#fff" }}>{e.note}</span></span>
+                  <span style={{ color: WARM_C, fontWeight: "bold" }}>-{Number(e.amount).toLocaleString()} UGX</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Owes Balance Section */}
+      {owesBalance.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 10, color: WARM_C, letterSpacing: 2, marginBottom: 10, fontWeight: "bold", display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: WARM_C, display: "inline-block" }} />
+            OUTSTANDING ACCOUNTS ({owesBalance.length})
+          </div>
+          {owesBalance.map(c => (
+            <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} />
+          ))}
+        </div>
+      )}
+
+      {/* Paid In Full Section */}
+      {paidFull.length > 0 && (
+        <div>
+          <div style={{ fontSize: 10, color: LIME, letterSpacing: 2, marginBottom: 10, fontWeight: "bold", display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: LIME, display: "inline-block" }} />
+            CLEARED ACCOUNTS — PAID IN FULL ({paidFull.length})
+          </div>
+          {paidFull.map(c => (
+            <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} />
+          ))}
+        </div>
+      )}
+
+      {ongoingClients.length === 0 && (
         <Empty text="No payments recorded yet. Convert a lead to ongoing to begin tracking payments." />
-      ) : (
-        ongoingClients.map(c => (
-          <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} />
-        ))
       )}
     </div>
   );
