@@ -1149,6 +1149,14 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
             }}>
               ↩ Make Lead
             </ABtn>
+            <ABtn color={SURF2} tc={COLD_C} onClick={() => printInvoice({ ...c, date })}>
+              🖨 Invoice
+            </ABtn>
+            {c.payments && c.payments.length > 0 && c.payments.map(p => (
+              <ABtn key={p.id} color={SURF2} tc={LIME} onClick={() => printReceipt({ ...c, date }, p)}>
+                🧾 Receipt
+              </ABtn>
+            ))}
           </>
         )}
       </div>
