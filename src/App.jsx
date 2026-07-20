@@ -25,6 +25,7 @@ const WARM_C = "#ff7a3d";
 const COLD_C = "#4da6ff";
 const GREEN_WA = "#25D366";
 const FONT = "'DM Mono', 'Courier New', monospace";
+const BODY_FONT = "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 const PACKAGE_TEMPLATES = [
   {
@@ -506,7 +507,7 @@ export default function App() {
   const sortedDates = Object.keys(data.clients).sort((a, b) => b.localeCompare(a));
 
   return (
-    <div style={{ background: BG, minHeight: "100vh", color: "#fff", fontFamily: FONT, maxWidth: 480, margin: "0 auto", position: "relative" }}>
+    <div style={{ background: BG, minHeight: "100vh", color: "#fff", fontFamily: BODY_FONT, maxWidth: 480, margin: "0 auto", position: "relative" }}>
 
       {/* Notification Banner */}
       {banner && (
@@ -958,6 +959,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
   const [exp, setExp] = useState(false);
   const [showDocs, setShowDocs] = useState(false);
   const [showPaidServices, setShowPaidServices] = useState(false);
+  const [showActions, setShowActions] = useState(false);
   const [isWinForm, setIsWinForm] = useState(false);
   const [dealPrice, setDealPrice] = useState(c.quotedPrice ? c.quotedPrice.replace(/\D/g, "") : "");
   const [deposit, setDeposit] = useState("0");
@@ -1167,6 +1169,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
   const paidServiceCount = services.filter(s => serviceTotal(c, s) - servicePaid(c, s.id) <= 0).length;
   const totals = clientTotals(c);
   const remainingBalance = isLead ? 0 : totals.balance;
+  const nextDueDate = services.map(s => s.dueDate).filter(Boolean).sort()[0] || c.followUpDate || "";
 
   return (
     <div style={{
@@ -1175,6 +1178,34 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
       borderLeft: accentColor ? `3px solid ${accentColor}` : (isHighlighted ? `1px solid ${LIME}66` : `1px solid ${BORDER}`),
       boxShadow: isHighlighted ? `0 0 16px ${LIME}22` : "none"
     }}>
+      <div style={{ padding: "13px 14px 10px", cursor: "pointer" }} onClick={() => setExp(e => !e)}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, fontFamily: BODY_FONT, letterSpacing: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</div>
+            <div style={{ fontSize: 11, color: DIM, fontFamily: BODY_FONT, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.business || "No business"}{c.businessType ? ` · ${c.businessType}` : ""}</div>
+          </div>
+          <div style={{ textAlign: "right", flexShrink: 0 }}>
+            {!isLead ? (
+              <>
+                <div style={{ fontSize: 12, color: remainingBalance > 0 ? WARM_C : LIME, fontWeight: "bold" }}>{remainingBalance > 0 ? fmtUGX(remainingBalance) : "Paid"}</div>
+                <div style={{ fontSize: 9, color: DIM, marginTop: 3 }}>{nextDueDate ? fmtDate(nextDueDate) : `${services.length} service${services.length !== 1 ? "s" : ""}`}</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 10, color: c.temp === "warm" ? WARM_C : COLD_C, fontWeight: "bold", textTransform: "uppercase" }}>{c.temp}</div>
+                <div style={{ fontSize: 9, color: isOverdue ? WARM_C : DIM, marginTop: 3 }}>{c.followUpDate ? fmtDate(c.followUpDate) : "No timeline"}</div>
+              </>
+            )}
+          </div>
+        </div>
+        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 9, color: DIM }}>{exp ? "Close" : "Open"}</span>
+          {isHighlighted && <span style={{ fontSize: 8, color: WARM_C, fontWeight: "bold" }}>FOLLOW-UP DUE</span>}
+        </div>
+      </div>
+
+      {exp && (
+      <>
       {/* Top */}
       <div style={{ padding: "12px 14px 8px", cursor: "pointer" }} onClick={() => setExp(e => !e)}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -1239,6 +1270,8 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
           )}
         </div>
       </div>
+      </>
+      )}
 
       {/* Inline Forms */}
       {isWinForm && (
@@ -1279,7 +1312,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
       )}
 
       {isPaymentForm && (
-        <div style={{ padding: 14, background: SURF2, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
+        <div style={{ position: "fixed", left: "50%", bottom: 14, transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 452, maxHeight: "78vh", overflowY: "auto", zIndex: 140, padding: 14, background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 12, boxShadow: "0 18px 60px rgba(0,0,0,0.65)" }}>
           <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>💰 Record Client Payment</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div>
@@ -1334,7 +1367,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
       )}
 
       {isEditDealForm && (
-        <div style={{ padding: 14, background: SURF2, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
+        <div style={{ position: "fixed", left: "50%", bottom: 14, transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 452, maxHeight: "78vh", overflowY: "auto", zIndex: 140, padding: 14, background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 12, boxShadow: "0 18px 60px rgba(0,0,0,0.65)" }}>
           <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>✏️ Edit Agreed Deal Price</div>
           <div style={{ display: "flex", gap: 6 }}>
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1417,6 +1450,11 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
             <ABtn color={LIME} tc="#000" onClick={() => openPaymentForm()}>
               💰 Record Payment
             </ABtn>
+            <ABtn color={SURF2} tc={DIM} onClick={() => setShowActions(v => !v)}>
+              {showActions ? "Hide Actions" : "Actions"}
+            </ABtn>
+            {showActions && (
+              <>
             <ABtn color={SURF2} tc={COLD_C} onClick={() => setIsServiceForm(true)}>
               + Service
             </ABtn>
@@ -1433,6 +1471,8 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
             }}>
               ↩ Make Lead
             </ABtn>
+              </>
+            )}
           </>
         )}
       </div>
@@ -1440,6 +1480,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
       {/* Expanded Notes & Services */}
       {exp && (c.notes || c.servicesToOffer || (!isLead && (services.length > 0 || (c.payments && c.payments.length > 0)))) && (
         <div style={{ padding: "10px 14px 12px", borderTop: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 8 }}>OVERVIEW</div>
           {c.servicesToOffer && (
             <div style={{ marginBottom: (c.notes || (!isLead && c.payments && c.payments.length > 0)) ? 12 : 0 }}>
               <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 5 }}>SERVICES TO OFFER</div>
@@ -1464,7 +1505,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
           {!isLead && services.length > 0 && (
             <div style={{ marginBottom: (c.payments && c.payments.length > 0) ? 12 : 0 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <div style={{ fontSize: 9, color: DIM, letterSpacing: 2 }}>SERVICES / ORDERS</div>
+                <div style={{ fontSize: 9, color: DIM, letterSpacing: 2 }}>SERVICES</div>
                 <button onClick={() => setShowDocs(v => !v)} style={{ background: BG, border: `1px solid ${BORDER}`, color: showDocs ? LIME : DIM, borderRadius: 5, padding: "5px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
                   {showDocs ? "Hide documents" : "Documents"}
                 </button>
@@ -1510,7 +1551,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
                       </button>
                       {servicePayments(c, s.id).length > 0 && (
                         <div style={{ marginTop: 9, borderTop: `1px solid ${BORDER}`, paddingTop: 7 }}>
-                          <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 5 }}>PAYMENTS FOR THIS SERVICE</div>
+                          <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 5 }}>PAYMENTS</div>
                           {servicePayments(c, s.id).map(p => (
                             <div key={p.id} style={{ display: "grid", gridTemplateColumns: showDocs ? "1fr auto auto auto" : "1fr auto auto", gap: 8, alignItems: "center", background: BG, borderRadius: 4, padding: "5px 8px", fontSize: 10, marginTop: 4 }}>
                               <span style={{ color: DIM }}>{p.date} · <span style={{ color: "#fff" }}>{p.note}</span></span>
@@ -1922,6 +1963,7 @@ function ServiceAccountList({ accounts, onUpdate, tone, label }) {
 
 function GroupedServiceAccountList({ accounts, onUpdate, tone, label }) {
   const [openClientIds, setOpenClientIds] = useState({});
+  const [openServiceIds, setOpenServiceIds] = useState({});
   const sortedAccounts = [...accounts].sort((a, b) => {
     const ad = a.dueDate || a.service.createdAt || a.client.date || "";
     const bd = b.dueDate || b.service.createdAt || b.client.date || "";
