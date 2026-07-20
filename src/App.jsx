@@ -113,6 +113,7 @@ const CLOUD_KEY_KEY = `${CLOUD_CONFIG_KEY}:key`;
 const REMOTE_TABLE = "sales_os_state";
 const REMOTE_ROW_ID = "primary";
 const DEFAULT_DATA = { clients: {}, target: 5 };
+const BACKUP_KEY = `${KEY}:backup`;
 const DEFAULT_SUPABASE_URL = "https://ihjvvnnpyvdljzyfzclq.supabase.co";
 const DEFAULT_SUPABASE_KEY = "sb_publishable_3CTKaylVnQl3sQefNN5eZg_QmUVPcpt";
 let supabaseClient = null;
@@ -136,10 +137,43 @@ function getPending(clients) {
   return Object.entries(clients).flatMap(([date, arr]) =>
     arr.filter(c => {
       const isLead = c.status !== "ongoing";
-      const hasExpiredFollowUp = c.followUpDate && today >= c.followUpDate;
-      return isLead && hasExpiredFollowUp;
+      const timelineReached = c.followUpDate && today >= c.followUpDate;
+      const undatedOlderLead = !c.followUpDate && c.followUp === "needed" && date < today;
+      return isLead && (timelineReached || undatedOlderLead);
     }).map(c => ({ ...c, date }))
   );
+}
+
+function countClients(data) {
+  return Object.values(data?.clients || {}).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+}
+
+function touchData(data) {
+  return normalizeData({
+    ...data,
+    meta: {
+      ...(data?.meta || {}),
+      updatedAt: new Date().toISOString(),
+    },
+  });
+}
+
+function makeServiceFromClient(c) {
+  const agreed = Number(c.totalAgreedPrice) || Number(String(c.quotedPrice || "").replace(/\D/g, "")) || 0;
+  const service = {
+    id: `svc-${c.id || Date.now()}`,
+    title: c.package && c.package !== "Undecided" ? c.package : (c.servicesToOffer ? "Client Service" : "Web Design Service"),
+    categories: c.servicesToOffer || "",
+    items: splitServiceItems(c.servicesToOffer).map(title => ({ id: `item-${Date.now()}-${title}`, title, price: 0 })),
+    agreedPrice: agreed,
+    status: c.status === "ongoing" ? "active" : "quoted",
+    createdAt: c.date || todayStr(),
+  };
+  return { service };
+}
+
+function splitServiceItems(value) {
+  return String(value || "").split(",").map(s => s.trim()).filter(Boolean);
 }
 
 function normalizeData(d) {
@@ -169,7 +203,24 @@ function normalizeData(d) {
           hasWhatsApp: c.hasWhatsApp || "yes",
           totalAgreedPrice: c.totalAgreedPrice || "",
           amountPaid: c.amountPaid ?? 0,
-          payments: c.payments || []
+          payments: (c.payments || []).map(p => ({ ...p, amount: Number(p.amount) || 0, serviceId: p.serviceId || "" })),
+          services: Array.isArray(c.services) && c.services.length
+            ? c.services.map(s => ({
+              id: s.id || `svc-${c.id || Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              title: s.title || s.name || "Client Service",
+              categories: s.categories || s.description || c.servicesToOffer || "",
+              items: Array.isArray(s.items) && s.items.length
+                ? s.items.map(item => ({
+                  id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                  title: item.title || item.name || "Service item",
+                  price: Number(item.price ?? item.amount) || 0,
+                }))
+                : splitServiceItems(s.categories || s.description || "").map(title => ({ id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, title, price: 0 })),
+              agreedPrice: Number(s.agreedPrice ?? s.price ?? c.totalAgreedPrice) || 0,
+              status: s.status || "active",
+              createdAt: s.createdAt || date,
+            }))
+            : (c.status === "ongoing" || c.totalAgreedPrice || c.amountPaid ? [makeServiceFromClient({ ...c, date }).service] : []),
         }));
       }
     }
@@ -178,7 +229,7 @@ function normalizeData(d) {
     ...source,
     clients: normalizedClients,
     target: source.target ?? 5,
-    expenses: source.expenses || [],
+    expenses: (source.expenses || []).map(e => ({ id: e.id || Date.now().toString(), date: e.date || todayStr(), amount: Number(e.amount) || 0, note: e.note || "" })),
     meta: {
       ...(source.meta || {}),
       updatedAt: source.meta?.updatedAt || new Date().toISOString(),
@@ -256,7 +307,10 @@ async function load() {
   catch { return null; }
 }
 async function persist(data) {
-  try { await window.storage.set(KEY, JSON.stringify(normalizeData(data))); } catch { }
+  try { await window.storage.set(KEY, JSON.stringify(normalizeData(data))); } catch { /* local storage may be unavailable */ }
+}
+async function persistBackup(data) {
+  try { await window.storage.set(BACKUP_KEY, JSON.stringify(normalizeData(data))); } catch { /* local storage may be unavailable */ }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -297,11 +351,15 @@ export default function App() {
         const remote = remoteResult.data;
         const localTs = new Date(base.meta?.updatedAt || 0).getTime();
         const remoteTs = new Date(remote.meta?.updatedAt || 0).getTime();
-        const winner = remoteTs >= localTs ? remote : base;
+        const localCount = countClients(base);
+        const remoteCount = countClients(remote);
+        const winner = remoteCount === 0 && localCount > 0 ? base : (remoteTs >= localTs ? remote : base);
+        if (winner === remote && localCount > 0) await persistBackup(base);
         setData(winner);
+        await persist(winner);
         setCloudStatus("Cloud connected");
         if (remoteTs !== localTs) {
-          setBanner(remoteTs >= localTs ? "Loaded the latest cloud backup." : "Loaded your local changes. Use Sync to push them.");
+          setBanner(winner === remote ? "Loaded the latest cloud backup. Local backup was kept." : "Loaded your local changes. Use Sync to push them.");
         }
       } else {
         setCloudStatus(remoteResult.reason || "Cloud ready");
@@ -322,8 +380,11 @@ export default function App() {
         const remote = remoteResult.data;
         const localTs = new Date(data.meta?.updatedAt || 0).getTime();
         const remoteTs = new Date(remote.meta?.updatedAt || 0).getTime();
+        const localCount = countClients(data);
+        const remoteCount = countClients(remote);
         
-        if (remoteTs > localTs) {
+        if (remoteTs > localTs && !(remoteCount === 0 && localCount > 0)) {
+          if (localCount > 0) await persistBackup(data);
           setData(remote);
           await persist(remote);
           setCloudStatus("Cloud connected");
@@ -344,7 +405,7 @@ export default function App() {
   }, [cloudConfig, data]);
 
   const save = useCallback(async (next) => {
-    const normalized = normalizeData(next);
+    const normalized = touchData(next);
     setData(normalized);
     await persist(normalized);
 
@@ -376,7 +437,8 @@ export default function App() {
 
     const remoteResult = await loadRemote(cloudConfig);
     const remote = remoteResult.ok ? remoteResult.data : null;
-    const winner = remote && new Date(remote.meta?.updatedAt || 0).getTime() > new Date(local.meta?.updatedAt || 0).getTime() ? remote : local;
+    const winner = remote && countClients(remote) > 0 && new Date(remote.meta?.updatedAt || 0).getTime() > new Date(local.meta?.updatedAt || 0).getTime() ? remote : local;
+    if (winner === remote && countClients(local) > 0) await persistBackup(local);
     setData(winner);
     await persist(winner);
 
@@ -403,6 +465,10 @@ export default function App() {
 
   const addExpense = (exp) => {
     const next = { ...data, expenses: [...(data.expenses || []), { id: Date.now().toString(), date: todayStr(), ...exp }] };
+    void save(next);
+  };
+  const updateExpense = (id, updates) => {
+    const next = { ...data, expenses: (data.expenses || []).map(e => e.id === id ? { ...e, ...updates } : e) };
     void save(next);
   };
 
@@ -451,23 +517,33 @@ export default function App() {
             ↻ Sync now
           </button>
         </div>
-        <div style={{ display: "flex", overflowX: "auto", whiteSpace: "nowrap", gap: 14, paddingBottom: 6, scrollbarWidth: "none", msOverflowStyle: "none" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 10 }}>
           {[
-            { k: "today", l: "Today" },
-            { k: "history", l: "History" },
-            { k: "followups", l: pending.length ? `Follow-Ups (${pending.length})` : "Follow-Ups" },
-            { k: "ongoing", l: "Ongoing" },
-            { k: "payments", l: "Payments" },
-            { k: "stats", l: "Stats" },
-            { k: "flow", l: "Flow" },
-          ].map(({ k, l }) => (
-            <button key={k} onClick={() => setTab(k)} style={{
-              padding: "10px 4px", background: "none", border: "none",
-              borderBottom: tab === k ? `2px solid ${LIME}` : "2px solid transparent",
-              color: tab === k ? LIME : DIM, fontSize: 10, letterSpacing: 1,
-              textTransform: "uppercase", cursor: "pointer", fontFamily: FONT, transition: "all 0.15s",
-              flexShrink: 0
-            }}>{l}</button>
+            { label: "WORK", items: [
+              { k: "today", l: "Today" },
+              { k: "followups", l: pending.length ? `Due (${pending.length})` : "Due" },
+              { k: "ongoing", l: "Ongoing" },
+            ] },
+            { label: "RECORDS", items: [
+              { k: "payments", l: "Money" },
+              { k: "stats", l: "Stats" },
+              { k: "history", l: "History" },
+              { k: "flow", l: "Guide" },
+            ] },
+          ].map(group => (
+            <div key={group.label}>
+              <div style={{ fontSize: 8, color: DIM, letterSpacing: 2, marginBottom: 5 }}>{group.label}</div>
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(${group.items.length}, 1fr)`, gap: 6 }}>
+                {group.items.map(({ k, l }) => (
+                  <button key={k} onClick={() => setTab(k)} style={{
+                    padding: "8px 6px", background: tab === k ? LIME + "18" : SURF2, border: `1px solid ${tab === k ? LIME + "66" : BORDER}`,
+                    borderRadius: 6, color: tab === k ? LIME : DIM, fontSize: 10, letterSpacing: 0.5,
+                    textTransform: "uppercase", cursor: "pointer", fontFamily: FONT, transition: "all 0.15s",
+                    minWidth: 0
+                  }}>{l}</button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -478,7 +554,7 @@ export default function App() {
         {tab === "history" && <HistoryView clients={data.clients} sortedDates={sortedDates} today={today} selected={histSel} onSelect={setHistSel} onUpdate={updateClient} />}
         {tab === "followups" && <FollowupsView pending={pending} onUpdate={updateClient} />}
         {tab === "ongoing" && <OngoingView clients={data.clients} onUpdate={updateClient} />}
-        {tab === "payments" && <PaymentsView clients={data.clients} onUpdate={updateClient} expenses={data.expenses || []} onAddExpense={addExpense} />}
+        {tab === "payments" && <PaymentsView clients={data.clients} onUpdate={updateClient} expenses={data.expenses || []} onAddExpense={addExpense} onUpdateExpense={updateExpense} />}
         {tab === "stats" && <StatsView clients={data.clients} target={data.target} />}
         {tab === "flow" && <SystemFlowView />}
       </div>
@@ -623,9 +699,9 @@ function FollowupsView({ pending, onUpdate }) {
 }
 
 // ── Print Helpers
-function getInvoiceNum(client) {
+function getInvoiceNum(client, service) {
   const year = client.date ? client.date.split("-")[0] : new Date().getFullYear();
-  const seq = String(client.id).slice(-3).replace(/\D/g, "0").padStart(3, "0");
+  const seq = String(service?.id || client.id).slice(-3).replace(/\D/g, "0").padStart(3, "0");
   return `SWD-${year}-${seq}`;
 }
 function getReceiptNum(payment) {
@@ -636,19 +712,43 @@ function getReceiptNum(payment) {
 function fmtUGX(n) {
   return `UGX ${Number(n || 0).toLocaleString()}`;
 }
+function getClientServices(client) {
+  return Array.isArray(client.services) && client.services.length ? client.services : [makeServiceFromClient(client).service];
+}
+function servicePayments(client, serviceId) {
+  const payments = client.payments || [];
+  return serviceId ? payments.filter(p => p.serviceId === serviceId || (!p.serviceId && serviceId === getClientServices(client)[0]?.id)) : payments;
+}
+function servicePaid(client, serviceId) {
+  return servicePayments(client, serviceId).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+}
+function serviceTotal(client, service) {
+  const itemTotal = Array.isArray(service?.items) ? service.items.reduce((sum, item) => sum + (Number(item.price) || 0), 0) : 0;
+  if (itemTotal > 0) return itemTotal;
+  return Number(service?.agreedPrice) || Number(client.totalAgreedPrice) || 0;
+}
+function clientTotals(client) {
+  const services = getClientServices(client);
+  const total = services.reduce((sum, s) => sum + serviceTotal(client, s), 0);
+  const paid = (client.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  return { total, paid, balance: total - paid };
+}
 function dueDateStr(issueDate) {
   const d = issueDate ? new Date(issueDate + "T00:00:00") : new Date();
   d.setDate(d.getDate() + 14);
   return d.toISOString().split("T")[0];
 }
 
-function printInvoice(client) {
-  const invoiceNum = getInvoiceNum(client);
-  const issueDate = client.date || todayStr();
+function printInvoice(client, service = null) {
+  const activeService = service || getClientServices(client)[0];
+  const invoiceNum = getInvoiceNum(client, activeService);
+  const issueDate = activeService?.createdAt || client.date || todayStr();
   const dueDate = dueDateStr(issueDate);
-  const services = (client.servicesToOffer || "").split(",").map(s => s.trim()).filter(Boolean);
-  const total = Number(client.totalAgreedPrice) || 0;
-  const paid = Number(client.amountPaid) || 0;
+  const invoiceItems = Array.isArray(activeService?.items) && activeService.items.length
+    ? activeService.items
+    : splitServiceItems(activeService?.categories || client.servicesToOffer || activeService?.title).map(title => ({ title, price: 0 }));
+  const total = serviceTotal(client, activeService);
+  const paid = servicePaid(client, activeService?.id);
   const balance = total - paid;
   const stamp = paid === 0 ? "AWAITING PAYMENT" : paid >= total ? "PAID IN FULL" : "PARTIAL PAYMENT RECEIVED";
   const stampColor = paid >= total ? "#aaff00" : paid > 0 ? "#ff7a3d" : "#ff4444";
@@ -707,9 +807,9 @@ function printInvoice(client) {
 <table>
   <thead><tr><th>#</th><th>SERVICE / DESCRIPTION</th><th style="text-align:right">AMOUNT</th></tr></thead>
   <tbody>
-    ${services.length > 1
-      ? services.map((s, i) => `<tr><td>${i + 1}</td><td>${s}</td><td style="text-align:right">—</td></tr>`).join("")
-      : `<tr><td>1</td><td>${client.servicesToOffer || "Web Design Services"}</td><td style="text-align:right">${fmtUGX(total)}</td></tr>`
+    ${invoiceItems.length > 1 || invoiceItems.some(item => Number(item.price) > 0)
+      ? invoiceItems.map((item, i) => `<tr><td>${i + 1}</td><td>${item.title}</td><td style="text-align:right">${Number(item.price) > 0 ? fmtUGX(item.price) : "Included"}</td></tr>`).join("")
+      : `<tr><td>1</td><td>${activeService?.title || client.servicesToOffer || "Web Design Services"}</td><td style="text-align:right">${fmtUGX(total)}</td></tr>`
     }
   </tbody>
 </table>
@@ -747,11 +847,12 @@ function printInvoice(client) {
 }
 
 function printReceipt(client, payment) {
-  const invoiceNum = getInvoiceNum(client);
+  const service = getClientServices(client).find(s => s.id === payment.serviceId) || getClientServices(client)[0];
+  const invoiceNum = getInvoiceNum(client, service);
   const receiptNum = getReceiptNum(payment);
-  const total = Number(client.totalAgreedPrice) || 0;
+  const total = serviceTotal(client, service);
   // Calculate running balance AFTER this payment
-  const paymentsUpTo = (client.payments || []);
+  const paymentsUpTo = servicePayments(client, service?.id);
   const paidBeforeThis = paymentsUpTo
     .filter(p => p.id !== payment.id && p.date <= payment.date)
     .reduce((s, p) => s + Number(p.amount), 0);
@@ -845,6 +946,10 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
   const [isPaymentForm, setIsPaymentForm] = useState(false);
   const [paymentAmt, setPaymentAmt] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
+  const [paymentServiceId, setPaymentServiceId] = useState("");
+  const [isServiceForm, setIsServiceForm] = useState(false);
+  const [serviceTitle, setServiceTitle] = useState("");
+  const [serviceItems, setServiceItems] = useState([{ id: "draft-1", title: "", price: "" }]);
 
   const [isEditDealForm, setIsEditDealForm] = useState(false);
   const [editedPrice, setEditedPrice] = useState(c.totalAgreedPrice || "");
@@ -888,14 +993,24 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
     const parsedDeposit = Number(deposit) || 0;
     if (parsedPrice <= 0) return alert("Please enter a valid agreed price.");
     
+    const serviceId = `svc-${Date.now()}`;
+    const service = {
+      id: serviceId,
+      title: c.package && c.package !== "Undecided" ? c.package : "Client Service",
+      categories: c.servicesToOffer || "",
+      agreedPrice: parsedPrice,
+      status: "active",
+      createdAt: today,
+    };
     const initialPayments = parsedDeposit > 0 
-      ? [{ id: Date.now().toString(), date: today, amount: parsedDeposit, note: "Initial Deposit" }]
+      ? [{ id: Date.now().toString(), date: today, amount: parsedDeposit, note: "Initial Deposit", serviceId }]
       : [];
 
     onUpdate(c.id, {
       status: "ongoing",
       totalAgreedPrice: parsedPrice,
       amountPaid: parsedDeposit,
+      services: [service],
       payments: initialPayments,
       followUp: "done"
     });
@@ -910,7 +1025,8 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
       id: Date.now().toString(),
       date: today,
       amount: amt,
-      note: paymentNote.trim() || "Payment"
+      note: paymentNote.trim() || "Payment",
+      serviceId: paymentServiceId || getClientServices(c)[0]?.id || ""
     };
 
     const newPayments = [...(c.payments || []), newPayment];
@@ -923,7 +1039,35 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
 
     setPaymentAmt("");
     setPaymentNote("");
+    setPaymentServiceId("");
     setIsPaymentForm(false);
+  };
+
+  const handleAddService = () => {
+    if (!serviceTitle.trim()) return alert("Please enter a service name.");
+    const items = serviceItems
+      .map(item => ({ id: item.id, title: item.title.trim(), price: Number(item.price) || 0 }))
+      .filter(item => item.title || item.price > 0);
+    if (!items.length) return alert("Add at least one sub-service.");
+    if (items.some(item => !item.title || item.price <= 0)) return alert("Every sub-service needs a name and valid price.");
+    const price = items.reduce((sum, item) => sum + item.price, 0);
+    const service = {
+      id: `svc-${Date.now()}`,
+      title: serviceTitle.trim(),
+      categories: items.map(item => item.title).join(", "),
+      items,
+      agreedPrice: price,
+      status: "active",
+      createdAt: today,
+    };
+    const services = [...getClientServices(c), service];
+    onUpdate(c.id, {
+      services,
+      totalAgreedPrice: services.reduce((sum, s) => sum + (Number(s.agreedPrice) || 0), 0),
+    });
+    setServiceTitle("");
+    setServiceItems([{ id: "draft-1", title: "", price: "" }]);
+    setIsServiceForm(false);
   };
 
   const handleSaveEditedPrice = () => {
@@ -933,7 +1077,9 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
     setIsEditDealForm(false);
   };
 
-  const remainingBalance = isLead ? 0 : (c.totalAgreedPrice || 0) - (c.amountPaid || 0);
+  const services = getClientServices(c);
+  const totals = clientTotals(c);
+  const remainingBalance = isLead ? 0 : totals.balance;
 
   return (
     <div style={{
@@ -1057,9 +1203,40 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
               <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>NOTES / REFERENCE</div>
               <input type="text" value={paymentNote} onChange={e => setPaymentNote(e.target.value)} placeholder="e.g. Cash, Mobile Money, Second installment" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }} />
             </div>
+            <div>
+              <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>SERVICE THIS PAYMENT BELONGS TO</div>
+              <select value={paymentServiceId || services[0]?.id || ""} onChange={e => setPaymentServiceId(e.target.value)} style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }}>
+                {services.map(s => (
+                  <option key={s.id} value={s.id}>{s.title} - {fmtUGX(serviceTotal(c, s))}</option>
+                ))}
+              </select>
+            </div>
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
               <button onClick={handleRecordPayment} style={{ flex: 1, background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>Save Payment</button>
               <button onClick={() => setIsPaymentForm(false)} style={{ flex: 1, background: BORDER, color: "#fff", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isServiceForm && (
+        <div style={{ padding: 14, background: SURF2, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
+          <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>Add Service / Order</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <input type="text" value={serviceTitle} onChange={e => setServiceTitle(e.target.value)} placeholder="Service name e.g. Website Design" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }} />
+            <div style={{ fontSize: 9, color: DIM, letterSpacing: 1 }}>SUB-SERVICES / LINE ITEMS</div>
+            {serviceItems.map((item, index) => (
+              <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 110px 32px", gap: 6 }}>
+                <input type="text" value={item.title} onChange={e => setServiceItems(items => items.map(row => row.id === item.id ? { ...row, title: e.target.value } : row))} placeholder="e.g. Landing page" style={{ minWidth: 0, background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 11, fontFamily: FONT }} />
+                <input type="number" value={item.price} onChange={e => setServiceItems(items => items.map(row => row.id === item.id ? { ...row, price: e.target.value } : row))} placeholder="Price" style={{ minWidth: 0, background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 8px", fontSize: 11, fontFamily: FONT }} />
+                <button onClick={() => setServiceItems(items => items.length === 1 ? items : items.filter(row => row.id !== item.id))} style={{ background: SURF, border: `1px solid ${BORDER}`, color: index === 0 && serviceItems.length === 1 ? DIM : WARM_C, borderRadius: 6, cursor: serviceItems.length === 1 ? "default" : "pointer", fontFamily: FONT }}>×</button>
+              </div>
+            ))}
+            <button onClick={() => setServiceItems(items => [...items, { id: `draft-${Date.now()}`, title: "", price: "" }])} style={{ alignSelf: "flex-start", background: SURF, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 6, padding: "7px 10px", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>+ Add sub-service</button>
+            <div style={{ fontSize: 10, color: DIM }}>Order total: <b style={{ color: LIME }}>{fmtUGX(serviceItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0))}</b></div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={handleAddService} style={{ flex: 1, background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>Save Service</button>
+              <button onClick={() => setIsServiceForm(false)} style={{ flex: 1, background: BORDER, color: "#fff", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
             </div>
           </div>
         </div>
@@ -1139,8 +1316,14 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
             <ABtn color={LIME} tc="#000" onClick={() => setIsPaymentForm(true)}>
               💰 Record Payment
             </ABtn>
+            <ABtn color={SURF2} tc={COLD_C} onClick={() => setIsServiceForm(true)}>
+              + Service
+            </ABtn>
             <ABtn color={SURF2} tc={LIME} onClick={() => { setEditedPrice(c.totalAgreedPrice || ""); setIsEditDealForm(true); }}>
               ✏️ Edit Deal
+            </ABtn>
+            <ABtn color={SURF2} tc={DIM} onClick={() => setExp(e => !e)}>
+              {exp ? "Hide Ledger" : "Ledger"}
             </ABtn>
             <ABtn color={SURF2} tc={DIM} onClick={() => {
               if (confirm("Move this client back to follow-up status? This will delete ongoing transaction states.")) {
@@ -1149,20 +1332,12 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
             }}>
               ↩ Make Lead
             </ABtn>
-            <ABtn color={SURF2} tc={COLD_C} onClick={() => printInvoice({ ...c, date })}>
-              🖨 Invoice
-            </ABtn>
-            {c.payments && c.payments.length > 0 && c.payments.map(p => (
-              <ABtn key={p.id} color={SURF2} tc={LIME} onClick={() => printReceipt({ ...c, date }, p)}>
-                🧾 Receipt
-              </ABtn>
-            ))}
           </>
         )}
       </div>
 
       {/* Expanded Notes & Services */}
-      {exp && (c.notes || c.servicesToOffer || (!isLead && c.payments && c.payments.length > 0)) && (
+      {exp && (c.notes || c.servicesToOffer || (!isLead && (services.length > 0 || (c.payments && c.payments.length > 0)))) && (
         <div style={{ padding: "10px 14px 12px", borderTop: `1px solid ${BORDER}` }}>
           {c.servicesToOffer && (
             <div style={{ marginBottom: (c.notes || (!isLead && c.payments && c.payments.length > 0)) ? 12 : 0 }}>
@@ -1185,14 +1360,52 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
               <div style={{ fontSize: 11, color: "#ccc", lineHeight: 1.5 }}>{c.notes}</div>
             </div>
           )}
+          {!isLead && services.length > 0 && (
+            <div style={{ marginBottom: (c.payments && c.payments.length > 0) ? 12 : 0 }}>
+              <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 6 }}>SERVICES / ORDERS</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {services.map(s => {
+                  const paid = servicePaid(c, s.id);
+                  const total = serviceTotal(c, s);
+                  const balance = total - paid;
+                  return (
+                    <div key={s.id} style={{ background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 6, padding: 9, fontSize: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
+                        <b style={{ color: "#fff" }}>{s.title}</b>
+                        <span style={{ color: balance > 0 ? WARM_C : LIME }}>{fmtUGX(balance)} left</span>
+                      </div>
+                      {Array.isArray(s.items) && s.items.length > 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 6 }}>
+                          {s.items.map(item => (
+                            <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, color: DIM }}>
+                              <span>{item.title}</span>
+                              <span>{Number(item.price) > 0 ? fmtUGX(item.price) : "Included"}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : s.categories && <div style={{ color: DIM, lineHeight: 1.5, marginBottom: 4 }}>{s.categories}</div>}
+                      <div style={{ color: DIM }}>Fee {fmtUGX(total)} · Paid {fmtUGX(paid)}</div>
+                      <button onClick={() => printInvoice({ ...c, date }, s)} style={{ marginTop: 8, background: BG, border: `1px solid ${BORDER}`, color: COLD_C, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+                        Print invoice
+                      </button>
+                      <button onClick={() => { setPaymentServiceId(s.id); setIsPaymentForm(true); }} style={{ marginTop: 8, marginLeft: 6, background: BG, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+                        Record payment
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {!isLead && c.payments && c.payments.length > 0 && (
             <div>
               <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 6 }}>TRANSACTION HISTORY</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {c.payments.map((p) => (
-                  <div key={p.id} style={{ display: "flex", justifyContent: "space-between", background: SURF2, borderRadius: 4, padding: "5px 8px", fontSize: 10 }}>
+                  <div key={p.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", background: SURF2, borderRadius: 4, padding: "5px 8px", fontSize: 10 }}>
                     <span style={{ color: DIM }}>{p.date} · <span style={{ color: "#fff" }}>{p.note}</span></span>
-                    <span style={{ color: LIME, fontWeight: "bold" }}>+{p.amount.toLocaleString()} UGX</span>
+                    <span style={{ color: LIME, fontWeight: "bold", whiteSpace: "nowrap" }}>+{p.amount.toLocaleString()} UGX</span>
+                    <button onClick={() => printReceipt({ ...c, date }, p)} style={{ background: BG, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Receipt</button>
                   </div>
                 ))}
               </div>
@@ -1530,9 +1743,10 @@ function OngoingView({ clients, onUpdate }) {
 }
 
 // ── Payments View
-function PaymentsView({ clients, onUpdate, expenses, onAddExpense }) {
+function PaymentsView({ clients, onUpdate, expenses, onAddExpense, onUpdateExpense }) {
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showExpenseList, setShowExpenseList] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [expAmt, setExpAmt] = useState("");
   const [expNote, setExpNote] = useState("");
 
@@ -1541,14 +1755,14 @@ function PaymentsView({ clients, onUpdate, expenses, onAddExpense }) {
   );
 
   const ongoingClients = allClients.filter(c => c.status === "ongoing");
-  const totalInvoiced = ongoingClients.reduce((sum, c) => sum + (Number(c.totalAgreedPrice) || 0), 0);
-  const totalCollected = ongoingClients.reduce((sum, c) => sum + (Number(c.amountPaid) || 0), 0);
+  const totalInvoiced = ongoingClients.reduce((sum, c) => sum + clientTotals(c).total, 0);
+  const totalCollected = ongoingClients.reduce((sum, c) => sum + clientTotals(c).paid, 0);
   const totalOutstanding = totalInvoiced - totalCollected;
   const totalSpent = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const cashInHand = totalCollected - totalSpent;
 
-  const owesBalance = ongoingClients.filter(c => (c.totalAgreedPrice || 0) - (c.amountPaid || 0) > 0);
-  const paidFull = ongoingClients.filter(c => (c.totalAgreedPrice || 0) - (c.amountPaid || 0) <= 0);
+  const owesBalance = ongoingClients.filter(c => clientTotals(c).balance > 0);
+  const paidFull = ongoingClients.filter(c => clientTotals(c).balance <= 0);
 
   const handleAddExpense = () => {
     const amt = Number(expAmt) || 0;
@@ -1556,6 +1770,24 @@ function PaymentsView({ clients, onUpdate, expenses, onAddExpense }) {
     if (!expNote.trim()) return alert("Please enter a description.");
     onAddExpense({ amount: amt, note: expNote.trim() });
     setExpAmt(""); setExpNote(""); setShowExpenseForm(false);
+  };
+
+  const startEditExpense = (expense) => {
+    setEditingExpenseId(expense.id);
+    setExpAmt(String(expense.amount || ""));
+    setExpNote(expense.note || "");
+    setShowExpenseForm(true);
+  };
+
+  const handleUpdateExpense = () => {
+    const amt = Number(expAmt) || 0;
+    if (amt <= 0) return alert("Please enter a valid amount.");
+    if (!expNote.trim()) return alert("Please enter a description.");
+    onUpdateExpense(editingExpenseId, { amount: amt, note: expNote.trim() });
+    setEditingExpenseId(null);
+    setExpAmt("");
+    setExpNote("");
+    setShowExpenseForm(false);
   };
 
   return (
@@ -1606,7 +1838,7 @@ function PaymentsView({ clients, onUpdate, expenses, onAddExpense }) {
                 {showExpenseList ? "Hide" : `View ${expenses.length}`}
               </button>
             )}
-            <button onClick={() => setShowExpenseForm(v => !v)} style={{ background: SURF2, border: `1px solid ${WARM_C}44`, color: WARM_C, borderRadius: 6, padding: "5px 10px", fontSize: 9, cursor: "pointer", fontFamily: FONT, fontWeight: "bold" }}>
+            <button onClick={() => { setEditingExpenseId(null); setExpAmt(""); setExpNote(""); setShowExpenseForm(v => !v); }} style={{ background: SURF2, border: `1px solid ${WARM_C}44`, color: WARM_C, borderRadius: 6, padding: "5px 10px", fontSize: 9, cursor: "pointer", fontFamily: FONT, fontWeight: "bold" }}>
               💸 {showExpenseForm ? "Cancel" : "Log Expense"}
             </button>
           </div>
@@ -1623,8 +1855,8 @@ function PaymentsView({ clients, onUpdate, expenses, onAddExpense }) {
                 <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>DESCRIPTION (What it was for)</div>
                 <input type="text" value={expNote} onChange={e => setExpNote(e.target.value)} placeholder="e.g. Fuel, Airtime, Flyer printing..." style={{ width: "100%", background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT, boxSizing: "border-box" }} />
               </div>
-              <button onClick={handleAddExpense} style={{ background: WARM_C, color: "#000", border: "none", borderRadius: 6, padding: "9px 0", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>
-                Save Expense
+              <button onClick={editingExpenseId ? handleUpdateExpense : handleAddExpense} style={{ background: WARM_C, color: "#000", border: "none", borderRadius: 6, padding: "9px 0", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>
+                {editingExpenseId ? "Update Expense" : "Save Expense"}
               </button>
             </div>
           </div>
@@ -1634,9 +1866,10 @@ function PaymentsView({ clients, onUpdate, expenses, onAddExpense }) {
           <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               {[...expenses].reverse().map(e => (
-                <div key={e.id} style={{ display: "flex", justifyContent: "space-between", background: SURF2, borderRadius: 4, padding: "6px 10px", fontSize: 10 }}>
+                <div key={e.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, background: SURF2, borderRadius: 4, padding: "6px 10px", fontSize: 10 }}>
                   <span style={{ color: DIM }}>{e.date} · <span style={{ color: "#fff" }}>{e.note}</span></span>
-                  <span style={{ color: WARM_C, fontWeight: "bold" }}>-{Number(e.amount).toLocaleString()} UGX</span>
+                  <span style={{ color: WARM_C, fontWeight: "bold", whiteSpace: "nowrap" }}>-{Number(e.amount).toLocaleString()} UGX</span>
+                  <button onClick={() => startEditExpense(e)} style={{ background: "none", border: "none", color: LIME, fontFamily: FONT, fontSize: 9, cursor: "pointer" }}>Edit</button>
                 </div>
               ))}
             </div>
