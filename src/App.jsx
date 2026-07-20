@@ -960,6 +960,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
   const [showDocs, setShowDocs] = useState(false);
   const [showPaidServices, setShowPaidServices] = useState(false);
   const [showActions, setShowActions] = useState(false);
+  const [openLedgerServiceIds, setOpenLedgerServiceIds] = useState({});
   const [isWinForm, setIsWinForm] = useState(false);
   const [dealPrice, setDealPrice] = useState(c.quotedPrice ? c.quotedPrice.replace(/\D/g, "") : "");
   const [deposit, setDeposit] = useState("0");
@@ -1520,46 +1521,71 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
                   const paid = servicePaid(c, s.id);
                   const total = serviceTotal(c, s);
                   const balance = total - paid;
+                  const payments = servicePayments(c, s.id);
+                  const serviceOpen = openLedgerServiceIds[s.id] ?? false;
                   return (
-                    <div key={s.id} style={{ background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 6, padding: 9, fontSize: 10 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
-                        <b style={{ color: "#fff" }}>{s.title}</b>
-                        <span style={{ color: balance > 0 ? WARM_C : LIME }}>{fmtUGX(balance)} left</span>
-                      </div>
-                      {Array.isArray(s.items) && s.items.length > 0 ? (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 6 }}>
-                          {s.items.map(item => (
-                            <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, color: DIM }}>
-                              <span>{item.title}</span>
-                              <span>{Number(item.price) > 0 ? fmtUGX(item.price) : "Included"}</span>
-                            </div>
-                          ))}
+                    <div key={s.id} style={{ background: SURF2, border: `1px solid ${serviceOpen ? (balance > 0 ? WARM_C + "55" : LIME + "55") : BORDER}`, borderRadius: 6, padding: 9, fontSize: 10 }}>
+                      <div onClick={() => setOpenLedgerServiceIds(ids => ({ ...ids, [s.id]: !serviceOpen }))} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", cursor: "pointer" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ color: "#fff", fontSize: 11, fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.title}</div>
+                          <div style={{ color: DIM, fontSize: 9, marginTop: 3 }}>{s.dueDate ? `Due ${fmtDate(s.dueDate)}` : "No due date"} · {payments.length} payment{payments.length !== 1 ? "s" : ""}</div>
                         </div>
-                      ) : s.categories && <div style={{ color: DIM, lineHeight: 1.5, marginBottom: 4 }}>{s.categories}</div>}
-                      <div style={{ color: DIM }}>Fee {fmtUGX(total)} · Paid {fmtUGX(paid)}</div>
-                      {s.dueDate && <div style={{ marginTop: 5, color: today >= s.dueDate && balance > 0 ? WARM_C : DIM }}>Due: {fmtDate(s.dueDate)}</div>}
-                      {showDocs && (
-                        <button onClick={() => printInvoice({ ...c, date }, s)} style={{ marginTop: 8, background: BG, border: `1px solid ${BORDER}`, color: COLD_C, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
-                          Print invoice
-                        </button>
-                      )}
-                      <button onClick={() => openPaymentForm(s.id)} style={{ marginTop: 8, marginLeft: 6, background: BG, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
-                        Record payment
-                      </button>
-                      <button onClick={() => openEditServiceForm(s)} style={{ marginTop: 8, marginLeft: 6, background: BG, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
-                        Edit agreement
-                      </button>
-                      {servicePayments(c, s.id).length > 0 && (
-                        <div style={{ marginTop: 9, borderTop: `1px solid ${BORDER}`, paddingTop: 7 }}>
-                          <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 5 }}>PAYMENTS</div>
-                          {servicePayments(c, s.id).map(p => (
-                            <div key={p.id} style={{ display: "grid", gridTemplateColumns: showDocs ? "1fr auto auto auto" : "1fr auto auto", gap: 8, alignItems: "center", background: BG, borderRadius: 4, padding: "5px 8px", fontSize: 10, marginTop: 4 }}>
-                              <span style={{ color: DIM }}>{p.date} · <span style={{ color: "#fff" }}>{p.note}</span></span>
-                              <span style={{ color: LIME, fontWeight: "bold", whiteSpace: "nowrap" }}>+{p.amount.toLocaleString()} UGX</span>
-                              <button onClick={() => openEditPaymentForm(p, s.id)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Edit</button>
-                              {showDocs && <button onClick={() => printReceipt({ ...c, date }, p)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Receipt</button>}
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ color: balance > 0 ? WARM_C : LIME, fontSize: 10, fontWeight: "bold" }}>{balance > 0 ? `${fmtUGX(balance)} left` : "Paid"}</div>
+                          <div style={{ color: DIM, fontSize: 9, marginTop: 2 }}>{serviceOpen ? "Hide" : "Open"}</div>
+                        </div>
+                      </div>
+                      {serviceOpen && (
+                        <div style={{ marginTop: 8, borderTop: `1px solid ${BORDER}`, paddingTop: 8 }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 8 }}>
+                            {["FEE", "PAID", "BALANCE"].map((k) => {
+                              const value = k === "FEE" ? total : k === "PAID" ? paid : balance;
+                              const color = k === "FEE" ? "#fff" : k === "PAID" ? LIME : balance > 0 ? WARM_C : LIME;
+                              return (
+                                <div key={k} style={{ background: BG, borderRadius: 5, padding: 7 }}>
+                                  <div style={{ fontSize: 8, color: DIM, letterSpacing: 1 }}>{k}</div>
+                                  <div style={{ fontSize: 10, color, marginTop: 2 }}>{fmtUGX(value)}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {Array.isArray(s.items) && s.items.length > 0 ? (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8 }}>
+                              {s.items.map(item => (
+                                <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, color: DIM }}>
+                                  <span>{item.title}</span>
+                                  <span>{Number(item.price) > 0 ? fmtUGX(item.price) : "Included"}</span>
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          ) : s.categories && <div style={{ color: DIM, lineHeight: 1.5, marginBottom: 8 }}>{s.categories}</div>}
+                          {s.dueDate && <div style={{ marginBottom: 8, color: today >= s.dueDate && balance > 0 ? WARM_C : DIM }}>Due: {fmtDate(s.dueDate)}</div>}
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: payments.length ? 8 : 0 }}>
+                            {showDocs && (
+                              <button onClick={() => printInvoice({ ...c, date }, s)} style={{ background: BG, border: `1px solid ${BORDER}`, color: COLD_C, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+                                Invoice
+                              </button>
+                            )}
+                            <button onClick={() => openPaymentForm(s.id)} style={{ background: BG, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+                              Record payment
+                            </button>
+                            <button onClick={() => openEditServiceForm(s)} style={{ background: BG, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+                              Edit agreement
+                            </button>
+                          </div>
+                          {payments.length > 0 && (
+                            <div>
+                              <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 5 }}>PAYMENTS</div>
+                              {payments.map(p => (
+                                <div key={p.id} style={{ display: "grid", gridTemplateColumns: showDocs ? "1fr auto auto auto" : "1fr auto auto", gap: 8, alignItems: "center", background: BG, borderRadius: 4, padding: "5px 8px", fontSize: 10, marginTop: 4 }}>
+                                  <span style={{ color: DIM }}>{p.date} · <span style={{ color: "#fff" }}>{p.note}</span></span>
+                                  <span style={{ color: LIME, fontWeight: "bold", whiteSpace: "nowrap" }}>+{p.amount.toLocaleString()} UGX</span>
+                                  <button onClick={() => openEditPaymentForm(p, s.id)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Edit</button>
+                                  {showDocs && <button onClick={() => printReceipt({ ...c, date }, p)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Receipt</button>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1988,13 +2014,13 @@ function GroupedServiceAccountList({ accounts, onUpdate, tone, label }) {
           const isOpen = openClientIds[client.id] ?? false;
           return (
             <div key={client.id} style={{ background: SURF, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${tone}`, borderRadius: 8, padding: 12 }}>
-              <div onClick={() => setOpenClientIds(ids => ({ ...ids, [client.id]: !isOpen }))} style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: isOpen ? 9 : 0, cursor: "pointer" }}>
-                <div>
+              <div onClick={() => setOpenClientIds(ids => ({ ...ids, [client.id]: !isOpen }))} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center", marginBottom: isOpen ? 9 : 0, cursor: "pointer" }}>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: "bold", color: "#fff" }}>{client.name}</div>
-                  <div style={{ fontSize: 10, color: DIM, marginTop: 2 }}>{client.business || "No business"} · {clientAccounts.length} service{clientAccounts.length !== 1 ? "s" : ""}</div>
+                  <div style={{ fontSize: 10, color: DIM, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client.business || "No business"} · {clientAccounts.length} service{clientAccounts.length !== 1 ? "s" : ""}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 10, color: groupBalance > 0 ? WARM_C : LIME, fontWeight: "bold" }}>{fmtUGX(groupBalance)} left</div>
+                  <div style={{ fontSize: 10, color: groupBalance > 0 ? WARM_C : LIME, fontWeight: "bold" }}>{groupBalance > 0 ? `${fmtUGX(groupBalance)} left` : "Paid"}</div>
                   <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>{isOpen ? "Hide" : "Open"}</div>
                 </div>
               </div>
@@ -2004,20 +2030,70 @@ function GroupedServiceAccountList({ accounts, onUpdate, tone, label }) {
                     <span>Agreed {fmtUGX(groupTotal)} · Paid {fmtUGX(groupPaid)}</span>
                     <span>{earliestDue ? `Oldest due ${fmtDate(earliestDue)}` : "No due date"}</span>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    {clientAccounts.map(({ service, total, paid, balance, dueDate }) => (
-                      <div key={service.id} style={{ background: SURF2, borderRadius: 5, padding: 8 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10 }}>
-                          <span style={{ color: "#fff" }}>{service.title}</span>
-                          <span style={{ color: balance > 0 ? WARM_C : LIME }}>{fmtUGX(balance)} left</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {clientAccounts.map(({ service, total, paid, balance, dueDate }) => {
+                      const serviceKey = `${client.id}-${service.id}`;
+                      const serviceOpen = openServiceIds[serviceKey] ?? false;
+                      const payments = servicePayments(client, service.id);
+                      return (
+                        <div key={service.id} style={{ background: SURF2, border: `1px solid ${serviceOpen ? tone + "55" : "transparent"}`, borderRadius: 6, padding: 8 }}>
+                          <div onClick={() => setOpenServiceIds(ids => ({ ...ids, [serviceKey]: !serviceOpen }))} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", cursor: "pointer" }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ color: "#fff", fontSize: 11, fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{service.title}</div>
+                              <div style={{ color: DIM, fontSize: 9, marginTop: 3 }}>{dueDate ? `Due ${fmtDate(dueDate)}` : "No due date"} · {payments.length} payment{payments.length !== 1 ? "s" : ""}</div>
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ color: balance > 0 ? WARM_C : LIME, fontSize: 10, fontWeight: "bold" }}>{balance > 0 ? `${fmtUGX(balance)} left` : "Paid"}</div>
+                              <div style={{ color: DIM, fontSize: 9, marginTop: 2 }}>{serviceOpen ? "Hide" : "Open"}</div>
+                            </div>
+                          </div>
+                          {serviceOpen && (
+                            <div style={{ marginTop: 8, borderTop: `1px solid ${BORDER}`, paddingTop: 8 }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 8 }}>
+                                {["FEE", "PAID", "BALANCE"].map((k) => {
+                                  const value = k === "FEE" ? total : k === "PAID" ? paid : balance;
+                                  const color = k === "FEE" ? "#fff" : k === "PAID" ? LIME : balance > 0 ? WARM_C : LIME;
+                                  return (
+                                    <div key={k} style={{ background: BG, borderRadius: 5, padding: 7 }}>
+                                      <div style={{ fontSize: 8, color: DIM, letterSpacing: 1 }}>{k}</div>
+                                      <div style={{ fontSize: 10, color, marginTop: 2 }}>{fmtUGX(value)}</div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              {Array.isArray(service.items) && service.items.length > 0 && (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8 }}>
+                                  {service.items.map(item => (
+                                    <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, color: DIM, fontSize: 9 }}>
+                                      <span>{item.title}</span>
+                                      <span>{Number(item.price) > 0 ? fmtUGX(item.price) : "Included"}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: payments.length ? 8 : 0 }}>
+                                <button onClick={() => onUpdate(client.date, client.id, { services: getClientServices(client).map(s => s.id === service.id ? { ...s, dueDate: todayStr() } : s) })} style={{ background: BG, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "5px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Mark due today</button>
+                                <button onClick={() => printInvoice(client, service)} style={{ background: BG, border: `1px solid ${BORDER}`, color: COLD_C, borderRadius: 5, padding: "5px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Invoice</button>
+                              </div>
+                              {payments.length > 0 && (
+                                <div>
+                                  <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 5 }}>PAYMENTS</div>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                    {payments.map(p => (
+                                      <div key={p.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", background: BG, borderRadius: 4, padding: "5px 7px", fontSize: 9 }}>
+                                        <span style={{ color: DIM }}>{p.date} · <span style={{ color: "#fff" }}>{p.note || "Payment"}</span></span>
+                                        <span style={{ color: LIME, fontWeight: "bold", whiteSpace: "nowrap" }}>+{p.amount.toLocaleString()} UGX</span>
+                                        <button onClick={() => printReceipt(client, p)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Receipt</button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 9, color: DIM, marginTop: 3 }}>
-                          <span>Agreed {fmtUGX(total)} · Paid {fmtUGX(paid)}</span>
-                          <span>{dueDate ? `Due ${fmtDate(dueDate)}` : "No due date"}</span>
-                        </div>
-                        <button onClick={() => onUpdate(client.date, client.id, { services: getClientServices(client).map(s => s.id === service.id ? { ...s, dueDate: todayStr() } : s) })} style={{ marginTop: 6, background: BG, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "5px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Mark due today</button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </>
               )}
