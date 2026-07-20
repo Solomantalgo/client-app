@@ -322,8 +322,7 @@ export default function App() {
   const [showForm, setShowForm] = useState(false);
   const [histSel, setHistSel] = useState(null);
   const [banner, setBanner] = useState(null);
-  const [cloudConfig, setCloudConfig] = useState(getStoredCloudConfig() || { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY });
-  const [showCloudSetup, setShowCloudSetup] = useState(false);
+  const [cloudConfig] = useState(getStoredCloudConfig() || { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY });
   const [cloudStatus, setCloudStatus] = useState("Local only");
   const today = todayStr();
 
@@ -476,6 +475,26 @@ export default function App() {
 
   const setTarget = t => void save({ ...data, target: Math.max(1, t) });
 
+  const resetDatabase = async () => {
+    const password = prompt("Enter reset password to empty all records.");
+    if (password === null) return;
+    if (password !== "Kmantalgo#1") {
+      setBanner("Reset cancelled: wrong password.");
+      return;
+    }
+    if (!confirm("Empty all clients, services, payments, followups, and expenses?")) return;
+    const emptyData = touchData(DEFAULT_DATA);
+    setData(emptyData);
+    await persist(emptyData);
+    if (cloudConfig) {
+      const result = await persistRemote(cloudConfig, emptyData);
+      setCloudStatus(result.ok ? "Cloud synced" : "Cloud sync pending");
+      setBanner(result.ok ? "Database reset to empty and synced." : `Database reset locally. Cloud sync pending: ${result.reason}`);
+    } else {
+      setBanner("Database reset locally.");
+    }
+  };
+
   if (!data) return (
     <div style={{ background: BG, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: LIME, fontFamily: FONT, fontSize: 11, letterSpacing: 4 }}>
       LOADING...
@@ -507,8 +526,8 @@ export default function App() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={() => setShowCloudSetup(true)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 999, padding: "7px 10px", fontSize: 10, cursor: "pointer", fontFamily: FONT, letterSpacing: 0.5 }}>
-              ☁ {cloudConfig ? "Sync" : "Setup"}
+            <button onClick={resetDatabase} style={{ background: SURF2, border: `1px solid ${WARM_C}55`, color: WARM_C, borderRadius: 999, padding: "7px 10px", fontSize: 10, cursor: "pointer", fontFamily: FONT, letterSpacing: 0.5 }}>
+              Reset
             </button>
             {tab === "today" && <TargetCtrl target={data.target} onChange={setTarget} />}
           </div>
@@ -573,7 +592,6 @@ export default function App() {
       )}
 
       {showForm && <ClientForm onAdd={addClient} onClose={() => setShowForm(false)} />}
-      {showCloudSetup && <CloudSetupModal onClose={() => setShowCloudSetup(false)} onSaved={(cfg) => { setCloudConfig(cfg); setCloudStatus("Cloud connected"); setBanner("Cloud settings saved. Sync will use your Supabase project."); }} />}
     </div>
   );
 }
@@ -939,6 +957,7 @@ function printReceipt(client, payment) {
 function ClientCard({ client: c, date, onUpdate, highlight }) {
   const [exp, setExp] = useState(false);
   const [showDocs, setShowDocs] = useState(false);
+  const [showPaidServices, setShowPaidServices] = useState(false);
   const [isWinForm, setIsWinForm] = useState(false);
   const [dealPrice, setDealPrice] = useState(c.quotedPrice ? c.quotedPrice.replace(/\D/g, "") : "");
   const [deposit, setDeposit] = useState("0");
@@ -953,6 +972,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
   const [editingPaymentId, setEditingPaymentId] = useState("");
   const [isServiceForm, setIsServiceForm] = useState(false);
   const [serviceTitle, setServiceTitle] = useState("");
+  const [serviceDueDate, setServiceDueDate] = useState("");
   const [serviceItems, setServiceItems] = useState([{ id: "draft-1", title: "", price: "" }]);
 
   const [isEditDealForm, setIsEditDealForm] = useState(false);
@@ -1063,11 +1083,11 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
     setIsPaymentForm(false);
   };
 
-  const openEditPaymentForm = (payment) => {
+  const openEditPaymentForm = (payment, serviceId = "") => {
     setEditingPaymentId(payment.id);
     setPaymentAmt(String(payment.amount || ""));
     setPaymentNote(payment.note || "");
-    setPaymentServiceId(payment.serviceId || services[0]?.id || "");
+    setPaymentServiceId(serviceId || payment.serviceId || services[0]?.id || "");
     setIsPaymentForm(true);
     setIsServiceForm(false);
     setIsEditDealForm(false);
@@ -1088,7 +1108,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
       categories: items.map(item => item.title).join(", "),
       items,
       agreedPrice: price,
-      dueDate: "",
+      dueDate: serviceDueDate,
       status: "active",
       createdAt: today,
     };
@@ -1098,6 +1118,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
       totalAgreedPrice: services.reduce((sum, s) => sum + (Number(s.agreedPrice) || 0), 0),
     });
     setServiceTitle("");
+    setServiceDueDate("");
     setServiceItems([{ id: "draft-1", title: "", price: "" }]);
     setIsServiceForm(false);
   };
@@ -1142,6 +1163,8 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
   };
 
   const services = getClientServices(c);
+  const ledgerServices = showPaidServices ? services : services.filter(s => serviceTotal(c, s) - servicePaid(c, s.id) > 0);
+  const paidServiceCount = services.filter(s => serviceTotal(c, s) - servicePaid(c, s.id) <= 0).length;
   const totals = clientTotals(c);
   const remainingBalance = isLead ? 0 : totals.balance;
 
@@ -1269,7 +1292,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
             </div>
             <div>
               <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>SERVICE THIS PAYMENT BELONGS TO</div>
-              <select value={paymentServiceId || services[0]?.id || ""} onChange={e => setPaymentServiceId(e.target.value)} style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }}>
+              <select value={paymentServiceId} onChange={e => setPaymentServiceId(e.target.value)} style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }}>
                 {services.map(s => (
                   <option key={s.id} value={s.id}>{s.title} - {fmtUGX(serviceTotal(c, s))}</option>
                 ))}
@@ -1288,6 +1311,10 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
           <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>Add Service / Order</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <input type="text" value={serviceTitle} onChange={e => setServiceTitle(e.target.value)} placeholder="Service name e.g. Website Design" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }} />
+            <div>
+              <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>PAYMENT DUE DATE / AGREEMENT</div>
+              <input type="date" value={serviceDueDate} onChange={e => setServiceDueDate(e.target.value)} style={{ width: "100%", boxSizing: "border-box", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 11, fontFamily: FONT }} />
+            </div>
             <div style={{ fontSize: 9, color: DIM, letterSpacing: 1 }}>SUB-SERVICES / LINE ITEMS</div>
             {serviceItems.map((item, index) => (
               <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 110px 32px", gap: 6 }}>
@@ -1441,9 +1468,14 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
                 <button onClick={() => setShowDocs(v => !v)} style={{ background: BG, border: `1px solid ${BORDER}`, color: showDocs ? LIME : DIM, borderRadius: 5, padding: "5px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
                   {showDocs ? "Hide documents" : "Documents"}
                 </button>
+                {paidServiceCount > 0 && (
+                  <button onClick={() => setShowPaidServices(v => !v)} style={{ marginLeft: 6, background: BG, border: `1px solid ${BORDER}`, color: showPaidServices ? LIME : DIM, borderRadius: 5, padding: "5px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+                    {showPaidServices ? "Hide paid" : `Show paid ${paidServiceCount}`}
+                  </button>
+                )}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {services.map(s => {
+                {ledgerServices.length === 0 ? <Empty text="All services for this client are paid. Use Show paid to review history." /> : ledgerServices.map(s => {
                   const paid = servicePaid(c, s.id);
                   const total = serviceTotal(c, s);
                   const balance = total - paid;
@@ -1476,13 +1508,26 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
                       <button onClick={() => openEditServiceForm(s)} style={{ marginTop: 8, marginLeft: 6, background: BG, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
                         Edit agreement
                       </button>
+                      {servicePayments(c, s.id).length > 0 && (
+                        <div style={{ marginTop: 9, borderTop: `1px solid ${BORDER}`, paddingTop: 7 }}>
+                          <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 5 }}>PAYMENTS FOR THIS SERVICE</div>
+                          {servicePayments(c, s.id).map(p => (
+                            <div key={p.id} style={{ display: "grid", gridTemplateColumns: showDocs ? "1fr auto auto auto" : "1fr auto auto", gap: 8, alignItems: "center", background: BG, borderRadius: 4, padding: "5px 8px", fontSize: 10, marginTop: 4 }}>
+                              <span style={{ color: DIM }}>{p.date} · <span style={{ color: "#fff" }}>{p.note}</span></span>
+                              <span style={{ color: LIME, fontWeight: "bold", whiteSpace: "nowrap" }}>+{p.amount.toLocaleString()} UGX</span>
+                              <button onClick={() => openEditPaymentForm(p, s.id)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Edit</button>
+                              {showDocs && <button onClick={() => printReceipt({ ...c, date }, p)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Receipt</button>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
           )}
-          {!isLead && c.payments && c.payments.length > 0 && (
+          {exp === "legacy-transactions" && !isLead && c.payments && c.payments.length > 0 && (
             <div>
               <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 6 }}>TRANSACTION HISTORY</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -1642,6 +1687,7 @@ function ClientForm({ onAdd, onClose }) {
 }
 
 // ── Cloud Setup Modal
+// eslint-disable-next-line no-unused-vars
 function CloudSetupModal({ onClose, onSaved }) {
   const [url, setUrl] = useState(localStorage.getItem(CLOUD_URL_KEY) || DEFAULT_SUPABASE_URL);
   const [key, setKey] = useState(localStorage.getItem(CLOUD_KEY_KEY) || DEFAULT_SUPABASE_KEY);
@@ -1808,9 +1854,13 @@ function SystemFlowView() {
 
 // ── Ongoing View
 function OngoingView({ clients, onUpdate }) {
+  const [showCleared, setShowCleared] = useState(false);
   const ongoing = Object.entries(clients).flatMap(([date, arr]) =>
     arr.filter(c => c.status === "ongoing").map(c => ({ ...c, date }))
   );
+  const active = ongoing.filter(c => clientTotals(c).balance > 0);
+  const cleared = ongoing.filter(c => clientTotals(c).balance <= 0);
+  const visible = showCleared ? ongoing : active;
 
   if (ongoing.length === 0) {
     return <Empty text="No ongoing projects yet. Win some deals to move them here! 🏆" />;
@@ -1818,10 +1868,17 @@ function OngoingView({ clients, onUpdate }) {
 
   return (
     <div>
-      <div style={{ fontSize: 10, color: DIM, letterSpacing: 2, marginBottom: 12 }}>
-        {ongoing.length} ACTIVE PROJECT{ongoing.length !== 1 ? "S" : ""}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontSize: 10, color: DIM, letterSpacing: 2 }}>
+          {active.length} ACTIVE PROJECT{active.length !== 1 ? "S" : ""}
+        </div>
+        {cleared.length > 0 && (
+          <button onClick={() => setShowCleared(v => !v)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: showCleared ? LIME : DIM, borderRadius: 6, padding: "6px 9px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+            {showCleared ? "Hide paid" : `Show paid ${cleared.length}`}
+          </button>
+        )}
       </div>
-      {ongoing.map(c => (
+      {visible.length === 0 ? <Empty text="All ongoing projects are paid. Use Show paid to review them." /> : visible.map(c => (
         <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} />
       ))}
     </div>
@@ -1829,12 +1886,18 @@ function OngoingView({ clients, onUpdate }) {
 }
 
 // ── Payments View
+// eslint-disable-next-line no-unused-vars
 function ServiceAccountList({ accounts, onUpdate, tone, label }) {
+  const sortedAccounts = [...accounts].sort((a, b) => {
+    const ad = a.dueDate || a.service.createdAt || a.client.date || "";
+    const bd = b.dueDate || b.service.createdAt || b.client.date || "";
+    return ad.localeCompare(bd);
+  });
   return (
     <div style={{ marginBottom: 18 }}>
       <div style={{ fontSize: 10, color: tone, letterSpacing: 2, marginBottom: 10, fontWeight: "bold" }}>{label}</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {accounts.map(({ client, service, total, paid, balance, dueDate }) => (
+        {sortedAccounts.map(({ client, service, total, paid, balance, dueDate }) => (
           <div key={`${client.id}-${service.id}`} style={{ background: SURF, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${tone}`, borderRadius: 8, padding: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 5 }}>
               <div>
@@ -1852,6 +1915,73 @@ function ServiceAccountList({ accounts, onUpdate, tone, label }) {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function GroupedServiceAccountList({ accounts, onUpdate, tone, label }) {
+  const [openClientIds, setOpenClientIds] = useState({});
+  const sortedAccounts = [...accounts].sort((a, b) => {
+    const ad = a.dueDate || a.service.createdAt || a.client.date || "";
+    const bd = b.dueDate || b.service.createdAt || b.client.date || "";
+    return ad.localeCompare(bd);
+  });
+  const clientGroups = Object.values(sortedAccounts.reduce((groups, account) => {
+    const id = account.client.id;
+    if (!groups[id]) groups[id] = { client: account.client, accounts: [] };
+    groups[id].accounts.push(account);
+    return groups;
+  }, {}));
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 10, color: tone, letterSpacing: 2, marginBottom: 10, fontWeight: "bold" }}>{label}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {clientGroups.map(({ client, accounts: clientAccounts }) => {
+          const groupBalance = clientAccounts.reduce((sum, a) => sum + a.balance, 0);
+          const groupTotal = clientAccounts.reduce((sum, a) => sum + a.total, 0);
+          const groupPaid = clientAccounts.reduce((sum, a) => sum + a.paid, 0);
+          const earliestDue = clientAccounts.map(a => a.dueDate).filter(Boolean).sort()[0] || "";
+          const isOpen = openClientIds[client.id] ?? false;
+          return (
+            <div key={client.id} style={{ background: SURF, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${tone}`, borderRadius: 8, padding: 12 }}>
+              <div onClick={() => setOpenClientIds(ids => ({ ...ids, [client.id]: !isOpen }))} style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: isOpen ? 9 : 0, cursor: "pointer" }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: "bold", color: "#fff" }}>{client.name}</div>
+                  <div style={{ fontSize: 10, color: DIM, marginTop: 2 }}>{client.business || "No business"} · {clientAccounts.length} service{clientAccounts.length !== 1 ? "s" : ""}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 10, color: groupBalance > 0 ? WARM_C : LIME, fontWeight: "bold" }}>{fmtUGX(groupBalance)} left</div>
+                  <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>{isOpen ? "Hide" : "Open"}</div>
+                </div>
+              </div>
+              {isOpen && (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10, color: DIM, marginBottom: 8 }}>
+                    <span>Agreed {fmtUGX(groupTotal)} · Paid {fmtUGX(groupPaid)}</span>
+                    <span>{earliestDue ? `Oldest due ${fmtDate(earliestDue)}` : "No due date"}</span>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {clientAccounts.map(({ service, total, paid, balance, dueDate }) => (
+                      <div key={service.id} style={{ background: SURF2, borderRadius: 5, padding: 8 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10 }}>
+                          <span style={{ color: "#fff" }}>{service.title}</span>
+                          <span style={{ color: balance > 0 ? WARM_C : LIME }}>{fmtUGX(balance)} left</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 9, color: DIM, marginTop: 3 }}>
+                          <span>Agreed {fmtUGX(total)} · Paid {fmtUGX(paid)}</span>
+                          <span>{dueDate ? `Due ${fmtDate(dueDate)}` : "No due date"}</span>
+                        </div>
+                        <button onClick={() => onUpdate(client.date, client.id, { services: getClientServices(client).map(s => s.id === service.id ? { ...s, dueDate: todayStr() } : s) })} style={{ marginTop: 6, background: BG, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "5px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Mark due today</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1968,19 +2098,19 @@ function PaymentsView({ clients, onUpdate, expenses, onAddExpense, onUpdateExpen
 
       {moneyTab === "due" && (
         dueAccounts.length
-          ? <ServiceAccountList accounts={dueAccounts} onUpdate={onUpdate} tone={WARM_C} label="PAYMENT DUE NOW" />
+          ? <GroupedServiceAccountList accounts={dueAccounts} onUpdate={onUpdate} tone={WARM_C} label="PAYMENT DUE NOW" />
           : <Empty text="No payment agreements are due today." />
       )}
 
       {moneyTab === "outstanding" && (
         outstandingAccounts.length
-          ? <ServiceAccountList accounts={outstandingAccounts} onUpdate={onUpdate} tone={COLD_C} label="OPEN BALANCES / NOT DUE YET" />
+          ? <GroupedServiceAccountList accounts={outstandingAccounts} onUpdate={onUpdate} tone={COLD_C} label="OPEN BALANCES / NOT DUE YET" />
           : <Empty text="No open balances outside due dates." />
       )}
 
       {moneyTab === "paid" && (
         clearedAccounts.length
-          ? <ServiceAccountList accounts={clearedAccounts} onUpdate={onUpdate} tone={LIME} label="PAID SERVICES" />
+          ? <GroupedServiceAccountList accounts={clearedAccounts} onUpdate={onUpdate} tone={LIME} label="PAID SERVICES" />
           : <Empty text="No paid services yet." />
       )}
 
