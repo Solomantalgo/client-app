@@ -1487,10 +1487,11 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
               <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 6 }}>TRANSACTION HISTORY</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {c.payments.map((p) => (
-                  <div key={p.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", background: SURF2, borderRadius: 4, padding: "5px 8px", fontSize: 10 }}>
+                  <div key={p.id} style={{ display: "grid", gridTemplateColumns: showDocs ? "1fr auto auto auto" : "1fr auto auto", gap: 8, alignItems: "center", background: SURF2, borderRadius: 4, padding: "5px 8px", fontSize: 10 }}>
                     <span style={{ color: DIM }}>{p.date} · <span style={{ color: "#fff" }}>{p.note}</span></span>
                     <span style={{ color: LIME, fontWeight: "bold", whiteSpace: "nowrap" }}>+{p.amount.toLocaleString()} UGX</span>
-                    <button onClick={() => printReceipt({ ...c, date }, p)} style={{ background: BG, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Receipt</button>
+                    <button onClick={() => openEditPaymentForm(p)} style={{ background: BG, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Edit</button>
+                    {showDocs && <button onClick={() => printReceipt({ ...c, date }, p)} style={{ background: BG, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Receipt</button>}
                   </div>
                 ))}
               </div>
@@ -1828,7 +1829,36 @@ function OngoingView({ clients, onUpdate }) {
 }
 
 // ── Payments View
+function ServiceAccountList({ accounts, onUpdate, tone, label }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 10, color: tone, letterSpacing: 2, marginBottom: 10, fontWeight: "bold" }}>{label}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {accounts.map(({ client, service, total, paid, balance, dueDate }) => (
+          <div key={`${client.id}-${service.id}`} style={{ background: SURF, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${tone}`, borderRadius: 8, padding: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 5 }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: "bold", color: "#fff" }}>{client.name}</div>
+                <div style={{ fontSize: 10, color: DIM, marginTop: 2 }}>{client.business || "No business"} · {service.title}</div>
+              </div>
+              <div style={{ textAlign: "right", fontSize: 10, color: balance > 0 ? WARM_C : LIME, fontWeight: "bold" }}>{fmtUGX(balance)} left</div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10, color: DIM }}>
+              <span>Agreed {fmtUGX(total)} · Paid {fmtUGX(paid)}</span>
+              <span>{dueDate ? `Due ${fmtDate(dueDate)}` : "No due date"}</span>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 9 }}>
+              <button onClick={() => onUpdate(client.date, client.id, { services: getClientServices(client).map(s => s.id === service.id ? { ...s, dueDate: todayStr() } : s) })} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "5px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Mark due today</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PaymentsView({ clients, onUpdate, expenses, onAddExpense, onUpdateExpense }) {
+  const [moneyTab, setMoneyTab] = useState("due");
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showExpenseList, setShowExpenseList] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
@@ -1840,6 +1870,12 @@ function PaymentsView({ clients, onUpdate, expenses, onAddExpense, onUpdateExpen
   );
 
   const ongoingClients = allClients.filter(c => c.status === "ongoing");
+  const serviceAccounts = ongoingClients.flatMap(c => getClientServices(c).map(s => {
+    const total = serviceTotal(c, s);
+    const paid = servicePaid(c, s.id);
+    const balance = total - paid;
+    return { client: c, service: s, total, paid, balance, dueDate: s.dueDate || "" };
+  }));
   const totalInvoiced = ongoingClients.reduce((sum, c) => sum + clientTotals(c).total, 0);
   const totalCollected = ongoingClients.reduce((sum, c) => sum + clientTotals(c).paid, 0);
   const totalOutstanding = totalInvoiced - totalCollected;
@@ -1848,6 +1884,10 @@ function PaymentsView({ clients, onUpdate, expenses, onAddExpense, onUpdateExpen
 
   const owesBalance = ongoingClients.filter(c => clientTotals(c).balance > 0);
   const paidFull = ongoingClients.filter(c => clientTotals(c).balance <= 0);
+  const today = todayStr();
+  const dueAccounts = serviceAccounts.filter(a => a.balance > 0 && a.dueDate && today >= a.dueDate);
+  const outstandingAccounts = serviceAccounts.filter(a => a.balance > 0 && (!a.dueDate || today < a.dueDate));
+  const clearedAccounts = serviceAccounts.filter(a => a.balance <= 0);
 
   const handleAddExpense = () => {
     const amt = Number(expAmt) || 0;
@@ -1913,8 +1953,39 @@ function PaymentsView({ clients, onUpdate, expenses, onAddExpense, onUpdateExpen
         </div>
       </div>
 
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 14 }}>
+        {[
+          { k: "due", l: `Due ${dueAccounts.length}` },
+          { k: "outstanding", l: `Open ${outstandingAccounts.length}` },
+          { k: "paid", l: `Paid ${clearedAccounts.length}` },
+          { k: "expenses", l: "Expenses" },
+        ].map(item => (
+          <button key={item.k} onClick={() => setMoneyTab(item.k)} style={{ background: moneyTab === item.k ? LIME + "18" : SURF2, border: `1px solid ${moneyTab === item.k ? LIME + "66" : BORDER}`, color: moneyTab === item.k ? LIME : DIM, borderRadius: 6, padding: "8px 4px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+            {item.l}
+          </button>
+        ))}
+      </div>
+
+      {moneyTab === "due" && (
+        dueAccounts.length
+          ? <ServiceAccountList accounts={dueAccounts} onUpdate={onUpdate} tone={WARM_C} label="PAYMENT DUE NOW" />
+          : <Empty text="No payment agreements are due today." />
+      )}
+
+      {moneyTab === "outstanding" && (
+        outstandingAccounts.length
+          ? <ServiceAccountList accounts={outstandingAccounts} onUpdate={onUpdate} tone={COLD_C} label="OPEN BALANCES / NOT DUE YET" />
+          : <Empty text="No open balances outside due dates." />
+      )}
+
+      {moneyTab === "paid" && (
+        clearedAccounts.length
+          ? <ServiceAccountList accounts={clearedAccounts} onUpdate={onUpdate} tone={LIME} label="PAID SERVICES" />
+          : <Empty text="No paid services yet." />
+      )}
+
       {/* Expense Section */}
-      <div style={{ marginBottom: 20 }}>
+      {moneyTab === "expenses" && <div style={{ marginBottom: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <div style={{ fontSize: 10, color: DIM, letterSpacing: 2 }}>EXPENSE LEDGER</div>
           <div style={{ display: "flex", gap: 6 }}>
@@ -1960,10 +2031,10 @@ function PaymentsView({ clients, onUpdate, expenses, onAddExpense, onUpdateExpen
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Owes Balance Section */}
-      {owesBalance.length > 0 && (
+      {moneyTab === "legacy" && owesBalance.length > 0 && (
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 10, color: WARM_C, letterSpacing: 2, marginBottom: 10, fontWeight: "bold", display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: WARM_C, display: "inline-block" }} />
@@ -1976,7 +2047,7 @@ function PaymentsView({ clients, onUpdate, expenses, onAddExpense, onUpdateExpen
       )}
 
       {/* Paid In Full Section */}
-      {paidFull.length > 0 && (
+      {moneyTab === "legacy" && paidFull.length > 0 && (
         <div>
           <div style={{ fontSize: 10, color: LIME, letterSpacing: 2, marginBottom: 10, fontWeight: "bold", display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: LIME, display: "inline-block" }} />
