@@ -166,6 +166,7 @@ function makeServiceFromClient(c) {
     categories: c.servicesToOffer || "",
     items: splitServiceItems(c.servicesToOffer).map(title => ({ id: `item-${Date.now()}-${title}`, title, price: 0 })),
     agreedPrice: agreed,
+    dueDate: c.paymentDueDate || "",
     status: c.status === "ongoing" ? "active" : "quoted",
     createdAt: c.date || todayStr(),
   };
@@ -217,6 +218,7 @@ function normalizeData(d) {
                 }))
                 : splitServiceItems(s.categories || s.description || "").map(title => ({ id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, title, price: 0 })),
               agreedPrice: Number(s.agreedPrice ?? s.price ?? c.totalAgreedPrice) || 0,
+              dueDate: s.dueDate || s.paymentDueDate || "",
               status: s.status || "active",
               createdAt: s.createdAt || date,
             }))
@@ -936,6 +938,7 @@ function printReceipt(client, payment) {
 // ── Client Card
 function ClientCard({ client: c, date, onUpdate, highlight }) {
   const [exp, setExp] = useState(false);
+  const [showDocs, setShowDocs] = useState(false);
   const [isWinForm, setIsWinForm] = useState(false);
   const [dealPrice, setDealPrice] = useState(c.quotedPrice ? c.quotedPrice.replace(/\D/g, "") : "");
   const [deposit, setDeposit] = useState("0");
@@ -947,12 +950,16 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
   const [paymentAmt, setPaymentAmt] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
   const [paymentServiceId, setPaymentServiceId] = useState("");
+  const [editingPaymentId, setEditingPaymentId] = useState("");
   const [isServiceForm, setIsServiceForm] = useState(false);
   const [serviceTitle, setServiceTitle] = useState("");
   const [serviceItems, setServiceItems] = useState([{ id: "draft-1", title: "", price: "" }]);
 
   const [isEditDealForm, setIsEditDealForm] = useState(false);
-  const [editedPrice, setEditedPrice] = useState(c.totalAgreedPrice || "");
+  const [editingServiceId, setEditingServiceId] = useState("");
+  const [editServiceTitle, setEditServiceTitle] = useState("");
+  const [editServiceDueDate, setEditServiceDueDate] = useState("");
+  const [editServiceItems, setEditServiceItems] = useState([]);
 
   const textToMatch = c.businessType || c.business || "";
   const packageMatch = PACKAGE_TEMPLATES.find(p => p.match.test(textToMatch));
@@ -988,6 +995,17 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
     setIsRescheduleForm(false);
   };
 
+  const openPaymentForm = (serviceId = "") => {
+    setEditingPaymentId("");
+    setPaymentAmt("");
+    setPaymentNote("");
+    setPaymentServiceId(serviceId || services[0]?.id || "");
+    setIsPaymentForm(true);
+    setIsServiceForm(false);
+    setIsEditDealForm(false);
+    setExp(false);
+  };
+
   const handleConvert = () => {
     const parsedPrice = Number(dealPrice) || 0;
     const parsedDeposit = Number(deposit) || 0;
@@ -997,9 +1015,10 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
     const service = {
       id: serviceId,
       title: c.package && c.package !== "Undecided" ? c.package : "Client Service",
-      categories: c.servicesToOffer || "",
-      agreedPrice: parsedPrice,
-      status: "active",
+          categories: c.servicesToOffer || "",
+          agreedPrice: parsedPrice,
+          dueDate: "",
+          status: "active",
       createdAt: today,
     };
     const initialPayments = parsedDeposit > 0 
@@ -1020,16 +1039,16 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
   const handleRecordPayment = () => {
     const amt = Number(paymentAmt) || 0;
     if (amt <= 0) return alert("Please enter a valid payment amount.");
-    
-    const newPayment = {
-      id: Date.now().toString(),
-      date: today,
-      amount: amt,
-      note: paymentNote.trim() || "Payment",
-      serviceId: paymentServiceId || getClientServices(c)[0]?.id || ""
-    };
-
-    const newPayments = [...(c.payments || []), newPayment];
+    const selectedServiceId = paymentServiceId || getClientServices(c)[0]?.id || "";
+    const newPayments = editingPaymentId
+      ? (c.payments || []).map(p => p.id === editingPaymentId ? { ...p, amount: amt, note: paymentNote.trim() || "Payment", serviceId: selectedServiceId } : p)
+      : [...(c.payments || []), {
+        id: Date.now().toString(),
+        date: today,
+        amount: amt,
+        note: paymentNote.trim() || "Payment",
+        serviceId: selectedServiceId
+      }];
     const totalPaid = newPayments.reduce((sum, p) => sum + p.amount, 0);
 
     onUpdate(c.id, {
@@ -1040,7 +1059,19 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
     setPaymentAmt("");
     setPaymentNote("");
     setPaymentServiceId("");
+    setEditingPaymentId("");
     setIsPaymentForm(false);
+  };
+
+  const openEditPaymentForm = (payment) => {
+    setEditingPaymentId(payment.id);
+    setPaymentAmt(String(payment.amount || ""));
+    setPaymentNote(payment.note || "");
+    setPaymentServiceId(payment.serviceId || services[0]?.id || "");
+    setIsPaymentForm(true);
+    setIsServiceForm(false);
+    setIsEditDealForm(false);
+    setExp(false);
   };
 
   const handleAddService = () => {
@@ -1057,6 +1088,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
       categories: items.map(item => item.title).join(", "),
       items,
       agreedPrice: price,
+      dueDate: "",
       status: "active",
       createdAt: today,
     };
@@ -1070,11 +1102,43 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
     setIsServiceForm(false);
   };
 
-  const handleSaveEditedPrice = () => {
-    const amt = Number(editedPrice) || 0;
-    if (amt <= 0) return alert("Please enter a valid price.");
-    onUpdate(c.id, { totalAgreedPrice: amt });
+  const openEditServiceForm = (service) => {
+    setEditingServiceId(service.id);
+    setEditServiceTitle(service.title || "");
+    setEditServiceDueDate(service.dueDate || "");
+    setEditServiceItems(Array.isArray(service.items) && service.items.length
+      ? service.items.map(item => ({ id: item.id, title: item.title || "", price: String(item.price || "") }))
+      : [{ id: `edit-${Date.now()}`, title: service.categories || service.title || "", price: String(serviceTotal(c, service) || "") }]
+    );
+    setIsEditDealForm(true);
+    setIsServiceForm(false);
+    setIsPaymentForm(false);
+  };
+
+  const handleSaveEditedService = () => {
+    const items = editServiceItems
+      .map(item => ({ id: item.id, title: item.title.trim(), price: Number(item.price) || 0 }))
+      .filter(item => item.title || item.price > 0);
+    if (!editServiceTitle.trim()) return alert("Please enter a service name.");
+    if (!items.length) return alert("Add at least one sub-service.");
+    if (items.some(item => !item.title || item.price <= 0)) return alert("Every sub-service needs a name and valid price.");
+    const updatedServices = services.map(s => s.id === editingServiceId
+      ? {
+        ...s,
+        title: editServiceTitle.trim(),
+        categories: items.map(item => item.title).join(", "),
+        items,
+        agreedPrice: items.reduce((sum, item) => sum + item.price, 0),
+        dueDate: editServiceDueDate,
+      }
+      : s
+    );
+    onUpdate(c.id, {
+      services: updatedServices,
+      totalAgreedPrice: updatedServices.reduce((sum, s) => sum + serviceTotal(c, s), 0),
+    });
     setIsEditDealForm(false);
+    setEditingServiceId("");
   };
 
   const services = getClientServices(c);
@@ -1246,8 +1310,18 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
         <div style={{ padding: 14, background: SURF2, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
           <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>✏️ Edit Agreed Deal Price</div>
           <div style={{ display: "flex", gap: 6 }}>
-            <input type="number" value={editedPrice} onChange={e => setEditedPrice(e.target.value)} placeholder="Agreed Price (UGX)" style={{ flex: 1, background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "6px 10px", fontSize: 11, fontFamily: FONT }} />
-            <button onClick={handleSaveEditedPrice} style={{ background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "0 14px", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>Save</button>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+              <input type="text" value={editServiceTitle} onChange={e => setEditServiceTitle(e.target.value)} placeholder="Service name" style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 11, fontFamily: FONT }} />
+              <input type="date" value={editServiceDueDate} onChange={e => setEditServiceDueDate(e.target.value)} style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 11, fontFamily: FONT }} />
+              {editServiceItems.map(item => (
+                <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 110px", gap: 6 }}>
+                  <input type="text" value={item.title} onChange={e => setEditServiceItems(items => items.map(row => row.id === item.id ? { ...row, title: e.target.value } : row))} placeholder="Sub-service" style={{ minWidth: 0, background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 11, fontFamily: FONT }} />
+                  <input type="number" value={item.price} onChange={e => setEditServiceItems(items => items.map(row => row.id === item.id ? { ...row, price: e.target.value } : row))} placeholder="Price" style={{ minWidth: 0, background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 8px", fontSize: 11, fontFamily: FONT }} />
+                </div>
+              ))}
+              <input type="number" value={editServiceItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0)} readOnly placeholder="Service Total (UGX)" style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "6px 10px", fontSize: 11, fontFamily: FONT }} />
+            </div>
+            <button onClick={handleSaveEditedService} style={{ background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "0 14px", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>Save</button>
             <button onClick={() => setIsEditDealForm(false)} style={{ background: BORDER, color: "#fff", border: "none", borderRadius: 6, padding: "0 10px", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
           </div>
         </div>
@@ -1313,14 +1387,14 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
           </>
         ) : (
           <>
-            <ABtn color={LIME} tc="#000" onClick={() => setIsPaymentForm(true)}>
+            <ABtn color={LIME} tc="#000" onClick={() => openPaymentForm()}>
               💰 Record Payment
             </ABtn>
             <ABtn color={SURF2} tc={COLD_C} onClick={() => setIsServiceForm(true)}>
               + Service
             </ABtn>
-            <ABtn color={SURF2} tc={LIME} onClick={() => { setEditedPrice(c.totalAgreedPrice || ""); setIsEditDealForm(true); }}>
-              ✏️ Edit Deal
+            <ABtn color={SURF2} tc={LIME} onClick={() => openEditServiceForm(services[0])}>
+              Edit Service
             </ABtn>
             <ABtn color={SURF2} tc={DIM} onClick={() => setExp(e => !e)}>
               {exp ? "Hide Ledger" : "Ledger"}
@@ -1362,7 +1436,12 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
           )}
           {!isLead && services.length > 0 && (
             <div style={{ marginBottom: (c.payments && c.payments.length > 0) ? 12 : 0 }}>
-              <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 6 }}>SERVICES / ORDERS</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <div style={{ fontSize: 9, color: DIM, letterSpacing: 2 }}>SERVICES / ORDERS</div>
+                <button onClick={() => setShowDocs(v => !v)} style={{ background: BG, border: `1px solid ${BORDER}`, color: showDocs ? LIME : DIM, borderRadius: 5, padding: "5px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+                  {showDocs ? "Hide documents" : "Documents"}
+                </button>
+              </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {services.map(s => {
                   const paid = servicePaid(c, s.id);
@@ -1385,11 +1464,17 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
                         </div>
                       ) : s.categories && <div style={{ color: DIM, lineHeight: 1.5, marginBottom: 4 }}>{s.categories}</div>}
                       <div style={{ color: DIM }}>Fee {fmtUGX(total)} · Paid {fmtUGX(paid)}</div>
-                      <button onClick={() => printInvoice({ ...c, date }, s)} style={{ marginTop: 8, background: BG, border: `1px solid ${BORDER}`, color: COLD_C, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
-                        Print invoice
-                      </button>
-                      <button onClick={() => { setPaymentServiceId(s.id); setIsPaymentForm(true); }} style={{ marginTop: 8, marginLeft: 6, background: BG, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+                      {s.dueDate && <div style={{ marginTop: 5, color: today >= s.dueDate && balance > 0 ? WARM_C : DIM }}>Due: {fmtDate(s.dueDate)}</div>}
+                      {showDocs && (
+                        <button onClick={() => printInvoice({ ...c, date }, s)} style={{ marginTop: 8, background: BG, border: `1px solid ${BORDER}`, color: COLD_C, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+                          Print invoice
+                        </button>
+                      )}
+                      <button onClick={() => openPaymentForm(s.id)} style={{ marginTop: 8, marginLeft: 6, background: BG, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
                         Record payment
+                      </button>
+                      <button onClick={() => openEditServiceForm(s)} style={{ marginTop: 8, marginLeft: 6, background: BG, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+                        Edit agreement
                       </button>
                     </div>
                   );
