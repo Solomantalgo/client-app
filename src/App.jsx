@@ -100,6 +100,135 @@ const PACKAGE_TEMPLATES = [
   }
 ];
 
+// ── Outreach Rotation Plan (120 Areas)
+const OUTREACH_AREAS = [
+  {"sequence": 1, "division": "Nakawa", "month": 1, "week": 1, "area": "Ntinda"},
+  {"sequence": 2, "division": "Nakawa", "month": 1, "week": 1, "area": "Kyambogo"},
+  {"sequence": 3, "division": "Nakawa", "month": 1, "week": 1, "area": "Naguru"},
+  {"sequence": 4, "division": "Nakawa", "month": 1, "week": 1, "area": "Bugolobi"},
+  {"sequence": 5, "division": "Nakawa", "month": 1, "week": 1, "area": "Nakawa Industrial Area"},
+  {"sequence": 6, "division": "Nakawa", "month": 1, "week": 1, "area": "Luzira"},
+  {"sequence": 7, "division": "Nakawa", "month": 1, "week": 2, "area": "Kireka"},
+  {"sequence": 8, "division": "Nakawa", "month": 1, "week": 2, "area": "Banda"},
+  {"sequence": 9, "division": "Nakawa", "month": 1, "week": 2, "area": "Butabika"},
+  {"sequence": 10, "division": "Nakawa", "month": 1, "week": 2, "area": "Mbuya"},
+  {"sequence": 11, "division": "Nakawa", "month": 1, "week": 2, "area": "Mutungo"},
+  {"sequence": 12, "division": "Nakawa", "month": 1, "week": 2, "area": "Nakawa Market Area"},
+  {"sequence": 13, "division": "Nakawa", "month": 1, "week": 3, "area": "Kyaliwajjala"},
+  {"sequence": 14, "division": "Nakawa", "month": 1, "week": 3, "area": "Namugongo"},
+  {"sequence": 15, "division": "Nakawa", "month": 1, "week": 3, "area": "Kiwatule"},
+  {"sequence": 16, "division": "Nakawa", "month": 1, "week": 3, "area": "Nalya"},
+  {"sequence": 17, "division": "Nakawa", "month": 1, "week": 3, "area": "Najjera"},
+  {"sequence": 18, "division": "Nakawa", "month": 1, "week": 3, "area": "Bweyogerere"},
+  {"sequence": 19, "division": "Nakawa", "month": 1, "week": 4, "area": "Kinawataka"},
+  {"sequence": 20, "division": "Nakawa", "month": 1, "week": 4, "area": "Portbell"},
+  {"sequence": 21, "division": "Nakawa", "month": 1, "week": 4, "area": "Kampala Industrial Area (Nakawa side)"},
+  {"sequence": 22, "division": "Nakawa", "month": 1, "week": 4, "area": "Ntinda Complex"},
+  {"sequence": 23, "division": "Nakawa", "month": 1, "week": 4, "area": "Bukoto"},
+  {"sequence": 24, "division": "Nakawa", "month": 1, "week": 4, "area": "Kisaasi"},
+  {"sequence": 25, "division": "Makindye", "month": 2, "week": 1, "area": "Muyenga"},
+  {"sequence": 26, "division": "Makindye", "month": 2, "week": 1, "area": "Kabalagala"},
+  {"sequence": 27, "division": "Makindye", "month": 2, "week": 1, "area": "Kansanga"},
+  {"sequence": 28, "division": "Makindye", "month": 2, "week": 1, "area": "Ggaba"},
+  {"sequence": 29, "division": "Makindye", "month": 2, "week": 1, "area": "Kibuli"},
+  {"sequence": 30, "division": "Makindye", "month": 2, "week": 1, "area": "Nsambya"},
+  {"sequence": 31, "division": "Makindye", "month": 2, "week": 2, "area": "Katwe"},
+  {"sequence": 32, "division": "Makindye", "month": 2, "week": 2, "area": "Kibuye"},
+  {"sequence": 33, "division": "Makindye", "month": 2, "week": 2, "area": "Makindye"},
+  {"sequence": 34, "division": "Makindye", "month": 2, "week": 2, "area": "Salama Road"},
+  {"sequence": 35, "division": "Makindye", "month": 2, "week": 2, "area": "Buziga"},
+  {"sequence": 36, "division": "Makindye", "month": 2, "week": 2, "area": "Lungujja"},
+  {"sequence": 37, "division": "Makindye", "month": 2, "week": 3, "area": "Zana"},
+  {"sequence": 38, "division": "Makindye", "month": 2, "week": 3, "area": "Seguku"},
+  {"sequence": 39, "division": "Makindye", "month": 2, "week": 3, "area": "Munyonyo"},
+  {"sequence": 40, "division": "Makindye", "month": 2, "week": 3, "area": "Bunga"},
+  {"sequence": 41, "division": "Makindye", "month": 2, "week": 3, "area": "Kisugu"},
+  {"sequence": 42, "division": "Makindye", "month": 2, "week": 3, "area": "Gogonya"},
+  {"sequence": 43, "division": "Makindye", "month": 2, "week": 4, "area": "Tank Hill"},
+  {"sequence": 44, "division": "Makindye", "month": 2, "week": 4, "area": "Konge"},
+  {"sequence": 45, "division": "Makindye", "month": 2, "week": 4, "area": "Lukuli"},
+  {"sequence": 46, "division": "Makindye", "month": 2, "week": 4, "area": "Kizungu"},
+  {"sequence": 47, "division": "Makindye", "month": 2, "week": 4, "area": "Wankulukuku"},
+  {"sequence": 48, "division": "Makindye", "month": 2, "week": 4, "area": "Ndeeba"},
+  {"sequence": 49, "division": "Kawempe", "month": 3, "week": 1, "area": "Kawempe Market"},
+  {"sequence": 50, "division": "Kawempe", "month": 3, "week": 1, "area": "Mulago"},
+  {"sequence": 51, "division": "Kawempe", "month": 3, "week": 1, "area": "Wandegeya"},
+  {"sequence": 52, "division": "Kawempe", "month": 3, "week": 1, "area": "Bwaise"},
+  {"sequence": 53, "division": "Kawempe", "month": 3, "week": 1, "area": "Kalerwe"},
+  {"sequence": 54, "division": "Kawempe", "month": 3, "week": 1, "area": "Mpererwe"},
+  {"sequence": 55, "division": "Kawempe", "month": 3, "week": 2, "area": "Ttula"},
+  {"sequence": 56, "division": "Kawempe", "month": 3, "week": 2, "area": "Kyebando"},
+  {"sequence": 57, "division": "Kawempe", "month": 3, "week": 2, "area": "Kisasi"},
+  {"sequence": 58, "division": "Kawempe", "month": 3, "week": 2, "area": "Kigowa"},
+  {"sequence": 59, "division": "Kawempe", "month": 3, "week": 2, "area": "Makerere"},
+  {"sequence": 60, "division": "Kawempe", "month": 3, "week": 2, "area": "Makerere Kivulu"},
+  {"sequence": 61, "division": "Kawempe", "month": 3, "week": 3, "area": "Kikoni"},
+  {"sequence": 62, "division": "Kawempe", "month": 3, "week": 3, "area": "Kazo"},
+  {"sequence": 63, "division": "Kawempe", "month": 3, "week": 3, "area": "Nabweru"},
+  {"sequence": 64, "division": "Kawempe", "month": 3, "week": 3, "area": "Gayaza Road"},
+  {"sequence": 65, "division": "Kawempe", "month": 3, "week": 3, "area": "Kulambiro"},
+  {"sequence": 66, "division": "Kawempe", "month": 3, "week": 3, "area": "Komamboga"},
+  {"sequence": 67, "division": "Kawempe", "month": 3, "week": 4, "area": "Nsooba"},
+  {"sequence": 68, "division": "Kawempe", "month": 3, "week": 4, "area": "Busega"},
+  {"sequence": 69, "division": "Kawempe", "month": 3, "week": 4, "area": "Kawempe Muslim"},
+  {"sequence": 70, "division": "Kawempe", "month": 3, "week": 4, "area": "Tula"},
+  {"sequence": 71, "division": "Kawempe", "month": 3, "week": 4, "area": "Mpanga"},
+  {"sequence": 72, "division": "Kawempe", "month": 3, "week": 4, "area": "Kanyanya"},
+  {"sequence": 73, "division": "Central", "month": 4, "week": 1, "area": "Kampala Road"},
+  {"sequence": 74, "division": "Central", "month": 4, "week": 1, "area": "Nakasero"},
+  {"sequence": 75, "division": "Central", "month": 4, "week": 1, "area": "Kololo"},
+  {"sequence": 76, "division": "Central", "month": 4, "week": 1, "area": "Old Kampala"},
+  {"sequence": 77, "division": "Central", "month": 4, "week": 1, "area": "Mengo"},
+  {"sequence": 78, "division": "Central", "month": 4, "week": 1, "area": "Kisenyi"},
+  {"sequence": 79, "division": "Central", "month": 4, "week": 2, "area": "Kisementi"},
+  {"sequence": 80, "division": "Central", "month": 4, "week": 2, "area": "Ntinda Road (Central side)"},
+  {"sequence": 81, "division": "Central", "month": 4, "week": 2, "area": "Bat Valley"},
+  {"sequence": 82, "division": "Central", "month": 4, "week": 2, "area": "Mulago Hill"},
+  {"sequence": 83, "division": "Central", "month": 4, "week": 2, "area": "Makinye Road"},
+  {"sequence": 84, "division": "Central", "month": 4, "week": 2, "area": "Parliamentary Avenue"},
+  {"sequence": 85, "division": "Central", "month": 4, "week": 3, "area": "Owino Market Area"},
+  {"sequence": 86, "division": "Central", "month": 4, "week": 3, "area": "Nasser Road"},
+  {"sequence": 87, "division": "Central", "month": 4, "week": 3, "area": "Kampala Central Market"},
+  {"sequence": 88, "division": "Central", "month": 4, "week": 3, "area": "Garden City Area"},
+  {"sequence": 89, "division": "Central", "month": 4, "week": 3, "area": "Lugogo"},
+  {"sequence": 90, "division": "Central", "month": 4, "week": 3, "area": "Acacia Avenue"},
+  {"sequence": 91, "division": "Central", "month": 4, "week": 4, "area": "Industrial Area — 6th Street"},
+  {"sequence": 92, "division": "Central", "month": 4, "week": 4, "area": "Industrial Area — 7th Street"},
+  {"sequence": 93, "division": "Central", "month": 4, "week": 4, "area": "Port Bell Road"},
+  {"sequence": 94, "division": "Central", "month": 4, "week": 4, "area": "Shoprite Area"},
+  {"sequence": 95, "division": "Central", "month": 4, "week": 4, "area": "Cityway"},
+  {"sequence": 96, "division": "Central", "month": 4, "week": 4, "area": "Entebbe Road (Central end)"},
+  {"sequence": 97, "division": "Rubaga", "month": 5, "week": 1, "area": "Rubaga Road"},
+  {"sequence": 98, "division": "Rubaga", "month": 5, "week": 1, "area": "Namirembe"},
+  {"sequence": 99, "division": "Rubaga", "month": 5, "week": 1, "area": "Lungujja"},
+  {"sequence": 100, "division": "Rubaga", "month": 5, "week": 1, "area": "Mutundwe"},
+  {"sequence": 101, "division": "Rubaga", "month": 5, "week": 1, "area": "Nateete"},
+  {"sequence": 102, "division": "Rubaga", "month": 5, "week": 1, "area": "Kasubi"},
+  {"sequence": 103, "division": "Rubaga", "month": 5, "week": 2, "area": "Bulange"},
+  {"sequence": 104, "division": "Rubaga", "month": 5, "week": 2, "area": "Makerere Hill Road"},
+  {"sequence": 105, "division": "Rubaga", "month": 5, "week": 2, "area": "Namungoona"},
+  {"sequence": 106, "division": "Rubaga", "month": 5, "week": 2, "area": "Busega"},
+  {"sequence": 107, "division": "Rubaga", "month": 5, "week": 2, "area": "Kintu Road"},
+  {"sequence": 108, "division": "Rubaga", "month": 5, "week": 2, "area": "Kagugube"},
+  {"sequence": 109, "division": "Rubaga", "month": 5, "week": 3, "area": "Nakulabye"},
+  {"sequence": 110, "division": "Rubaga", "month": 5, "week": 3, "area": "Nansana border (Rubaga side)"},
+  {"sequence": 111, "division": "Rubaga", "month": 5, "week": 3, "area": "Ttebandeke"},
+  {"sequence": 112, "division": "Rubaga", "month": 5, "week": 3, "area": "Busujju"},
+  {"sequence": 113, "division": "Rubaga", "month": 5, "week": 3, "area": "Lubaga Road"},
+  {"sequence": 114, "division": "Rubaga", "month": 5, "week": 3, "area": "Kabuusu"},
+  {"sequence": 115, "division": "Rubaga", "month": 5, "week": 4, "area": "Bukesa"},
+  {"sequence": 116, "division": "Rubaga", "month": 5, "week": 4, "area": "Nsangi"},
+  {"sequence": 117, "division": "Rubaga", "month": 5, "week": 4, "area": "Nabbingo"},
+  {"sequence": 118, "division": "Rubaga", "month": 5, "week": 4, "area": "Mugalu"},
+  {"sequence": 119, "division": "Rubaga", "month": 5, "week": 4, "area": "Rubaga Market"},
+  {"sequence": 120, "division": "Rubaga", "month": 5, "week": 4, "area": "Makukuba"}
+];
+
+function getAreaBySequence(seq) {
+  const cleanSeq = Math.min(120, Math.max(1, Number(seq) || 1));
+  return OUTREACH_AREAS.find(a => a.sequence === cleanSeq) || OUTREACH_AREAS[0];
+}
+
 // ── Helpers
 const todayStr = () => new Date().toISOString().split("T")[0];
 const addDays = (days) => {
@@ -113,7 +242,17 @@ const CLOUD_URL_KEY = `${CLOUD_CONFIG_KEY}:url`;
 const CLOUD_KEY_KEY = `${CLOUD_CONFIG_KEY}:key`;
 const REMOTE_TABLE = "sales_os_state";
 const REMOTE_ROW_ID = "primary";
-const DEFAULT_DATA = { clients: {}, target: 5 };
+const DEFAULT_DATA = {
+  clients: {},
+  target: 5,
+  expenses: [],
+  outreach: {
+    remotePointer: 1,
+    physicalPointer: 120,
+    logs: [],
+    laps: 0,
+  }
+};
 const BACKUP_KEY = `${KEY}:backup`;
 const DEFAULT_SUPABASE_URL = "https://ihjvvnnpyvdljzyfzclq.supabase.co";
 const DEFAULT_SUPABASE_KEY = "sb_publishable_3CTKaylVnQl3sQefNN5eZg_QmUVPcpt";
@@ -233,6 +372,12 @@ function normalizeData(d) {
     clients: normalizedClients,
     target: source.target ?? 5,
     expenses: (source.expenses || []).map(e => ({ id: e.id || Date.now().toString(), date: e.date || todayStr(), amount: Number(e.amount) || 0, note: e.note || "" })),
+    outreach: {
+      remotePointer: Math.min(120, Math.max(1, Number(source.outreach?.remotePointer) || 1)),
+      physicalPointer: Math.min(120, Math.max(1, Number(source.outreach?.physicalPointer) || 120)),
+      logs: Array.isArray(source.outreach?.logs) ? source.outreach.logs : [],
+      laps: Number(source.outreach?.laps) || 0,
+    },
     meta: {
       ...(source.meta || {}),
       updatedAt: source.meta?.updatedAt || new Date().toISOString(),
@@ -321,6 +466,7 @@ export default function App() {
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("today");
   const [showForm, setShowForm] = useState(false);
+  const [formDefaults, setFormDefaults] = useState(null);
   const [histSel, setHistSel] = useState(null);
   const [banner, setBanner] = useState(null);
   const [cloudConfig] = useState(getStoredCloudConfig() || { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY });
@@ -457,7 +603,9 @@ export default function App() {
   const addClient = (fields) => {
     const client = { id: Date.now().toString(), ...fields, time: new Date().toLocaleTimeString("en-UG", { hour: "2-digit", minute: "2-digit" }) };
     const next = { ...data, clients: { ...data.clients, [today]: [...(data.clients[today] || []), client] } };
-    void save(next); setShowForm(false);
+    void save(next);
+    setShowForm(false);
+    setFormDefaults(null);
   };
 
   const updateClient = (date, id, updates) => {
@@ -476,6 +624,117 @@ export default function App() {
 
   const setTarget = t => void save({ ...data, target: Math.max(1, t) });
 
+  const markOutreachDone = (track) => {
+    if (!data) return;
+    const outreach = data.outreach || { remotePointer: 1, physicalPointer: 120, logs: [], laps: 0 };
+    const isRemote = track === "remote";
+    const currentSeq = isRemote ? outreach.remotePointer : outreach.physicalPointer;
+    const currentArea = getAreaBySequence(currentSeq);
+
+    const newLog = {
+      id: `outreach-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      track,
+      area: currentArea.area,
+      division: currentArea.division,
+      sequence: currentArea.sequence,
+      month: currentArea.month,
+      week: currentArea.week,
+      completedAt: new Date().toISOString()
+    };
+
+    let nextRemote = outreach.remotePointer;
+    let nextPhysical = outreach.physicalPointer;
+
+    if (isRemote) {
+      nextRemote = outreach.remotePointer + 1;
+    } else {
+      nextPhysical = outreach.physicalPointer - 1;
+    }
+
+    let lapOccurred = false;
+    let lapLog = null;
+    let nextLaps = outreach.laps || 0;
+
+    if (nextRemote >= nextPhysical || nextRemote > 120 || nextPhysical < 1) {
+      lapOccurred = true;
+      nextLaps += 1;
+      lapLog = {
+        id: `lap-${Date.now()}`,
+        track: "lap",
+        area: "Full 120-Area Rotation Lap Completed",
+        division: "All Divisions",
+        sequence: 0,
+        month: 0,
+        week: 0,
+        completedAt: new Date().toISOString(),
+        note: `Lap ${nextLaps} completed! Both tracks wrapped back to start (Remote → Ntinda #1, Physical → Makukuba #120).`
+      };
+      nextRemote = 1;
+      nextPhysical = 120;
+    }
+
+    const updatedLogs = [newLog, ...(lapLog ? [lapLog] : []), ...(outreach.logs || [])];
+
+    const nextData = {
+      ...data,
+      outreach: {
+        remotePointer: nextRemote,
+        physicalPointer: nextPhysical,
+        logs: updatedLogs,
+        laps: nextLaps
+      }
+    };
+
+    void save(nextData);
+
+    if (lapOccurred) {
+      setBanner(`🎉 Outreach Lap ${nextLaps} Completed! Both tracks have wrapped back to their starting positions.`);
+    } else {
+      setBanner(`✓ Marked ${isRemote ? "Remote" : "Physical"} Outreach at ${currentArea.area} as Done!`);
+    }
+  };
+
+  const undoOutreachLog = (logId) => {
+    if (!data || !data.outreach) return;
+    const logToUndo = data.outreach.logs.find(l => l.id === logId);
+    if (!logToUndo) return;
+
+    if (!confirm(`Undo completion log for ${logToUndo.area} (${logToUndo.track})?`)) return;
+
+    let nextRemote = data.outreach.remotePointer;
+    let nextPhysical = data.outreach.physicalPointer;
+
+    if (logToUndo.track === "remote") {
+      nextRemote = Math.max(1, nextRemote - 1);
+    } else if (logToUndo.track === "physical") {
+      nextPhysical = Math.min(120, nextPhysical + 1);
+    }
+
+    const nextLogs = data.outreach.logs.filter(l => l.id !== logId);
+
+    const nextData = {
+      ...data,
+      outreach: {
+        ...data.outreach,
+        remotePointer: nextRemote,
+        physicalPointer: nextPhysical,
+        logs: nextLogs
+      }
+    };
+
+    void save(nextData);
+    setBanner(`Undid completion log for ${logToUndo.area}. Pointer updated.`);
+  };
+
+  const openAddLeadFromOutreach = (areaObj, track) => {
+    setFormDefaults({
+      business: "",
+      pitchMethod: track === "remote" ? "WhatsApp" : "In-Person",
+      notes: `Location: ${areaObj.area} (${areaObj.division} Div, Month ${areaObj.month} W${areaObj.week}) — Pitch track: ${track === "remote" ? "Remote" : "Physical"} Outreach`,
+    });
+    setShowForm(true);
+  };
+
   const resetDatabase = async () => {
     const password = prompt("Enter reset password to empty all records.");
     if (password === null) return;
@@ -483,7 +742,7 @@ export default function App() {
       setBanner("Reset cancelled: wrong password.");
       return;
     }
-    if (!confirm("Empty all clients, services, payments, followups, and expenses?")) return;
+    if (!confirm("Empty all clients, services, payments, followups, expenses, and outreach progress?")) return;
     const emptyData = touchData(DEFAULT_DATA);
     setData(emptyData);
     await persist(emptyData);
@@ -502,7 +761,6 @@ export default function App() {
     </div>
   );
 
-  const todayC = data.clients[today] || [];
   const pending = getPending(data.clients);
   const sortedDates = Object.keys(data.clients).sort((a, b) => b.localeCompare(a));
 
@@ -523,7 +781,7 @@ export default function App() {
           <div>
             <div style={{ color: LIME, fontSize: 9, letterSpacing: 4, marginBottom: 4 }}>SOLO — SALES OS</div>
             <div style={{ fontSize: 18, fontWeight: "bold", letterSpacing: -0.5 }}>
-              {tab === "today" ? "Today's Session" : tab === "history" ? "History" : tab === "followups" ? "Follow-Ups" : tab === "ongoing" ? "Ongoing Projects" : tab === "payments" ? "Payments Tracker" : tab === "stats" ? "Performance Stats" : "System Flow"}
+              {tab === "today" ? "Today's Session" : tab === "outreach" ? "Outreach Scheduler" : tab === "history" ? "History" : tab === "followups" ? "Follow-Ups" : tab === "ongoing" ? "Ongoing Projects" : tab === "payments" ? "Payments Tracker" : tab === "stats" ? "Performance Stats" : "System Flow"}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -543,6 +801,7 @@ export default function App() {
           {[
             { label: "WORK", items: [
               { k: "today", l: "Today" },
+              { k: "outreach", l: "Outreach" },
               { k: "followups", l: pending.length ? `Due (${pending.length})` : "Due" },
               { k: "ongoing", l: "Ongoing" },
             ] },
@@ -572,7 +831,8 @@ export default function App() {
 
       {/* View */}
       <div style={{ padding: "16px 16px 100px" }}>
-        {tab === "today" && <TodayView clients={todayC} target={data.target} today={today} onUpdate={(id, u) => updateClient(today, id, u)} />}
+        {tab === "today" && <TodayView outreach={data.outreach} clients={data.clients} target={data.target} today={today} onMarkDone={markOutreachDone} onAddLead={openAddLeadFromOutreach} />}
+        {tab === "outreach" && <OutreachView outreach={data.outreach} clients={data.clients} target={data.target} today={today} onUpdate={(id, u) => updateClient(today, id, u)} onUndoLog={undoOutreachLog} onOpenAddClient={() => { setFormDefaults(null); setShowForm(true); }} />}
         {tab === "history" && <HistoryView clients={data.clients} sortedDates={sortedDates} today={today} selected={histSel} onSelect={setHistSel} onUpdate={updateClient} />}
         {tab === "followups" && <FollowupsView pending={pending} onUpdate={updateClient} />}
         {tab === "ongoing" && <OngoingView clients={data.clients} onUpdate={updateClient} />}
@@ -581,18 +841,7 @@ export default function App() {
         {tab === "flow" && <SystemFlowView />}
       </div>
 
-      {/* FAB */}
-      {tab === "today" && !showForm && (
-        <button onClick={() => setShowForm(true)} style={{
-          position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
-          background: LIME, color: "#000", border: "none", borderRadius: 50,
-          padding: "13px 30px", fontSize: 12, fontWeight: "bold", letterSpacing: 1.5,
-          cursor: "pointer", boxShadow: `0 0 28px rgba(170,255,0,0.3)`,
-          fontFamily: FONT, whiteSpace: "nowrap", zIndex: 50
-        }}>+ ADD CLIENT</button>
-      )}
-
-      {showForm && <ClientForm onAdd={addClient} onClose={() => setShowForm(false)} />}
+      {showForm && <ClientForm initialValues={formDefaults} onAdd={addClient} onClose={() => { setShowForm(false); setFormDefaults(null); }} />}
     </div>
   );
 }
@@ -612,34 +861,353 @@ function TargetCtrl({ target, onChange }) {
 }
 
 // ── Today View
-function TodayView({ clients, target, today, onUpdate }) {
-  const pct = Math.min(1, clients.length / target);
-  const hit = clients.length >= target;
+function TodayView({ outreach, clients, target, today, onMarkDone, onAddLead }) {
+  const [activeTrack, setActiveTrack] = useState("physical");
+
+  const remoteSeq = outreach?.remotePointer || 1;
+  const physicalSeq = outreach?.physicalPointer || 120;
+
+  const remoteArea = getAreaBySequence(remoteSeq);
+  const physicalArea = getAreaBySequence(physicalSeq);
+
+  const todayClients = clients[today] || [];
+  const pct = Math.min(1, todayClients.length / target);
+  const hit = todayClients.length >= target;
+
   return (
-    <div>
-      {/* Dashboard Card */}
-      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      
+      {/* Today's Pitches & Leads Summary Card */}
+      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "14px 16px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-          <span style={{ fontSize: 10, color: DIM, letterSpacing: 1 }}>TODAY'S PROGRESS</span>
+          <span style={{ fontSize: 10, color: LIME, letterSpacing: 1, fontWeight: "bold" }}>TODAY'S PITCHES & LEADS</span>
           <span style={{ fontSize: 12, color: hit ? LIME : "#fff", fontWeight: "bold" }}>
-            {clients.length} / {target} {hit ? "✓ HIT" : ""}
+            {todayClients.length} / {target} {hit ? "✓ HIT" : ""}
           </span>
         </div>
         <div style={{ background: BORDER, borderRadius: 4, height: 5, overflow: "hidden", marginBottom: 12 }}>
           <div style={{ height: "100%", borderRadius: 4, background: LIME, width: `${pct * 100}%`, transition: "width 0.4s ease" }} />
         </div>
         <div style={{ display: "flex", gap: 16 }}>
-          <Pill label="Warm" count={clients.filter(c => c.temp === "warm").length} color={WARM_C} />
-          <Pill label="Cold" count={clients.filter(c => c.temp === "cold").length} color={COLD_C} />
-          <Pill label="Pending" count={clients.filter(c => c.followUp === "needed").length} color={LIME} />
-          <Pill label="Done" count={clients.filter(c => c.followUp === "done").length} color={DIM} />
+          <Pill label="Warm" count={todayClients.filter(c => c.temp === "warm").length} color={WARM_C} />
+          <Pill label="Cold" count={todayClients.filter(c => c.temp === "cold").length} color={COLD_C} />
+          <Pill label="Pending" count={todayClients.filter(c => c.followUp === "needed").length} color={LIME} />
+          <Pill label="Done" count={todayClients.filter(c => c.followUp === "done").length} color={DIM} />
         </div>
       </div>
 
-      {clients.length === 0
-        ? <Empty text="No clients yet today. Tap + ADD CLIENT to start." />
-        : clients.map(c => <ClientCard key={c.id} client={c} date={today} onUpdate={onUpdate} />)
-      }
+      {/* Track Navigation Sub-Tabs */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: 10, color: DIM, letterSpacing: 1, fontWeight: "bold" }}>
+          OUTREACH TRACK TARGETS
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <button onClick={() => setActiveTrack("physical")} style={{
+            padding: "10px 8px", borderRadius: 8, cursor: "pointer", fontFamily: FONT, fontSize: 11, fontWeight: "bold",
+            background: activeTrack === "physical" ? COLD_C + "22" : SURF2,
+            border: activeTrack === "physical" ? `1px solid ${COLD_C}` : `1px solid ${BORDER}`,
+            color: activeTrack === "physical" ? COLD_C : DIM,
+            transition: "all 0.15s"
+          }}>
+            🚶 PHYSICAL (Seq #{physicalSeq})
+          </button>
+          <button onClick={() => setActiveTrack("remote")} style={{
+            padding: "10px 8px", borderRadius: 8, cursor: "pointer", fontFamily: FONT, fontSize: 11, fontWeight: "bold",
+            background: activeTrack === "remote" ? WARM_C + "22" : SURF2,
+            border: activeTrack === "remote" ? `1px solid ${WARM_C}` : `1px solid ${BORDER}`,
+            color: activeTrack === "remote" ? WARM_C : DIM,
+            transition: "all 0.15s"
+          }}>
+            📞 REMOTE (Seq #{remoteSeq})
+          </button>
+        </div>
+      </div>
+
+      {/* Single Active Card View */}
+      {activeTrack === "physical" && (
+        <div style={{ background: SURF, border: `1px solid ${COLD_C}44`, borderTop: `3px solid ${COLD_C}`, borderRadius: 12, padding: "16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 9, color: COLD_C, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase" }}>
+              🚶 Physical Outreach — Today
+            </span>
+            <span style={{ fontSize: 9, color: DIM, fontFamily: FONT, background: SURF2, padding: "2px 6px", borderRadius: 4 }}>
+              Seq #{physicalSeq}
+            </span>
+          </div>
+
+          <div style={{ fontSize: 22, fontWeight: "bold", color: "#fff", marginBottom: 4 }}>
+            {physicalArea.area}
+          </div>
+
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+            <Bdg color={COLD_C}>{physicalArea.division} Division</Bdg>
+            <Chip style={{ background: SURF2, color: "#ccc" }}>Month {physicalArea.month} · Week {physicalArea.week}</Chip>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => onMarkDone("physical")} style={{ flex: 1, background: COLD_C, color: "#000", border: "none", borderRadius: 8, padding: "11px 14px", fontSize: 11, fontWeight: "bold", cursor: "pointer", fontFamily: FONT, letterSpacing: 0.5 }}>
+              ✓ MARK DONE
+            </button>
+            <button onClick={() => onAddLead(physicalArea, "physical")} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: "#fff", borderRadius: 8, padding: "11px 12px", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>
+              + Add Lead
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeTrack === "remote" && (
+        <div style={{ background: SURF, border: `1px solid ${WARM_C}44`, borderTop: `3px solid ${WARM_C}`, borderRadius: 12, padding: "16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 9, color: WARM_C, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase" }}>
+              📞 Remote Outreach — Today
+            </span>
+            <span style={{ fontSize: 9, color: DIM, fontFamily: FONT, background: SURF2, padding: "2px 6px", borderRadius: 4 }}>
+              Seq #{remoteSeq}
+            </span>
+          </div>
+
+          <div style={{ fontSize: 22, fontWeight: "bold", color: "#fff", marginBottom: 4 }}>
+            {remoteArea.area}
+          </div>
+
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+            <Bdg color={WARM_C}>{remoteArea.division} Division</Bdg>
+            <Chip style={{ background: SURF2, color: "#ccc" }}>Month {remoteArea.month} · Week {remoteArea.week}</Chip>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => onMarkDone("remote")} style={{ flex: 1, background: WARM_C, color: "#000", border: "none", borderRadius: 8, padding: "11px 14px", fontSize: 11, fontWeight: "bold", cursor: "pointer", fontFamily: FONT, letterSpacing: 0.5 }}>
+              ✓ MARK DONE
+            </button>
+            <button onClick={() => onAddLead(remoteArea, "remote")} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: "#fff", borderRadius: 8, padding: "11px 12px", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>
+              + Add Lead
+            </button>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+// ── Outreach View
+function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, onOpenAddClient }) {
+  const [filterTrack, setFilterTrack] = useState("all");
+  const [showMap, setShowMap] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+
+  const remoteSeq = outreach?.remotePointer || 1;
+  const physicalSeq = outreach?.physicalPointer || 120;
+  const logs = outreach?.logs || [];
+  const laps = outreach?.laps || 0;
+
+  const remoteArea = getAreaBySequence(remoteSeq);
+  const physicalArea = getAreaBySequence(physicalSeq);
+
+  const todayClients = clients[today] || [];
+  const pct = Math.min(1, todayClients.length / target);
+  const hit = todayClients.length >= target;
+
+  const filteredLogs = logs.filter(l => {
+    if (filterTrack === "all") return true;
+    if (filterTrack === "physical") return l.track === "physical";
+    if (filterTrack === "remote") return l.track === "remote";
+    if (filterTrack === "laps") return l.track === "lap";
+    return true;
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      
+      {/* Pitch & Clients Today Section */}
+      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "14px 16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontSize: 10, color: LIME, letterSpacing: 1, fontWeight: "bold" }}>TODAY'S PITCHES & LEADS</span>
+          <span style={{ fontSize: 12, color: hit ? LIME : "#fff", fontWeight: "bold" }}>
+            {todayClients.length} / {target} {hit ? "✓ TARGET HIT" : ""}
+          </span>
+        </div>
+        <div style={{ background: BORDER, borderRadius: 4, height: 5, overflow: "hidden", marginBottom: 12 }}>
+          <div style={{ height: "100%", borderRadius: 4, background: LIME, width: `${pct * 100}%`, transition: "width 0.4s ease" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 12 }}>
+            <Pill label="Warm" count={todayClients.filter(c => c.temp === "warm").length} color={WARM_C} />
+            <Pill label="Cold" count={todayClients.filter(c => c.temp === "cold").length} color={COLD_C} />
+            <Pill label="Pending" count={todayClients.filter(c => c.followUp === "needed").length} color={LIME} />
+          </div>
+          <button onClick={onOpenAddClient} style={{ background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 10, fontWeight: "bold", fontFamily: FONT, cursor: "pointer" }}>
+            + Add Client
+          </button>
+        </div>
+      </div>
+
+      {/* Added Clients List for Today */}
+      <div>
+        {todayClients.length === 0 ? (
+          <Empty text="No clients recorded yet today. Use + Add Client above or + Add Lead on Today's cards." />
+        ) : (
+          todayClients.map(c => <ClientCard key={c.id} client={c} date={today} onUpdate={onUpdate} />)
+        )}
+      </div>
+
+      {/* Rotation Tracker Progress Overview */}
+      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "14px 16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 9, color: LIME, letterSpacing: 2, fontWeight: "bold" }}>ROTATION PLAN TRACKING</div>
+            <div style={{ fontSize: 13, fontWeight: "bold", color: "#fff", marginTop: 2 }}>120-Area Master Sequence Progress</div>
+          </div>
+          <span style={{ fontSize: 10, background: LIME + "22", color: LIME, padding: "4px 10px", borderRadius: 20, fontFamily: FONT, fontWeight: "bold" }}>
+            Lap {laps + 1}
+          </span>
+        </div>
+
+        {/* Remote Progress Bar */}
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
+            <span style={{ color: WARM_C, fontWeight: "bold" }}>📞 Remote Track (Forward)</span>
+            <span style={{ color: DIM, fontFamily: FONT }}>{remoteSeq} / 120 ({remoteArea.area})</span>
+          </div>
+          <div style={{ background: BORDER, height: 6, borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ background: WARM_C, height: "100%", width: `${(remoteSeq / 120) * 100}%`, transition: "width 0.3s ease" }} />
+          </div>
+        </div>
+
+        {/* Physical Progress Bar */}
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
+            <span style={{ color: COLD_C, fontWeight: "bold" }}>🚶 Physical Track (Backward)</span>
+            <span style={{ color: DIM, fontFamily: FONT }}>{121 - physicalSeq} / 120 ({physicalArea.area})</span>
+          </div>
+          <div style={{ background: BORDER, height: 6, borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ background: COLD_C, height: "100%", width: `${((121 - physicalSeq) / 120) * 100}%`, transition: "width 0.3s ease" }} />
+          </div>
+        </div>
+      </div>
+
+      {/* 120-Area Rotation Plan Explorer Accordion */}
+      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden" }}>
+        <div onClick={() => setShowMap(v => !v)} style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+          <span style={{ fontSize: 11, fontWeight: "bold", color: "#fff" }}>
+            🗺️ View Full 120-Area Rotation Plan
+          </span>
+          <span style={{ color: LIME, fontSize: 11, fontFamily: FONT }}>{showMap ? "Hide ▲" : "Show ▼"}</span>
+        </div>
+
+        {showMap && (
+          <div style={{ padding: "12px 16px 16px", borderTop: `1px solid ${BORDER}`, maxHeight: 340, overflowY: "auto" }}>
+            <div style={{ fontSize: 9, color: DIM, marginBottom: 10 }}>
+              Master sequence 1–120. Active track positions are highlighted.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {OUTREACH_AREAS.map(a => {
+                const isRemoteHere = a.sequence === remoteSeq;
+                const isPhysicalHere = a.sequence === physicalSeq;
+                return (
+                  <div key={a.sequence} style={{
+                    display: "grid", gridTemplateColumns: "36px 1fr auto", alignItems: "center", gap: 8,
+                    background: (isRemoteHere || isPhysicalHere) ? SURF2 : "transparent",
+                    border: (isRemoteHere && isPhysicalHere) ? `1px solid ${LIME}` : isRemoteHere ? `1px solid ${WARM_C}` : isPhysicalHere ? `1px solid ${COLD_C}` : `1px solid transparent`,
+                    padding: "6px 8px", borderRadius: 6, fontSize: 10
+                  }}>
+                    <span style={{ color: DIM, fontFamily: FONT }}>#{a.sequence}</span>
+                    <div>
+                      <span style={{ color: "#fff", fontWeight: (isRemoteHere || isPhysicalHere) ? "bold" : "normal" }}>{a.area}</span>
+                      <span style={{ color: DIM, fontSize: 9, marginLeft: 6 }}>({a.division})</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {isRemoteHere && <span style={{ background: WARM_C, color: "#000", fontSize: 8, padding: "1px 5px", borderRadius: 4, fontWeight: "bold" }}>REMOTE</span>}
+                      {isPhysicalHere && <span style={{ background: COLD_C, color: "#000", fontSize: 8, padding: "1px 5px", borderRadius: 4, fontWeight: "bold" }}>PHYSICAL</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* History Log Section with Easy Hide / Show Button */}
+      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden" }}>
+        <div onClick={() => setShowLogs(v => !v)} style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: "bold", color: "#fff" }}>
+              📜 Outreach History Logs
+            </span>
+            <span style={{ fontSize: 9, background: SURF2, color: LIME, padding: "2px 7px", borderRadius: 10, fontFamily: FONT, fontWeight: "bold" }}>
+              {logs.length}
+            </span>
+          </div>
+          <span style={{ color: LIME, fontSize: 11, fontFamily: FONT }}>{showLogs ? "Hide Logs ▲" : "Show Logs ▼"}</span>
+        </div>
+
+        {showLogs && (
+          <div style={{ padding: "12px 16px 16px", borderTop: `1px solid ${BORDER}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+              <div style={{ fontSize: 9, color: DIM, letterSpacing: 1 }}>FILTER LOG TRACK:</div>
+              <div style={{ display: "flex", gap: 4 }}>
+                {[
+                  { k: "all", l: "All" },
+                  { k: "physical", l: "Physical" },
+                  { k: "remote", l: "Remote" },
+                  { k: "laps", l: "Laps" },
+                ].map(({ k, l }) => (
+                  <button key={k} onClick={(e) => { e.stopPropagation(); setFilterTrack(k); }} style={{
+                    padding: "4px 8px", fontSize: 9, fontFamily: FONT, borderRadius: 4, cursor: "pointer",
+                    background: filterTrack === k ? LIME + "22" : SURF2,
+                    border: filterTrack === k ? `1px solid ${LIME}` : `1px solid ${BORDER}`,
+                    color: filterTrack === k ? LIME : DIM
+                  }}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {filteredLogs.length === 0 ? (
+              <Empty text="No history logs recorded for this filter." />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflowY: "auto" }}>
+                {filteredLogs.map(log => {
+                  const isLap = log.track === "lap";
+                  const isRem = log.track === "remote";
+                  const col = isLap ? LIME : isRem ? WARM_C : COLD_C;
+                  const dateStr = log.completedAt ? new Date(log.completedAt).toLocaleString("en-UG", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+                  return (
+                    <div key={log.id} style={{
+                      background: SURF2, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${col}`,
+                      borderRadius: 8, padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center"
+                    }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                          <span style={{ fontSize: 8, background: col + "22", color: col, padding: "2px 6px", borderRadius: 4, fontWeight: "bold", textTransform: "uppercase" }}>
+                            {isLap ? "🎉 LAP EVENT" : isRem ? "📞 REMOTE" : "🚶 PHYSICAL"}
+                          </span>
+                          <span style={{ fontSize: 11, fontWeight: "bold", color: "#fff" }}>{log.area}</span>
+                        </div>
+                        <div style={{ fontSize: 9, color: DIM }}>
+                          {log.division && `${log.division} Division • `}
+                          {log.sequence ? `Seq #${log.sequence} • ` : ""}
+                          {dateStr}
+                        </div>
+                        {log.note && <div style={{ fontSize: 9, color: LIME, marginTop: 3 }}>{log.note}</div>}
+                      </div>
+
+                      {!isLap && (
+                        <button onClick={() => onUndoLog(log.id)} style={{ background: BG, border: `1px solid ${BORDER}`, color: DIM, borderRadius: 4, padding: "4px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
+                          Undo
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }
@@ -1616,15 +2184,16 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
 }
 
 // ── Client Form
-function ClientForm({ onAdd, onClose }) {
-  const [f, setF] = useState({
+function ClientForm({ onAdd, onClose, initialValues }) {
+  const [f, setF] = useState(() => ({
     name: "", business: "", businessType: "", phone: "",
     pitchMethod: "In-Person", package: "Undecided",
     servicesToOffer: "", quotedPrice: "",
     demoShown: "no", temp: "warm", followUp: "needed", notes: "",
     status: "lead", ownerAround: "yes", followUpDate: "", hasWhatsApp: "yes",
-    totalAgreedPrice: "", amountPaid: 0, payments: []
-  });
+    totalAgreedPrice: "", amountPaid: 0, payments: [],
+    ...(initialValues || {})
+  }));
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
 
   const autoSuggest = () => {
