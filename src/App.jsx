@@ -2490,7 +2490,7 @@ function SystemFlowView() {
 
 // ── Ongoing View
 function OngoingView({ clients, onUpdate }) {
-  const [showCleared, setShowCleared] = useState(false);
+  const [showCleared, setShowCleared] = useState(true);
   const ongoing = Object.entries(clients).flatMap(([date, arr]) =>
     arr.filter(c => c.status === "ongoing").map(c => ({ ...c, date }))
   );
@@ -2506,15 +2506,15 @@ function OngoingView({ clients, onUpdate }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <div style={{ fontSize: 10, color: DIM, letterSpacing: 2 }}>
-          {active.length} ACTIVE PROJECT{active.length !== 1 ? "S" : ""}
+          {active.length} ACTIVE · {cleared.length} PAID
         </div>
         {cleared.length > 0 && (
           <button onClick={() => setShowCleared(v => !v)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: showCleared ? LIME : DIM, borderRadius: 6, padding: "6px 9px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
-            {showCleared ? "Hide paid" : `Show paid ${cleared.length}`}
+            {showCleared ? `Hide paid (${cleared.length})` : `Show paid (${cleared.length})`}
           </button>
         )}
       </div>
-      {visible.length === 0 ? <Empty text="All ongoing projects are paid. Use Show paid to review them." /> : visible.map(c => (
+      {visible.length === 0 ? <Empty text="No active projects with balances due." /> : visible.map(c => (
         <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} />
       ))}
     </div>
