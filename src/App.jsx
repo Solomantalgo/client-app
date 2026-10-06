@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
+import MoneyView from "./MoneyView.jsx";
+import { DEFAULT_FINANCE, allocateAmount } from "./money.js";
+import { chooseSnapshot, hasSavedContent } from "./sync.js";
 
 // ── Storage Polyfill
 if (typeof window !== 'undefined' && !window.storage) {
@@ -231,6 +234,7 @@ function getAreaBySequence(seq) {
 
 // ── Helpers
 const todayStr = () => new Date().toISOString().split("T")[0];
+const newPaymentId = () => globalThis.crypto?.randomUUID?.() || `payment-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 const addDays = (days) => {
   const d = new Date();
   d.setDate(d.getDate() + days);
@@ -282,10 +286,6 @@ function getPending(clients) {
       return isLead && (timelineReached || undatedOlderLead);
     }).map(c => ({ ...c, date }))
   );
-}
-
-function countClients(data) {
-  return Object.values(data?.clients || {}).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
 }
 
 function touchData(data) {
@@ -344,7 +344,7 @@ function normalizeData(d) {
           hasWhatsApp: c.hasWhatsApp || "yes",
           totalAgreedPrice: c.totalAgreedPrice || "",
           amountPaid: c.amountPaid ?? 0,
-          payments: (c.payments || []).map(p => ({ ...p, amount: Number(p.amount) || 0, serviceId: p.serviceId || "" })),
+          payments: (c.payments || []).map((p, index) => ({ ...p, id: p.id || `payment-${c.id || date}-${index + 1}`, amount: Number(p.amount) || 0, serviceId: p.serviceId || "" })),
           services: Array.isArray(c.services) && c.services.length
             ? c.services.map(s => ({
               id: s.id || `svc-${c.id || Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -367,11 +367,26 @@ function normalizeData(d) {
       }
     }
   }
+  const financeSource = source.finance || {};
+  const finance = {
+    buckets: Array.isArray(financeSource.buckets) ? financeSource.buckets : DEFAULT_FINANCE.buckets,
+    accounts: Array.isArray(financeSource.accounts) ? financeSource.accounts : DEFAULT_FINANCE.accounts,
+    sources: Array.isArray(financeSource.sources) ? financeSource.sources : DEFAULT_FINANCE.sources,
+    manualIncome: Array.isArray(financeSource.manualIncome) ? financeSource.manualIncome : [],
+    paymentSnapshots: { ...(financeSource.paymentSnapshots || {}) },
+  };
+  for (const arr of Object.values(normalizedClients)) for (const client of arr) for (const payment of client.payments || []) {
+    if (!finance.paymentSnapshots[payment.id]) {
+      try { finance.paymentSnapshots[payment.id] = { ...allocateAmount(payment.amount, finance.buckets), accountId: payment.accountId || "" }; }
+      catch { finance.paymentSnapshots[payment.id] = { allocations: [], unallocated: Number(payment.amount) || 0, totalPercentage: 0, accountId: payment.accountId || "" }; }
+    }
+  }
   return {
     ...source,
+    finance,
     clients: normalizedClients,
     target: source.target ?? 5,
-    expenses: (source.expenses || []).map(e => ({ id: e.id || Date.now().toString(), date: e.date || todayStr(), amount: Number(e.amount) || 0, note: e.note || "" })),
+    expenses: (source.expenses || []).map(e => ({ ...e, id: e.id || Date.now().toString(), date: e.date || "", amount: Number(e.amount) || 0, note: e.note || e.description || "", bucketId: e.bucketId || "", accountId: e.accountId || "" })),
     outreach: {
       remotePointer: Math.min(120, Math.max(1, Number(source.outreach?.remotePointer) || 1)),
       physicalPointer: Math.min(120, Math.max(1, Number(source.outreach?.physicalPointer) || 120)),
@@ -380,7 +395,7 @@ function normalizeData(d) {
     },
     meta: {
       ...(source.meta || {}),
-      updatedAt: source.meta?.updatedAt || new Date().toISOString(),
+      updatedAt: source.meta?.updatedAt || "1970-01-01T00:00:00.000Z",
     },
   };
 }
@@ -426,7 +441,10 @@ async function loadRemote(config) {
     if (error) {
       return { ok: false, reason: error.message || "Cloud load failed" };
     }
-    return { ok: true, data: data?.payload ? normalizeData(data.payload) : null };
+    if (!data?.payload) return { ok: true, data: null };
+    const normalized = normalizeData(data.payload);
+    if (!data.payload.meta?.updatedAt && data.updated_at) normalized.meta.updatedAt = data.updated_at;
+    return { ok: true, data: normalized };
   } catch (err) {
     return { ok: false, reason: err.message || "Cloud load failed" };
   }
@@ -464,12 +482,13 @@ async function persistBackup(data) {
 // ══════════════════════════════════════════════════════════
 export default function App() {
   const [data, setData] = useState(null);
-  const [tab, setTab] = useState("today");
+  const [tab, setTab] = useState(() => new URLSearchParams(window.location.search).get("view") === "money" ? "payments" : "today");
   const [showForm, setShowForm] = useState(false);
   const [formDefaults, setFormDefaults] = useState(null);
   const [histSel, setHistSel] = useState(null);
   const [banner, setBanner] = useState(null);
-  const [cloudConfig] = useState(getStoredCloudConfig() || { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY });
+  const [showCloudSetup, setShowCloudSetup] = useState(false);
+  const [cloudConfig, setCloudConfig] = useState(getStoredCloudConfig() || { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY });
   const [cloudStatus, setCloudStatus] = useState("Local only");
   const today = todayStr();
 
@@ -497,18 +516,14 @@ export default function App() {
       if (!alive) return;
       if (remoteResult.ok && remoteResult.data) {
         const remote = remoteResult.data;
-        const localTs = new Date(base.meta?.updatedAt || 0).getTime();
-        const remoteTs = new Date(remote.meta?.updatedAt || 0).getTime();
-        const localCount = countClients(base);
-        const remoteCount = countClients(remote);
-        const winner = remoteCount === 0 && localCount > 0 ? base : (remoteTs >= localTs ? remote : base);
-        if (winner === remote && localCount > 0) await persistBackup(base);
+        const winner = chooseSnapshot(base, remote, local !== null) === "remote" ? remote : base;
+        if (winner === remote && hasSavedContent(base)) await persistBackup(base);
         setData(winner);
         await persist(winner);
         setCloudStatus("Cloud connected");
-        if (remoteTs !== localTs) {
-          setBanner(winner === remote ? "Loaded the latest cloud backup. Local backup was kept." : "Loaded your local changes. Use Sync to push them.");
-        }
+        if (winner === remote && hasSavedContent(base)) setBanner("Loaded the latest cloud data. This device’s local data was backed up.");
+        else if (winner === base && hasSavedContent(base) && !hasSavedContent(remote)) setBanner("Kept this device’s saved data. Use Sync now to upload it to the empty cloud backup.");
+        else if (winner === base && hasSavedContent(base) && remote.meta?.updatedAt > base.meta?.updatedAt) setBanner("Kept this device’s newer changes. Use Sync now to upload them.");
       } else {
         setCloudStatus(remoteResult.reason || "Cloud ready");
         if (remoteResult.reason) setBanner(`Cloud setup issue: ${remoteResult.reason}`);
@@ -526,31 +541,30 @@ export default function App() {
       const remoteResult = await loadRemote(cloudConfig);
       if (remoteResult.ok && remoteResult.data) {
         const remote = remoteResult.data;
-        const localTs = new Date(data.meta?.updatedAt || 0).getTime();
-        const remoteTs = new Date(remote.meta?.updatedAt || 0).getTime();
-        const localCount = countClients(data);
-        const remoteCount = countClients(remote);
-        
-        if (remoteTs > localTs && !(remoteCount === 0 && localCount > 0)) {
-          if (localCount > 0) await persistBackup(data);
+        if (chooseSnapshot(data, remote) === "remote") {
+          if (hasSavedContent(data)) await persistBackup(data);
           setData(remote);
           await persist(remote);
           setCloudStatus("Cloud connected");
-          setBanner("System auto-sync: loaded latest changes from cloud.");
-        } else if (remoteTs < localTs) {
+          setBanner(hasSavedContent(data) ? "Loaded newer cloud data. This device’s previous data was backed up." : "Loaded the latest cloud data.");
+        } else if (cloudStatus === "Cloud sync pending" && hasSavedContent(data)) {
           const pushResult = await persistRemote(cloudConfig, data);
-          if (pushResult.ok) {
-            setCloudStatus("Cloud connected");
-          }
+          if (pushResult.ok) setCloudStatus("Cloud synced");
         } else {
           setCloudStatus("Cloud connected");
+        }
+      } else if (remoteResult.ok) {
+        setCloudStatus("Cloud connected");
+        if (cloudStatus === "Cloud sync pending" && hasSavedContent(data)) {
+          const pushResult = await persistRemote(cloudConfig, data);
+          if (pushResult.ok) setCloudStatus("Cloud synced");
         }
       }
     };
 
     const timer = setInterval(autoSync, 30000);
     return () => clearInterval(timer);
-  }, [cloudConfig, data]);
+  }, [cloudConfig, data, cloudStatus]);
 
   const save = useCallback(async (next) => {
     const normalized = touchData(next);
@@ -585,8 +599,8 @@ export default function App() {
 
     const remoteResult = await loadRemote(cloudConfig);
     const remote = remoteResult.ok ? remoteResult.data : null;
-    const winner = remote && countClients(remote) > 0 && new Date(remote.meta?.updatedAt || 0).getTime() > new Date(local.meta?.updatedAt || 0).getTime() ? remote : local;
-    if (winner === remote && countClients(local) > 0) await persistBackup(local);
+    const winner = chooseSnapshot(local, remote) === "remote" ? remote : local;
+    if (winner === remote && hasSavedContent(local)) await persistBackup(local);
     setData(winner);
     await persist(winner);
 
@@ -609,7 +623,23 @@ export default function App() {
   };
 
   const updateClient = (date, id, updates) => {
-    const next = { ...data, clients: { ...data.clients, [date]: data.clients[date].map(c => c.id === id ? { ...c, ...updates } : c) } };
+    const previous = data.clients[date].find(c => c.id === id);
+    const updated = { ...previous, ...updates };
+    const finance = { ...(data.finance || DEFAULT_FINANCE), paymentSnapshots: { ...(data.finance?.paymentSnapshots || {}) } };
+    const currentIds = new Set((updated.payments || []).map(p => p.id));
+    for (const p of previous?.payments || []) if (!currentIds.has(p.id)) delete finance.paymentSnapshots[p.id];
+    for (const p of updated.payments || []) {
+      const oldSnapshot = finance.paymentSnapshots[p.id];
+      if (!oldSnapshot) {
+        try { finance.paymentSnapshots[p.id] = { ...allocateAmount(p.amount, finance.buckets), accountId: p.accountId || "" }; }
+        catch { finance.paymentSnapshots[p.id] = { allocations: [], unallocated: Number(p.amount) || 0, totalPercentage: 0, accountId: p.accountId || "" }; }
+      } else {
+        const rule = (oldSnapshot.allocations || []).map(a => ({ id: a.bucketId, percentage: a.percentage }));
+        try { finance.paymentSnapshots[p.id] = { ...allocateAmount(p.amount, finance.buckets, rule), accountId: p.accountId !== undefined ? p.accountId : oldSnapshot.accountId || "" }; }
+        catch { finance.paymentSnapshots[p.id] = { allocations: [], unallocated: Number(p.amount) || 0, totalPercentage: 0, accountId: p.accountId || "" }; }
+      }
+    }
+    const next = { ...data, finance, clients: { ...data.clients, [date]: data.clients[date].map(c => c.id === id ? updated : c) } };
     void save(next);
   };
 
@@ -620,6 +650,10 @@ export default function App() {
   const updateExpense = (id, updates) => {
     const next = { ...data, expenses: (data.expenses || []).map(e => e.id === id ? { ...e, ...updates } : e) };
     void save(next);
+  };
+  const deleteExpense = (id) => {
+    if (!confirm("Delete this expense?")) return;
+    void save({ ...data, expenses: (data.expenses || []).filter(e => e.id !== id) });
   };
 
   const setTarget = t => void save({ ...data, target: Math.max(1, t) });
@@ -743,7 +777,7 @@ export default function App() {
       return;
     }
     if (!confirm("Empty all clients, services, payments, followups, expenses, and outreach progress?")) return;
-    const emptyData = touchData(DEFAULT_DATA);
+    const emptyData = touchData({ ...DEFAULT_DATA, meta: { emptyStateResetAt: new Date().toISOString() } });
     setData(emptyData);
     await persist(emptyData);
     if (cloudConfig) {
@@ -765,7 +799,7 @@ export default function App() {
   const sortedDates = Object.keys(data.clients).sort((a, b) => b.localeCompare(a));
 
   return (
-    <div style={{ background: BG, minHeight: "100vh", color: "#fff", fontFamily: BODY_FONT, maxWidth: 480, margin: "0 auto", position: "relative" }}>
+    <div className="app-shell" style={{ background: BG, minHeight: "100vh", color: "#fff", fontFamily: BODY_FONT, maxWidth: 1440, margin: "0 auto", position: "relative" }}>
 
       {/* Notification Banner */}
       {banner && (
@@ -781,7 +815,7 @@ export default function App() {
           <div>
             <div style={{ color: LIME, fontSize: 9, letterSpacing: 4, marginBottom: 4 }}>SOLO — SALES OS</div>
             <div style={{ fontSize: 18, fontWeight: "bold", letterSpacing: -0.5 }}>
-              {tab === "today" ? "Today's Session" : tab === "outreach" ? "Outreach Scheduler" : tab === "history" ? "History" : tab === "followups" ? "Follow-Ups" : tab === "ongoing" ? "Ongoing Projects" : tab === "payments" ? "Payments Tracker" : tab === "stats" ? "Performance Stats" : "System Flow"}
+              {tab === "today" ? "Today's Session" : tab === "outreach" ? "Outreach Scheduler" : tab === "history" ? "History" : tab === "followups" ? "Follow-Ups" : tab === "ongoing" ? "Ongoing Projects" : tab === "payments" ? "Money" : tab === "stats" ? "Performance Stats" : "System Flow"}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -793,6 +827,7 @@ export default function App() {
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <span style={{ fontSize: 9, color: DIM, letterSpacing: 1 }}>{cloudStatus}</span>
+          <button onClick={() => setShowCloudSetup(true)} style={{ background: "none", border: "none", color: DIM, fontFamily: FONT, fontSize: 9, cursor: "pointer", letterSpacing: 0.5, padding: 0, marginRight: 14 }}>Cloud settings</button>
           <button onClick={syncNow} style={{ background: "none", border: "none", color: LIME, fontFamily: FONT, fontSize: 10, cursor: "pointer", letterSpacing: 0.5, padding: 0 }}>
             ↻ Sync now
           </button>
@@ -836,12 +871,13 @@ export default function App() {
         {tab === "history" && <HistoryView clients={data.clients} sortedDates={sortedDates} today={today} selected={histSel} onSelect={setHistSel} onUpdate={updateClient} />}
         {tab === "followups" && <FollowupsView pending={pending} onUpdate={updateClient} />}
         {tab === "ongoing" && <OngoingView clients={data.clients} onUpdate={updateClient} />}
-        {tab === "payments" && <PaymentsView clients={data.clients} onUpdate={updateClient} expenses={data.expenses || []} onAddExpense={addExpense} onUpdateExpense={updateExpense} />}
+        {tab === "payments" && <MoneyView data={data} onSave={save} onUpdateClient={updateClient} onAddExpense={addExpense} onUpdateExpense={updateExpense} onDeleteExpense={deleteExpense} />}
         {tab === "stats" && <StatsView clients={data.clients} target={data.target} />}
         {tab === "flow" && <SystemFlowView />}
       </div>
 
       {showForm && <ClientForm initialValues={formDefaults} onAdd={addClient} onClose={() => { setShowForm(false); setFormDefaults(null); }} />}
+      {showCloudSetup && <CloudSetupModal onClose={() => setShowCloudSetup(false)} onSaved={config => { setCloudConfig(config); setCloudStatus("Connecting..."); }} />}
     </div>
   );
 }
@@ -1416,9 +1452,13 @@ function printInvoice(client, service = null) {
   <div class="terms">
     <b>Payment Terms</b><br/>
     50% deposit required. 50% on delivery.<br/><br/>
-    <b>Payment Methods</b><br/>
-    Mobile Money (MTN / Airtel)<br/>
-    Bank Transfer
+    <b>Payment Details</b><br/>
+    <b>Bank Transfer</b><br/>
+    Account Name: Kisense Solomon<br/>
+    Account No: 7327559001<br/><br/>
+    <b>Mobile Money (MTN)</b><br/>
+    Number: 0775 224 728<br/>
+    Name: Kisense Solomon
   </div>
   <div class="sig-block">
     <div class="sig-line"></div>
@@ -1501,6 +1541,22 @@ function printReceipt(client, payment) {
 <div class="section" style="margin-top:16px">
   <div class="label">PAYMENT METHOD</div>
   <div class="value">${payment.note || "—"}</div>
+</div>
+
+<div class="section" style="margin-top:16px;border-top:1px solid #eee;padding-top:16px">
+  <div class="label">PAYMENT DETAILS</div>
+  <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:6px">
+    <div style="font-size:10px;line-height:1.8">
+      <b>Bank Transfer</b><br/>
+      Account Name: Kisense Solomon<br/>
+      Account No: 7327559001
+    </div>
+    <div style="font-size:10px;line-height:1.8">
+      <b>Mobile Money (MTN)</b><br/>
+      Number: 0775 224 728<br/>
+      Name: Kisense Solomon
+    </div>
+  </div>
 </div>
 
 <div class="stamp-wrap"><div class="stamp">${stamp}</div></div>
@@ -1613,7 +1669,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
       createdAt: today,
     };
     const initialPayments = parsedDeposit > 0 
-      ? [{ id: Date.now().toString(), date: today, amount: parsedDeposit, note: "Initial Deposit", serviceId }]
+      ? [{ id: newPaymentId(), date: today, amount: parsedDeposit, note: "Initial Deposit", serviceId }]
       : [];
 
     onUpdate(c.id, {
@@ -1634,7 +1690,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
     const newPayments = editingPaymentId
       ? (c.payments || []).map(p => p.id === editingPaymentId ? { ...p, amount: amt, note: paymentNote.trim() || "Payment", serviceId: selectedServiceId } : p)
       : [...(c.payments || []), {
-        id: Date.now().toString(),
+        id: newPaymentId(),
         date: today,
         amount: amt,
         note: paymentNote.trim() || "Payment",
@@ -1663,6 +1719,12 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
     setIsServiceForm(false);
     setIsEditDealForm(false);
     setExp(false);
+  };
+
+  const deleteClientPayment = (payment) => {
+    if (!confirm("Delete this client payment? Its Money ledger entry will be removed too.")) return;
+    const payments = (c.payments || []).filter(p => p.id !== payment.id);
+    onUpdate(c.id, { payments, amountPaid: payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) });
   };
 
   const handleAddService = () => {
@@ -2145,10 +2207,11 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
                             <div>
                               <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 5 }}>PAYMENTS</div>
                               {payments.map(p => (
-                                <div key={p.id} style={{ display: "grid", gridTemplateColumns: showDocs ? "1fr auto auto auto" : "1fr auto auto", gap: 8, alignItems: "center", background: BG, borderRadius: 4, padding: "5px 8px", fontSize: 10, marginTop: 4 }}>
+                                <div key={p.id} style={{ display: "grid", gridTemplateColumns: showDocs ? "1fr auto auto auto auto" : "1fr auto auto auto", gap: 8, alignItems: "center", background: BG, borderRadius: 4, padding: "5px 8px", fontSize: 10, marginTop: 4 }}>
                                   <span style={{ color: DIM }}>{p.date} · <span style={{ color: "#fff" }}>{p.note}</span></span>
                                   <span style={{ color: LIME, fontWeight: "bold", whiteSpace: "nowrap" }}>+{p.amount.toLocaleString()} UGX</span>
                                   <button onClick={() => openEditPaymentForm(p, s.id)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Edit</button>
+                                  <button onClick={() => deleteClientPayment(p)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Delete</button>
                                   {showDocs && <button onClick={() => printReceipt({ ...c, date }, p)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Receipt</button>}
                                 </div>
                               ))}
@@ -2323,7 +2386,6 @@ function ClientForm({ onAdd, onClose, initialValues }) {
 }
 
 // ── Cloud Setup Modal
-// eslint-disable-next-line no-unused-vars
 function CloudSetupModal({ onClose, onSaved }) {
   const [url, setUrl] = useState(localStorage.getItem(CLOUD_URL_KEY) || DEFAULT_SUPABASE_URL);
   const [key, setKey] = useState(localStorage.getItem(CLOUD_KEY_KEY) || DEFAULT_SUPABASE_KEY);
@@ -2346,7 +2408,7 @@ function CloudSetupModal({ onClose, onSaved }) {
           <span onClick={onClose} style={{ color: DIM, cursor: "pointer", fontSize: 20 }}>✕</span>
         </div>
         <div style={{ fontSize: 10, color: DIM, lineHeight: 1.6, marginBottom: 12 }}>
-          Use Supabase’s free tier. Create a project, then add your project URL and anon key. Create a table named <b>sales_os_state</b> with these columns: <b>id</b> (text), <b>payload</b> (jsonb), <b>updated_at</b> (text). The app will use the row with <b>id = primary</b>.
+          Use the same Supabase project URL and anon key on every device. These connection settings are saved in this browser only. Create a table named <b>sales_os_state</b> with columns <b>id</b> (text), <b>payload</b> (jsonb), and <b>updated_at</b> (text). The app uses the row with <b>id = primary</b>.
         </div>
         <Lbl>Supabase URL</Lbl>
         <Inp value={url} onChange={setUrl} placeholder="https://xyzcompany.supabase.co" />
@@ -2556,334 +2618,6 @@ function ServiceAccountList({ accounts, onUpdate, tone, label }) {
   );
 }
 
-function GroupedServiceAccountList({ accounts, onUpdate, tone, label }) {
-  const [openClientIds, setOpenClientIds] = useState({});
-  const [openServiceIds, setOpenServiceIds] = useState({});
-  const sortedAccounts = [...accounts].sort((a, b) => {
-    const ad = a.dueDate || a.service.createdAt || a.client.date || "";
-    const bd = b.dueDate || b.service.createdAt || b.client.date || "";
-    return ad.localeCompare(bd);
-  });
-  const clientGroups = Object.values(sortedAccounts.reduce((groups, account) => {
-    const id = account.client.id;
-    if (!groups[id]) groups[id] = { client: account.client, accounts: [] };
-    groups[id].accounts.push(account);
-    return groups;
-  }, {}));
-
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 10, color: tone, letterSpacing: 2, marginBottom: 10, fontWeight: "bold" }}>{label}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {clientGroups.map(({ client, accounts: clientAccounts }) => {
-          const groupBalance = clientAccounts.reduce((sum, a) => sum + a.balance, 0);
-          const groupTotal = clientAccounts.reduce((sum, a) => sum + a.total, 0);
-          const groupPaid = clientAccounts.reduce((sum, a) => sum + a.paid, 0);
-          const earliestDue = clientAccounts.map(a => a.dueDate).filter(Boolean).sort()[0] || "";
-          const isOpen = openClientIds[client.id] ?? false;
-          return (
-            <div key={client.id} style={{ background: SURF, border: `1px solid ${BORDER}`, borderLeft: `3px solid ${tone}`, borderRadius: 8, padding: 12 }}>
-              <div onClick={() => setOpenClientIds(ids => ({ ...ids, [client.id]: !isOpen }))} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center", marginBottom: isOpen ? 9 : 0, cursor: "pointer" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: "bold", color: "#fff" }}>{client.name}</div>
-                  <div style={{ fontSize: 10, color: DIM, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client.business || "No business"} · {clientAccounts.length} service{clientAccounts.length !== 1 ? "s" : ""}</div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 10, color: groupBalance > 0 ? WARM_C : LIME, fontWeight: "bold" }}>{groupBalance > 0 ? `${fmtUGX(groupBalance)} left` : "Paid"}</div>
-                  <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>{isOpen ? "Hide" : "Open"}</div>
-                </div>
-              </div>
-              {isOpen && (
-                <>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10, color: DIM, marginBottom: 8 }}>
-                    <span>Agreed {fmtUGX(groupTotal)} · Paid {fmtUGX(groupPaid)}</span>
-                    <span>{earliestDue ? `Oldest due ${fmtDate(earliestDue)}` : "No due date"}</span>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {clientAccounts.map(({ service, total, paid, balance, dueDate }) => {
-                      const serviceKey = `${client.id}-${service.id}`;
-                      const serviceOpen = openServiceIds[serviceKey] ?? false;
-                      const payments = servicePayments(client, service.id);
-                      return (
-                        <div key={service.id} style={{ background: SURF2, border: `1px solid ${serviceOpen ? tone + "55" : "transparent"}`, borderRadius: 6, padding: 8 }}>
-                          <div onClick={() => setOpenServiceIds(ids => ({ ...ids, [serviceKey]: !serviceOpen }))} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", cursor: "pointer" }}>
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ color: "#fff", fontSize: 11, fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{service.title}</div>
-                              <div style={{ color: DIM, fontSize: 9, marginTop: 3 }}>{dueDate ? `Due ${fmtDate(dueDate)}` : "No due date"} · {payments.length} payment{payments.length !== 1 ? "s" : ""}</div>
-                            </div>
-                            <div style={{ textAlign: "right" }}>
-                              <div style={{ color: balance > 0 ? WARM_C : LIME, fontSize: 10, fontWeight: "bold" }}>{balance > 0 ? `${fmtUGX(balance)} left` : "Paid"}</div>
-                              <div style={{ color: DIM, fontSize: 9, marginTop: 2 }}>{serviceOpen ? "Hide" : "Open"}</div>
-                            </div>
-                          </div>
-                          {serviceOpen && (
-                            <div style={{ marginTop: 8, borderTop: `1px solid ${BORDER}`, paddingTop: 8 }}>
-                              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 8 }}>
-                                {["FEE", "PAID", "BALANCE"].map((k) => {
-                                  const value = k === "FEE" ? total : k === "PAID" ? paid : balance;
-                                  const color = k === "FEE" ? "#fff" : k === "PAID" ? LIME : balance > 0 ? WARM_C : LIME;
-                                  return (
-                                    <div key={k} style={{ background: BG, borderRadius: 5, padding: 7 }}>
-                                      <div style={{ fontSize: 8, color: DIM, letterSpacing: 1 }}>{k}</div>
-                                      <div style={{ fontSize: 10, color, marginTop: 2 }}>{fmtUGX(value)}</div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                              {Array.isArray(service.items) && service.items.length > 0 && (
-                                <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8 }}>
-                                  {service.items.map(item => (
-                                    <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, color: DIM, fontSize: 9 }}>
-                                      <span>{item.title}</span>
-                                      <span>{Number(item.price) > 0 ? fmtUGX(item.price) : "Included"}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: payments.length ? 8 : 0 }}>
-                                <button onClick={() => onUpdate(client.date, client.id, { services: getClientServices(client).map(s => s.id === service.id ? { ...s, dueDate: todayStr() } : s) })} style={{ background: BG, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "5px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Mark due today</button>
-                                <button onClick={() => printInvoice(client, service)} style={{ background: BG, border: `1px solid ${BORDER}`, color: COLD_C, borderRadius: 5, padding: "5px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Invoice</button>
-                              </div>
-                              {payments.length > 0 && (
-                                <div>
-                                  <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 5 }}>PAYMENTS</div>
-                                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                    {payments.map(p => (
-                                      <div key={p.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", background: BG, borderRadius: 4, padding: "5px 7px", fontSize: 9 }}>
-                                        <span style={{ color: DIM }}>{p.date} · <span style={{ color: "#fff" }}>{p.note || "Payment"}</span></span>
-                                        <span style={{ color: LIME, fontWeight: "bold", whiteSpace: "nowrap" }}>+{p.amount.toLocaleString()} UGX</span>
-                                        <button onClick={() => printReceipt(client, p)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Receipt</button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function PaymentsView({ clients, onUpdate, expenses, onAddExpense, onUpdateExpense }) {
-  const [moneyTab, setMoneyTab] = useState("due");
-  const [showExpenseForm, setShowExpenseForm] = useState(false);
-  const [showExpenseList, setShowExpenseList] = useState(false);
-  const [editingExpenseId, setEditingExpenseId] = useState(null);
-  const [expAmt, setExpAmt] = useState("");
-  const [expNote, setExpNote] = useState("");
-
-  const allClients = Object.entries(clients).flatMap(([date, arr]) =>
-    arr.map(c => ({ ...c, date }))
-  );
-
-  const ongoingClients = allClients.filter(c => c.status === "ongoing");
-  const serviceAccounts = ongoingClients.flatMap(c => getClientServices(c).map(s => {
-    const total = serviceTotal(c, s);
-    const paid = servicePaid(c, s.id);
-    const balance = total - paid;
-    return { client: c, service: s, total, paid, balance, dueDate: s.dueDate || "" };
-  }));
-  const totalInvoiced = ongoingClients.reduce((sum, c) => sum + clientTotals(c).total, 0);
-  const totalCollected = ongoingClients.reduce((sum, c) => sum + clientTotals(c).paid, 0);
-  const totalOutstanding = totalInvoiced - totalCollected;
-  const totalSpent = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  const cashInHand = totalCollected - totalSpent;
-
-  const owesBalance = ongoingClients.filter(c => clientTotals(c).balance > 0);
-  const paidFull = ongoingClients.filter(c => clientTotals(c).balance <= 0);
-  const today = todayStr();
-  const dueAccounts = serviceAccounts.filter(a => a.balance > 0 && a.dueDate && today >= a.dueDate);
-  const outstandingAccounts = serviceAccounts.filter(a => a.balance > 0 && (!a.dueDate || today < a.dueDate));
-  const clearedAccounts = serviceAccounts.filter(a => a.balance <= 0);
-
-  const handleAddExpense = () => {
-    const amt = Number(expAmt) || 0;
-    if (amt <= 0) return alert("Please enter a valid amount.");
-    if (!expNote.trim()) return alert("Please enter a description.");
-    onAddExpense({ amount: amt, note: expNote.trim() });
-    setExpAmt(""); setExpNote(""); setShowExpenseForm(false);
-  };
-
-  const startEditExpense = (expense) => {
-    setEditingExpenseId(expense.id);
-    setExpAmt(String(expense.amount || ""));
-    setExpNote(expense.note || "");
-    setShowExpenseForm(true);
-  };
-
-  const handleUpdateExpense = () => {
-    const amt = Number(expAmt) || 0;
-    if (amt <= 0) return alert("Please enter a valid amount.");
-    if (!expNote.trim()) return alert("Please enter a description.");
-    onUpdateExpense(editingExpenseId, { amount: amt, note: expNote.trim() });
-    setEditingExpenseId(null);
-    setExpAmt("");
-    setExpNote("");
-    setShowExpenseForm(false);
-  };
-
-  return (
-    <div>
-      {/* Top 2x2 Grid: Invoiced, Collected, Spent, Cash in Hand */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 9, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TOTAL INVOICED</div>
-          <div style={{ fontSize: 16, fontWeight: "bold", color: "#fff" }}>{totalInvoiced.toLocaleString()} <span style={{ fontSize: 9, color: DIM }}>UGX</span></div>
-        </div>
-        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 9, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TOTAL COLLECTED</div>
-          <div style={{ fontSize: 16, fontWeight: "bold", color: LIME }}>{totalCollected.toLocaleString()} <span style={{ fontSize: 9, color: DIM }}>UGX</span></div>
-        </div>
-        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 9, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TOTAL SPENT / USED</div>
-          <div style={{ fontSize: 16, fontWeight: "bold", color: WARM_C }}>{totalSpent.toLocaleString()} <span style={{ fontSize: 9, color: DIM }}>UGX</span></div>
-        </div>
-        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12, borderTop: `2px solid ${LIME}` }}>
-          <div style={{ fontSize: 9, color: LIME, letterSpacing: 1, marginBottom: 4, fontWeight: "bold" }}>💵 CASH IN HAND</div>
-          <div style={{ fontSize: 16, fontWeight: "bold", color: cashInHand >= 0 ? LIME : WARM_C }}>{cashInHand.toLocaleString()} <span style={{ fontSize: 9, color: DIM }}>UGX</span></div>
-        </div>
-      </div>
-
-      {/* Outstanding Banner */}
-      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14, marginBottom: 14 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <div>
-            <div style={{ fontSize: 9, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TOTAL OUTSTANDING</div>
-            <div style={{ fontSize: 20, fontWeight: "bold", color: totalOutstanding > 0 ? WARM_C : LIME }}>
-              {totalOutstanding.toLocaleString()} <span style={{ fontSize: 10, color: DIM }}>UGX</span>
-            </div>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 10, color: DIM }}>{owesBalance.length} owe balance</div>
-            <div style={{ fontSize: 10, color: DIM, marginTop: 2 }}>{paidFull.length} paid in full</div>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 14 }}>
-        {[
-          { k: "due", l: `Due ${dueAccounts.length}` },
-          { k: "outstanding", l: `Open ${outstandingAccounts.length}` },
-          { k: "paid", l: `Paid ${clearedAccounts.length}` },
-          { k: "expenses", l: "Expenses" },
-        ].map(item => (
-          <button key={item.k} onClick={() => setMoneyTab(item.k)} style={{ background: moneyTab === item.k ? LIME + "18" : SURF2, border: `1px solid ${moneyTab === item.k ? LIME + "66" : BORDER}`, color: moneyTab === item.k ? LIME : DIM, borderRadius: 6, padding: "8px 4px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
-            {item.l}
-          </button>
-        ))}
-      </div>
-
-      {moneyTab === "due" && (
-        dueAccounts.length
-          ? <GroupedServiceAccountList accounts={dueAccounts} onUpdate={onUpdate} tone={WARM_C} label="PAYMENT DUE NOW" />
-          : <Empty text="No payment agreements are due today." />
-      )}
-
-      {moneyTab === "outstanding" && (
-        outstandingAccounts.length
-          ? <GroupedServiceAccountList accounts={outstandingAccounts} onUpdate={onUpdate} tone={COLD_C} label="OPEN BALANCES / NOT DUE YET" />
-          : <Empty text="No open balances outside due dates." />
-      )}
-
-      {moneyTab === "paid" && (
-        clearedAccounts.length
-          ? <GroupedServiceAccountList accounts={clearedAccounts} onUpdate={onUpdate} tone={LIME} label="PAID SERVICES" />
-          : <Empty text="No paid services yet." />
-      )}
-
-      {/* Expense Section */}
-      {moneyTab === "expenses" && <div style={{ marginBottom: 20 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <div style={{ fontSize: 10, color: DIM, letterSpacing: 2 }}>EXPENSE LEDGER</div>
-          <div style={{ display: "flex", gap: 6 }}>
-            {expenses.length > 0 && (
-              <button onClick={() => setShowExpenseList(v => !v)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: DIM, borderRadius: 6, padding: "5px 10px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
-                {showExpenseList ? "Hide" : `View ${expenses.length}`}
-              </button>
-            )}
-            <button onClick={() => { setEditingExpenseId(null); setExpAmt(""); setExpNote(""); setShowExpenseForm(v => !v); }} style={{ background: SURF2, border: `1px solid ${WARM_C}44`, color: WARM_C, borderRadius: 6, padding: "5px 10px", fontSize: 9, cursor: "pointer", fontFamily: FONT, fontWeight: "bold" }}>
-              💸 {showExpenseForm ? "Cancel" : "Log Expense"}
-            </button>
-          </div>
-        </div>
-
-        {showExpenseForm && (
-          <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div>
-                <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>AMOUNT SPENT (UGX)</div>
-                <input type="number" value={expAmt} onChange={e => setExpAmt(e.target.value)} placeholder="e.g. 15000" style={{ width: "100%", background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT, boxSizing: "border-box" }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>DESCRIPTION (What it was for)</div>
-                <input type="text" value={expNote} onChange={e => setExpNote(e.target.value)} placeholder="e.g. Fuel, Airtime, Flyer printing..." style={{ width: "100%", background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT, boxSizing: "border-box" }} />
-              </div>
-              <button onClick={editingExpenseId ? handleUpdateExpense : handleAddExpense} style={{ background: WARM_C, color: "#000", border: "none", borderRadius: 6, padding: "9px 0", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>
-                {editingExpenseId ? "Update Expense" : "Save Expense"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {showExpenseList && expenses.length > 0 && (
-          <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              {[...expenses].reverse().map(e => (
-                <div key={e.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, background: SURF2, borderRadius: 4, padding: "6px 10px", fontSize: 10 }}>
-                  <span style={{ color: DIM }}>{e.date} · <span style={{ color: "#fff" }}>{e.note}</span></span>
-                  <span style={{ color: WARM_C, fontWeight: "bold", whiteSpace: "nowrap" }}>-{Number(e.amount).toLocaleString()} UGX</span>
-                  <button onClick={() => startEditExpense(e)} style={{ background: "none", border: "none", color: LIME, fontFamily: FONT, fontSize: 9, cursor: "pointer" }}>Edit</button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>}
-
-      {/* Owes Balance Section */}
-      {moneyTab === "legacy" && owesBalance.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 10, color: WARM_C, letterSpacing: 2, marginBottom: 10, fontWeight: "bold", display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: WARM_C, display: "inline-block" }} />
-            OUTSTANDING ACCOUNTS ({owesBalance.length})
-          </div>
-          {owesBalance.map(c => (
-            <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} />
-          ))}
-        </div>
-      )}
-
-      {/* Paid In Full Section */}
-      {moneyTab === "legacy" && paidFull.length > 0 && (
-        <div>
-          <div style={{ fontSize: 10, color: LIME, letterSpacing: 2, marginBottom: 10, fontWeight: "bold", display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: LIME, display: "inline-block" }} />
-            CLEARED ACCOUNTS — PAID IN FULL ({paidFull.length})
-          </div>
-          {paidFull.map(c => (
-            <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} />
-          ))}
-        </div>
-      )}
-
-      {ongoingClients.length === 0 && (
-        <Empty text="No payments recorded yet. Convert a lead to ongoing to begin tracking payments." />
-      )}
-    </div>
-  );
-}
-
-// ── Stats View
 function StatsView({ clients, target }) {
   const allClients = Object.entries(clients).flatMap(([date, arr]) =>
     arr.map(c => ({ ...c, date }))
