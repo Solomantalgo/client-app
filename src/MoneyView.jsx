@@ -34,10 +34,10 @@ export default function MoneyView({ data, onSave, onUpdateClient, onAddExpense, 
         const override = draft.custom ? draft.customAllocations : savedRules;
         const split = override ? allocateAmount(amount, finance.buckets, override) : allocateAmount(amount, finance.buckets);
         if (editing) {
-          const updated = { ...editing, amount, date: draft.date, description: draft.description.trim(), note: draft.note || '', sourceType: draft.sourceType, accountId: draft.accountId, allocationMode: draft.custom ? 'custom' : editing.allocationMode || 'default', allocations: split.allocations, unallocated: split.unallocated };
+          const updated = { ...editing, amount, date: draft.date, description: draft.description.trim(), note: draft.note || '', sourceType: draft.sourceType, accountId: draft.accountId, allocationMode: draft.custom ? 'custom' : editing.allocationMode || 'default', allocations: split.allocations, unallocated: split.unallocated, origin: editing.origin || 'current' };
           onSave({ ...data, finance: { ...finance, manualIncome: finance.manualIncome.map(x => x.id === editing.id ? updated : x) } });
         } else {
-          const income = { id: uid(), amount, date: draft.date, description: draft.description.trim(), note: draft.note || '', sourceType: draft.sourceType, accountId: draft.accountId, allocationMode: draft.custom ? 'custom' : 'default', allocations: split.allocations, unallocated: split.unallocated };
+          const income = { id: uid(), amount, date: draft.date, description: draft.description.trim(), note: draft.note || '', sourceType: draft.sourceType, accountId: draft.accountId, allocationMode: draft.custom ? 'custom' : 'default', allocations: split.allocations, unallocated: split.unallocated, origin: 'current' };
           onSave({ ...data, finance: { ...finance, manualIncome: [...finance.manualIncome, income] } });
         }
         closeForm();

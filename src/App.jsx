@@ -372,13 +372,23 @@ function normalizeData(d) {
     buckets: Array.isArray(financeSource.buckets) ? financeSource.buckets : DEFAULT_FINANCE.buckets,
     accounts: Array.isArray(financeSource.accounts) ? financeSource.accounts : DEFAULT_FINANCE.accounts,
     sources: Array.isArray(financeSource.sources) ? financeSource.sources : DEFAULT_FINANCE.sources,
-    manualIncome: Array.isArray(financeSource.manualIncome) ? financeSource.manualIncome : [],
+    manualIncome: (Array.isArray(financeSource.manualIncome) ? financeSource.manualIncome : []).map(income => income.origin ? income : { ...income, allocations: [], unallocated: Number(income.amount) || 0, origin: "legacy" }),
     paymentSnapshots: { ...(financeSource.paymentSnapshots || {}) },
   };
+  // Snapshots written by the first Money migration had no origin marker and
+  // applied today's rules to pre-existing receipts. Treat those as legacy cash.
+  // New receipts are tagged "current" and retain their historical allocation.
+  for (const [paymentId, snapshot] of Object.entries(finance.paymentSnapshots)) {
+    if (snapshot && !snapshot.origin) {
+      const payment = Object.values(normalizedClients).flat().flatMap(client => client.payments || []).find(item => item.id === paymentId);
+      finance.paymentSnapshots[paymentId] = { ...snapshot, allocations: [], unallocated: Number(payment?.amount) || Number(snapshot.unallocated) || (snapshot.allocations || []).reduce((sum, allocation) => sum + (Number(allocation.amount) || 0), 0), totalPercentage: 0, origin: "legacy" };
+    }
+  }
   for (const arr of Object.values(normalizedClients)) for (const client of arr) for (const payment of client.payments || []) {
     if (!finance.paymentSnapshots[payment.id]) {
-      try { finance.paymentSnapshots[payment.id] = { ...allocateAmount(payment.amount, finance.buckets), accountId: payment.accountId || "" }; }
-      catch { finance.paymentSnapshots[payment.id] = { allocations: [], unallocated: Number(payment.amount) || 0, totalPercentage: 0, accountId: payment.accountId || "" }; }
+      // Existing payments predate bucket allocation. Preserve them as unallocated;
+      // the current rules apply when a payment is newly recorded, not retroactively.
+      finance.paymentSnapshots[payment.id] = { allocations: [], unallocated: Number(payment.amount) || 0, totalPercentage: 0, accountId: payment.accountId || "", origin: "legacy" };
     }
   }
   return {
@@ -627,15 +637,20 @@ export default function App() {
     const updated = { ...previous, ...updates };
     const finance = { ...(data.finance || DEFAULT_FINANCE), paymentSnapshots: { ...(data.finance?.paymentSnapshots || {}) } };
     const currentIds = new Set((updated.payments || []).map(p => p.id));
+    const previousIds = new Set((previous?.payments || []).map(p => p.id));
     for (const p of previous?.payments || []) if (!currentIds.has(p.id)) delete finance.paymentSnapshots[p.id];
     for (const p of updated.payments || []) {
       const oldSnapshot = finance.paymentSnapshots[p.id];
       if (!oldSnapshot) {
-        try { finance.paymentSnapshots[p.id] = { ...allocateAmount(p.amount, finance.buckets), accountId: p.accountId || "" }; }
-        catch { finance.paymentSnapshots[p.id] = { allocations: [], unallocated: Number(p.amount) || 0, totalPercentage: 0, accountId: p.accountId || "" }; }
+        if (previousIds.has(p.id)) {
+          finance.paymentSnapshots[p.id] = { allocations: [], unallocated: Number(p.amount) || 0, totalPercentage: 0, accountId: p.accountId || "", origin: "legacy" };
+        } else {
+          try { finance.paymentSnapshots[p.id] = { ...allocateAmount(p.amount, finance.buckets), accountId: p.accountId || "", origin: "current" }; }
+          catch { finance.paymentSnapshots[p.id] = { allocations: [], unallocated: Number(p.amount) || 0, totalPercentage: 0, accountId: p.accountId || "", origin: "current" }; }
+        }
       } else {
         const rule = (oldSnapshot.allocations || []).map(a => ({ id: a.bucketId, percentage: a.percentage }));
-        try { finance.paymentSnapshots[p.id] = { ...allocateAmount(p.amount, finance.buckets, rule), accountId: p.accountId !== undefined ? p.accountId : oldSnapshot.accountId || "" }; }
+        try { finance.paymentSnapshots[p.id] = { ...allocateAmount(p.amount, finance.buckets, rule), accountId: p.accountId !== undefined ? p.accountId : oldSnapshot.accountId || "", origin: oldSnapshot.origin || "legacy" }; }
         catch { finance.paymentSnapshots[p.id] = { allocations: [], unallocated: Number(p.amount) || 0, totalPercentage: 0, accountId: p.accountId || "" }; }
       }
     }
