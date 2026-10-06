@@ -26,6 +26,7 @@ button { touch-action: manipulation; }
 .m-primary,.m-secondary { border:1px solid #aaff00; border-radius:7px; background:#aaff00; color:#10120a; font-weight:700; padding:10px 14px; min-height:42px; cursor:pointer; white-space:nowrap; }
 .m-secondary { color:#deded8; background:#1a1c18; border-color:#33362f; }
 .m-primary:hover { background:#bbff32; }.m-primary:focus-visible,.m-quiet:focus-visible,.money-nav button:focus-visible { outline:2px solid #aaff00; outline-offset:2px; }
+.m-client-balance { align-items:flex-start; }.m-client-balance>div { flex:1; }.m-client-payments { margin-top:7px; }.m-client-payment { display:flex; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid #252722; padding:4px 0 0; margin-top:4px; color:#a2a59b; font-size:11px; }.m-client-payment span { overflow-wrap:anywhere; }
 .m-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
 .m-stat,.m-panel { background:#111310; border:1px solid #292b27; border-radius:10px; }
 .m-stat { padding:17px; display:flex; flex-direction:column; gap:8px; min-width:0; }
