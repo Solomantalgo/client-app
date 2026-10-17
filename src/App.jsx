@@ -36,7 +36,6 @@ const WARM_C = "#ff7a3d";
 const COLD_C = "#4da6ff";
 const GREEN_WA = "#25D366";
 const FONT = "'DM Mono', 'Courier New', monospace";
-const BODY_FONT = "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 const PACKAGE_TEMPLATES = [
   {
@@ -1578,7 +1577,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
   const savePayment=()=>{const amount=Number(paymentAmt)||0;if(amount<=0)return alert("Please enter a valid payment amount.");const serviceId=paymentServiceId||services[0]?.id||"",payments=editingPaymentId?(c.payments||[]).map(p=>p.id===editingPaymentId?{...p,amount,note:paymentNote.trim()||"Payment",serviceId}:p):[...(c.payments||[]),{id:newPaymentId(),date:today,amount,note:paymentNote.trim()||"Payment",serviceId}];onUpdate(c.id,{payments,amountPaid:payments.reduce((n,p)=>n+(Number(p.amount)||0),0)});setIsPaymentForm(false);};
   const deleteClientPayment=p=>{if(!confirm("Delete this client payment? Its Money ledger entry will be removed too."))return;const payments=(c.payments||[]).filter(x=>x.id!==p.id);onUpdate(c.id,{payments,amountPaid:payments.reduce((n,x)=>n+(Number(x.amount)||0),0)});};
   const markDone=()=>{const followUp=c.followUp==="needed"?"done":"needed";if(followUp==="done"&&c.followUpDate){const keep=confirm("Keep the follow-up date reminder active? Click OK to keep, Cancel to clear it.");onUpdate(c.id,{followUp,...(keep?{}:{followUpDate:""})});}else onUpdate(c.id,{followUp});};
-  const convert=()=>{const price=Number(dealPrice)||0,paid=Number(deposit)||0;if(price<=0)return alert("Please enter a valid agreed price.");const id="svc-"+Date.now(),service={id,title:c.package&&c.package!=="Undecided"?c.package:"Client Service",categories:c.servicesToOffer||"",agreedPrice:price,dueDate:"",status:"active",createdAt:today},payments=paid>0?[{id:newPaymentId(),date:today,amount:paid,note:"Initial Deposit",serviceId:id}]:[];onUpdate(c.id,{status:"ongoing",totalAgreedPrice:price,amountPaid:paid,services:[service],payments,followUp:"done"});setIsWinForm(false);};
+  const convert=()=>{const price=Number(dealPrice)||0,paid=Number(deposit)||0;if(price<=0)return alert("Please enter a valid agreed price.");const id=newPaymentId(),service={id,title:c.package&&c.package!=="Undecided"?c.package:"Client Service",categories:c.servicesToOffer||"",agreedPrice:price,dueDate:"",status:"active",createdAt:today},payments=paid>0?[{id:newPaymentId(),date:today,amount:paid,note:"Initial Deposit",serviceId:id}]:[];onUpdate(c.id,{status:"ongoing",totalAgreedPrice:price,amountPaid:paid,services:[service],payments,followUp:"done"});setIsWinForm(false);};
   const reschedule=d=>{const followUpDate=addDays(d);onUpdate(c.id,{followUp:"done",followUpDate});setIsRescheduleForm(false);};
   const saveReschedule=()=>{if(!newFollowDate)return alert("Please select a date.");onUpdate(c.id,{followUp:"done",followUpDate:newFollowDate});setIsRescheduleForm(false);};
   const moveBack=()=>{if(confirm("Move this client back to follow-up status? This will delete ongoing transaction states."))onUpdate(c.id,{status:"lead",totalAgreedPrice:"",amountPaid:0,payments:[],services:[],followUp:"needed"});};
@@ -1593,7 +1592,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
     </button>
     {c.phone&&<div className="cc-quick">{(!c.hasWhatsApp||c.hasWhatsApp==="yes")&&<a className="cc-whatsapp" href={"https://wa.me/"+toWaNumber(c.phone)} target="_blank" rel="noreferrer">WhatsApp</a>}<a className="cc-call" href={"tel:"+c.phone}>Call</a></div>}
     {exp&&<div className="cc-body">
-      <div className="cc-chips"><Chip style={{background:isLead?(c.temp==="warm"?WARM_C+"18":COLD_C+"18"):LIME+"18",color:isLead?(c.temp==="warm"?WARM_C:COLD_C):LIME}}>{isLead?"LEAD":"ONGOING"}</Chip>{isLead&&<Chip style={{background:SURF2,color:DIM}}>{c.followUp==="needed"?"FOLLOW-UP NEEDED":"FOLLOW-UP DONE"}</Chip>}<Chip style={{background:SURF2,color:DIM}}>Demo {c.demoShown==="yes"?"✓":"×"}</Chip></div>
+      <div className="cc-chips"><span className={"cc-chip "+(isLead?(c.temp==="warm"?"warm":"cold"):"lime")}>{isLead?"LEAD":"ONGOING"}</span>{isLead&&<span className="cc-chip">{c.followUp==="needed"?"FOLLOW-UP NEEDED":"FOLLOW-UP DONE"}</span>}<span className="cc-chip">Demo {c.demoShown==="yes"?"✓":"×"}</span></div>
       <div className="cc-actions">{isLead?<><button onClick={markDone}>{c.followUp==="needed"?"✓ Mark done":"↩ Follow-up"}</button><button onClick={()=>setIsRescheduleForm(true)}>Timeline</button><button onClick={()=>onUpdate(c.id,{temp:c.temp==="warm"?"cold":"warm"})}>{c.temp==="warm"?"Warm":"Cold"}</button><button className="primary" onClick={()=>setIsWinForm(true)}>Won</button>{(!c.quotedPrice||!c.servicesToOffer)&&<button onClick={suggest}>Suggest</button>}</>:<><button className="primary" onClick={()=>openPaymentForm()}>Record payment</button><button onClick={()=>setSvcEditor({service:null})}>+ Service</button></>}</div>
       <section className="cc-sec"><header><h4>Client details</h4><button onClick={()=>setInfoOpen(true)}>Edit</button></header><dl>{c.phone&&<div><dt>Phone</dt><dd>{c.phone}</dd></div>}<div><dt>Pitch method</dt><dd>{c.pitchMethod||"—"}</dd></div><div><dt>Owner around</dt><dd>{c.ownerAround||"unknown"}</dd></div><div><dt>WhatsApp</dt><dd>{c.hasWhatsApp==="yes"?"Available":"Unavailable"}</dd></div></dl>{c.servicesToOffer&&<div className="cc-tags">{c.servicesToOffer.split(",").map((x,i)=><span key={i}>{x.trim()}</span>)}</div>}{c.notes&&<p className="cc-notes">{c.notes}</p>}</section>
       {!isLead&&<section className="cc-sec"><header><h4>Services ({services.length})</h4><button onClick={()=>setSvcEditor({service:null})}>+ Add service</button></header>{!services.length&&<div className="cc-empty">No services yet. Add one.</div>}
@@ -1799,6 +1798,7 @@ const Pill = ({ label, count, color }) => (
   </div>
 );
 
+// eslint-disable-next-line no-unused-vars
 const TempBadge = ({ temp }) => (
   <span style={{ fontSize: 8, padding: "2px 7px", borderRadius: 20, background: temp === "warm" ? WARM_C + "22" : COLD_C + "22", color: temp === "warm" ? WARM_C : COLD_C, letterSpacing: 0.5 }}>
     {temp === "warm" ? "🔥 WARM" : "❄️ COLD"}
@@ -1813,6 +1813,7 @@ const Chip = ({ children, style }) => (
   <span style={{ fontSize: 9, padding: "3px 8px", borderRadius: 4, background: SURF2, color: DIM, letterSpacing: 0.3, ...style }}>{children}</span>
 );
 
+// eslint-disable-next-line no-unused-vars
 const ABtn = ({ children, onClick, color, tc }) => (
   <button onClick={onClick} style={{ background: color || SURF2, color: tc || "#fff", border: "none", borderRadius: 6, padding: "7px 11px", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT, letterSpacing: 0.5 }}>{children}</button>
 );
