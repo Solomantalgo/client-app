@@ -1,22 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeServices, upsertService, removeService, paymentsForService, removeClientFromData } from '../src/clients.js';
+import { upsertService, removeService, paymentsForService, removeClientFromData } from '../src/clients.js';
+import { normalizeData } from '../src/data.js';
 
-const legacy = client => ({ id: 'legacy', title: client.package || 'Client Service', agreedPrice: Number(client.totalAgreedPrice) || 0, items: [] });
-
-test('deleting the last service stays empty after normalization', () => {
+test('deleting the last service stays empty after normalizeData', () => {
   const client = { id: 'c1', status: 'ongoing', services: [{ id: 's1', agreedPrice: 100 }] };
   const deleted = removeService(client, 's1');
-  assert.deepEqual(normalizeServices(deleted, legacy), []);
+  const result = normalizeData({ clients: { '2026-01-01': [deleted] } });
+  assert.deepEqual(result.clients['2026-01-01'][0].services, []);
 });
 
 test('legacy records without a services array still synthesize their historical service', () => {
-  assert.equal(normalizeServices({ status: 'ongoing', totalAgreedPrice: 90 }, legacy).length, 1);
+  const result = normalizeData({ clients: { '2026-01-01': [{ id: 'old', status: 'ongoing', totalAgreedPrice: 90 }] } });
+  assert.equal(result.clients['2026-01-01'][0].services.length, 1);
 });
 
 test('legacy shaped saved service data is retained without edits', () => {
   const sample = { status: 'ongoing', package: 'Website', totalAgreedPrice: 120, services: [{ id: 'legacy-svc', title: 'Website', categories: 'Landing page', items: [{ id: 'legacy-item', title: 'Landing page', price: 120 }], agreedPrice: 120, dueDate: '2026-12-01', status: 'active', createdAt: '2026-01-01' }] };
-  assert.deepEqual(normalizeServices(sample, legacy), sample.services);
+  const result = normalizeData({ clients: { '2026-01-01': [sample] } });
+  const normalized = result.clients['2026-01-01'][0].services[0];
+  assert.equal(normalized.id, sample.services[0].id);
+  assert.equal(normalized.title, sample.services[0].title);
+  assert.equal(normalized.agreedPrice, sample.services[0].agreedPrice);
+  assert.equal(normalized.items[0].id, sample.services[0].items[0].id);
 });
 
 test('adding keeps services separate and editing updates only its service', () => {

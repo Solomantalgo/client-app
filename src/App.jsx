@@ -6,6 +6,7 @@ import "./AppShell.css";
 import { DEFAULT_FINANCE, allocateAmount } from "./money.js";
 import { chooseSnapshot, hasSavedContent } from "./sync.js";
 import { removeClientFromData } from "./clients.js";
+import { normalizeData, touchData, makeServiceFromClient, splitServiceItems } from "./data.js";
 import { upsertService, removeService, paymentsForService } from "./clients.js";
 import { ClientInfoEditor, ServiceEditor } from "./ClientEditors.jsx";
 import "./ClientCard.css";
@@ -293,122 +294,6 @@ function getPending(clients) {
       return isLead && (timelineReached || undatedOlderLead);
     }).map(c => ({ ...c, date }))
   );
-}
-
-function touchData(data) {
-  return normalizeData({
-    ...data,
-    meta: {
-      ...(data?.meta || {}),
-      updatedAt: new Date().toISOString(),
-    },
-  });
-}
-
-function makeServiceFromClient(c) {
-  const agreed = Number(c.totalAgreedPrice) || Number(String(c.quotedPrice || "").replace(/\D/g, "")) || 0;
-  const service = {
-    id: `svc-${c.id || Date.now()}`,
-    title: c.package && c.package !== "Undecided" ? c.package : (c.servicesToOffer ? "Client Service" : "Web Design Service"),
-    categories: c.servicesToOffer || "",
-    items: splitServiceItems(c.servicesToOffer).map(title => ({ id: `item-${Date.now()}-${title}`, title, price: 0 })),
-    agreedPrice: agreed,
-    dueDate: c.paymentDueDate || "",
-    status: c.status === "ongoing" ? "active" : "quoted",
-    createdAt: c.date || todayStr(),
-  };
-  return { service };
-}
-
-function splitServiceItems(value) {
-  return String(value || "").split(",").map(s => s.trim()).filter(Boolean);
-}
-
-function normalizeData(d) {
-  const source = d && typeof d === "object" ? d : {};
-  const normalizedClients = {};
-  if (source.clients) {
-    for (const [date, arr] of Object.entries(source.clients)) {
-      if (Array.isArray(arr)) {
-        normalizedClients[date] = arr.map(c => ({
-          id: c.id,
-          name: c.name || "Unnamed",
-          business: c.business || "",
-          businessType: c.businessType || "",
-          phone: c.phone || "",
-          pitchMethod: c.pitchMethod || "In-Person",
-          package: c.package || "Undecided",
-          servicesToOffer: c.servicesToOffer || "",
-          quotedPrice: c.quotedPrice || "",
-          demoShown: c.demoShown || "no",
-          temp: c.temp || "warm",
-          followUp: c.followUp || "needed",
-          notes: c.notes || "",
-          time: c.time || "12:00 PM",
-          status: c.status || "lead",
-          ownerAround: c.ownerAround || "unknown",
-          followUpDate: c.followUpDate || "",
-          hasWhatsApp: c.hasWhatsApp || "yes",
-          totalAgreedPrice: c.totalAgreedPrice || "",
-          amountPaid: c.amountPaid ?? 0,
-          payments: (c.payments || []).map((p, index) => ({ ...p, id: p.id || `payment-${c.id || date}-${index + 1}`, amount: Number(p.amount) || 0, serviceId: p.serviceId || "" })),
-          services: Array.isArray(c.services) ? c.services.map(s => ({
-            id: s.id || `svc-${c.id || Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            title: s.title || s.name || "Client Service",
-            categories: s.categories || s.description || c.servicesToOffer || "",
-            items: Array.isArray(s.items) && s.items.length
-              ? s.items.map(item => ({ id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, title: item.title || item.name || "Service item", price: Number(item.price ?? item.amount) || 0 }))
-              : splitServiceItems(s.categories || s.description || "").map(title => ({ id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, title, price: 0 })),
-            agreedPrice: Number(s.agreedPrice ?? s.price ?? c.totalAgreedPrice) || 0,
-            dueDate: s.dueDate || s.paymentDueDate || "",
-            status: s.status || "active",
-            createdAt: s.createdAt || date,
-          })) : (c.status === "ongoing" || c.totalAgreedPrice || c.amountPaid ? [makeServiceFromClient({ ...c, date }).service] : []),
-        }));
-      }
-    }
-  }
-  const financeSource = source.finance || {};
-  const finance = {
-    buckets: Array.isArray(financeSource.buckets) ? financeSource.buckets : DEFAULT_FINANCE.buckets,
-    accounts: Array.isArray(financeSource.accounts) ? financeSource.accounts : DEFAULT_FINANCE.accounts,
-    sources: Array.isArray(financeSource.sources) ? financeSource.sources : DEFAULT_FINANCE.sources,
-    manualIncome: (Array.isArray(financeSource.manualIncome) ? financeSource.manualIncome : []).map(income => income.origin ? income : { ...income, allocations: [], unallocated: Number(income.amount) || 0, origin: "legacy" }),
-    paymentSnapshots: { ...(financeSource.paymentSnapshots || {}) },
-  };
-  // Snapshots written by the first Money migration had no origin marker and
-  // applied today's rules to pre-existing receipts. Treat those as legacy cash.
-  // New receipts are tagged "current" and retain their historical allocation.
-  for (const [paymentId, snapshot] of Object.entries(finance.paymentSnapshots)) {
-    if (snapshot && !snapshot.origin) {
-      const payment = Object.values(normalizedClients).flat().flatMap(client => client.payments || []).find(item => item.id === paymentId);
-      finance.paymentSnapshots[paymentId] = { ...snapshot, allocations: [], unallocated: Number(payment?.amount) || Number(snapshot.unallocated) || (snapshot.allocations || []).reduce((sum, allocation) => sum + (Number(allocation.amount) || 0), 0), totalPercentage: 0, origin: "legacy" };
-    }
-  }
-  for (const arr of Object.values(normalizedClients)) for (const client of arr) for (const payment of client.payments || []) {
-    if (!finance.paymentSnapshots[payment.id]) {
-      // Existing payments predate bucket allocation. Preserve them as unallocated;
-      // the current rules apply when a payment is newly recorded, not retroactively.
-      finance.paymentSnapshots[payment.id] = { allocations: [], unallocated: Number(payment.amount) || 0, totalPercentage: 0, accountId: payment.accountId || "", origin: "legacy" };
-    }
-  }
-  return {
-    ...source,
-    finance,
-    clients: normalizedClients,
-    target: source.target ?? 5,
-    expenses: (source.expenses || []).map(e => ({ ...e, id: e.id || Date.now().toString(), date: e.date || "", amount: Number(e.amount) || 0, note: e.note || e.description || "", bucketId: e.bucketId || "", accountId: e.accountId || "" })),
-    outreach: {
-      remotePointer: Math.min(120, Math.max(1, Number(source.outreach?.remotePointer) || 1)),
-      physicalPointer: Math.min(120, Math.max(1, Number(source.outreach?.physicalPointer) || 120)),
-      logs: Array.isArray(source.outreach?.logs) ? source.outreach.logs : [],
-      laps: Number(source.outreach?.laps) || 0,
-    },
-    meta: {
-      ...(source.meta || {}),
-      updatedAt: source.meta?.updatedAt || "1970-01-01T00:00:00.000Z",
-    },
-  };
 }
 
 function normalizeSupabaseUrl(rawUrl) {
@@ -808,12 +693,6 @@ export default function App() {
       setBanner("Database reset locally.");
     }
   };
-
-  useEffect(() => {
-    if (!banner) return undefined;
-    const timer = setTimeout(() => setBanner(null), 8000);
-    return () => clearTimeout(timer);
-  }, [banner]);
 
   if (!data) return (
     <div style={{ background: BG, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: LIME, fontFamily: FONT, fontSize: 11, letterSpacing: 4 }}>
@@ -1583,7 +1462,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
   const moveBack=()=>{if(confirm("Move this client back to follow-up status? This will delete ongoing transaction states."))onUpdate(c.id,{status:"lead",totalAgreedPrice:"",amountPaid:0,payments:[],services:[],followUp:"needed"});};
   const suggest=()=>{if(!textToMatch)return alert("This client needs a business name or type to auto-suggest.");if(packageMatch)onUpdate(c.id,{servicesToOffer:packageMatch.services,quotedPrice:packageMatch.price});else alert("No exact match found based on their business type.");};
   const paymentForm=isPaymentForm&&<div className="cc-form"><h4>{editingPaymentId?"Edit payment":"Record payment"}</h4><label>Amount (UGX)<input type="number" value={paymentAmt} onChange={e=>setPaymentAmt(e.target.value)}/></label><label>Note<input value={paymentNote} onChange={e=>setPaymentNote(e.target.value)}/></label><label>Service<select value={paymentServiceId} onChange={e=>setPaymentServiceId(e.target.value)}>{services.map(s=><option value={s.id} key={s.id}>{s.title} · {fmtUGX(serviceTotal(c,s))}</option>)}</select></label><button className="primary" onClick={savePayment}>Save payment</button><button onClick={()=>setIsPaymentForm(false)}>Cancel</button></div>;
-  return <div className={"cc"+(isHighlighted?" cc-hot":"")} style={accentColor?{"--accent":accentColor}:undefined}>
+  return <div className={`cc${isHighlighted ? " cc-hot" : ""}`} style={accentColor ? { "--accent": accentColor } : undefined}>
     <button type="button" className="cc-head" onClick={()=>setExp(e=>!e)} aria-expanded={!!exp}>
       <span className="cc-id"><b className="cc-name">{c.name}</b><small>{c.business||"No business"}{c.businessType?" · "+c.businessType:""}</small></span>
       <span className="cc-meta">{isLead?<><b className={c.temp==="warm"?"warm":"cold"}>{c.temp}</b><small className={isOverdue?"overdue":""}>{c.followUpDate?fmtDate(c.followUpDate):"No timeline"}</small></>:<><b className={remainingBalance>0?"warm":"lime"}>{remainingBalance>0?fmtUGX(remainingBalance):"Paid"}</b><small>{nextDueDate?fmtDate(nextDueDate):services.length+" services"}</small></>}</span>
@@ -1608,7 +1487,7 @@ function ClientCard({ client: c, date, onUpdate, highlight }) {
     {isWinForm&&<div className="cc-form"><h4>Win deal · Convert to ongoing client</h4><label>Agreed price (UGX)<input type="number" value={dealPrice} onChange={e=>setDealPrice(e.target.value)}/></label><label>Initial deposit (UGX)<input type="number" value={deposit} onChange={e=>setDeposit(e.target.value)}/></label><button className="primary" onClick={convert}>Confirm conversion</button><button onClick={()=>setIsWinForm(false)}>Cancel</button></div>}
     {isRescheduleForm&&<div className="cc-form"><h4>Set follow-up timeline</h4><div className="cc-actions">{[3,7,14,30].map(d=><button key={d} onClick={()=>reschedule(d)}>+{d} days</button>)}</div><label>Date<input type="date" value={newFollowDate} onChange={e=>setNewFollowDate(e.target.value)}/></label><button className="primary" onClick={saveReschedule}>Save</button><button onClick={()=>setIsRescheduleForm(false)}>Cancel</button></div>}
     {paymentForm}
-    {infoOpen&&<ClientInfoEditor client={c} onUpdate={saveInfo} onClose={()=>setInfoOpen(false)}/>}
+    {infoOpen&&<ClientInfoEditor client={c} onUpdate={(_id,fields)=>saveInfo(fields)} onClose={()=>setInfoOpen(false)}/>}
     {svcEditor&&<ServiceEditor service={svcEditor.service} fallbackTotal={svcEditor.service?serviceTotal(c,svcEditor.service):0} onSave={saveService} onDelete={svcEditor.service?()=>deleteService(svcEditor.service):undefined} onClose={()=>setSvcEditor(null)}/>}
   </div>;
 }

@@ -9,7 +9,7 @@ export function normalizeServices(client, legacyService) {
 export function upsertService(client, draft) {
   const services = Array.isArray(client.services) ? [...client.services] : [];
   const index = services.findIndex(service => service.id === draft.id);
-  const service = { ...draft, id: draft.id || `svc-${Date.now()}` };
+  const service = { ...draft, id: draft.id || `svc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
   if (index < 0) services.push(service);
   else services[index] = { ...services[index], ...service };
   return recomputeClient({ ...client, services });
