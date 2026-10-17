@@ -104,8 +104,7 @@ export default function MoneyView({ data, onSave, onUpdateClient, onAddExpense, 
   const createManualIncome = () => startForm('income');
 
   return <main className="money-app">
-    <header className="money-header"><div><div className="money-eyebrow">PERSONAL FINANCE</div><h1>Money</h1><p>Your income, spending and plans in one place.</p></div><button className="m-primary" onClick={createManualIncome}>＋ Log income</button></header>
-    <nav className="money-nav" aria-label="Money sections">{['Overview','Income','Expenses','Allocations','Accounts','Client balances'].map(item => <button key={item} className={tab===item?'selected':''} onClick={() => setTab(item)}>{item}</button>)}</nav>
+    <header className="money-header"><nav className="money-nav" aria-label="Money sections">{['Overview','Income','Expenses','Allocations','Accounts','Client balances'].map(item => <button key={item} className={tab===item?'selected':''} onClick={() => setTab(item)}>{item}</button>)}</nav><button className="m-primary" onClick={createManualIncome}>＋ Log income</button></header>
     {message && !form && <p className="m-notice">{message}</p>}
     <section className="money-content">
       {tab === 'Overview' && <>

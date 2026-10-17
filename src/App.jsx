@@ -1,8 +1,16 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, createContext, useContext } from "react";
 import { createClient } from "@supabase/supabase-js";
 import MoneyView from "./MoneyView.jsx";
+import AppShell from "./AppShell.jsx";
+import "./AppShell.css";
 import { DEFAULT_FINANCE, allocateAmount } from "./money.js";
 import { chooseSnapshot, hasSavedContent } from "./sync.js";
+import { removeClientFromData } from "./clients.js";
+import { upsertService, removeService, paymentsForService } from "./clients.js";
+import { ClientInfoEditor, ServiceEditor } from "./ClientEditors.jsx";
+import "./ClientCard.css";
+
+const ClientActions = createContext(null);
 
 // ── Storage Polyfill
 if (typeof window !== 'undefined' && !window.storage) {
@@ -345,24 +353,18 @@ function normalizeData(d) {
           totalAgreedPrice: c.totalAgreedPrice || "",
           amountPaid: c.amountPaid ?? 0,
           payments: (c.payments || []).map((p, index) => ({ ...p, id: p.id || `payment-${c.id || date}-${index + 1}`, amount: Number(p.amount) || 0, serviceId: p.serviceId || "" })),
-          services: Array.isArray(c.services) && c.services.length
-            ? c.services.map(s => ({
-              id: s.id || `svc-${c.id || Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-              title: s.title || s.name || "Client Service",
-              categories: s.categories || s.description || c.servicesToOffer || "",
-              items: Array.isArray(s.items) && s.items.length
-                ? s.items.map(item => ({
-                  id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                  title: item.title || item.name || "Service item",
-                  price: Number(item.price ?? item.amount) || 0,
-                }))
-                : splitServiceItems(s.categories || s.description || "").map(title => ({ id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, title, price: 0 })),
-              agreedPrice: Number(s.agreedPrice ?? s.price ?? c.totalAgreedPrice) || 0,
-              dueDate: s.dueDate || s.paymentDueDate || "",
-              status: s.status || "active",
-              createdAt: s.createdAt || date,
-            }))
-            : (c.status === "ongoing" || c.totalAgreedPrice || c.amountPaid ? [makeServiceFromClient({ ...c, date }).service] : []),
+          services: Array.isArray(c.services) ? c.services.map(s => ({
+            id: s.id || `svc-${c.id || Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            title: s.title || s.name || "Client Service",
+            categories: s.categories || s.description || c.servicesToOffer || "",
+            items: Array.isArray(s.items) && s.items.length
+              ? s.items.map(item => ({ id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, title: item.title || item.name || "Service item", price: Number(item.price ?? item.amount) || 0 }))
+              : splitServiceItems(s.categories || s.description || "").map(title => ({ id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, title, price: 0 })),
+            agreedPrice: Number(s.agreedPrice ?? s.price ?? c.totalAgreedPrice) || 0,
+            dueDate: s.dueDate || s.paymentDueDate || "",
+            status: s.status || "active",
+            createdAt: s.createdAt || date,
+          })) : (c.status === "ongoing" || c.totalAgreedPrice || c.amountPaid ? [makeServiceFromClient({ ...c, date }).service] : []),
         }));
       }
     }
@@ -658,6 +660,10 @@ export default function App() {
     void save(next);
   };
 
+  const deleteClient = (date, id) => {
+    void save(removeClientFromData(data, date, id));
+  };
+
   const addExpense = (exp) => {
     const next = { ...data, expenses: [...(data.expenses || []), { id: Date.now().toString(), date: todayStr(), ...exp }] };
     void save(next);
@@ -804,6 +810,12 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (!banner) return undefined;
+    const timer = setTimeout(() => setBanner(null), 8000);
+    return () => clearTimeout(timer);
+  }, [banner]);
+
   if (!data) return (
     <div style={{ background: BG, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: LIME, fontFamily: FONT, fontSize: 11, letterSpacing: 4 }}>
       LOADING...
@@ -813,74 +825,19 @@ export default function App() {
   const pending = getPending(data.clients);
   const sortedDates = Object.keys(data.clients).sort((a, b) => b.localeCompare(a));
 
+  const selectTab = next => {
+    setTab(next);
+    const url = new URL(window.location.href);
+    if (next === "payments") url.searchParams.set("view", "money");
+    else url.searchParams.delete("view");
+    window.history.replaceState({}, "", url);
+  };
   return (
-    <div className="app-shell" style={{ background: BG, minHeight: "100vh", color: "#fff", fontFamily: BODY_FONT, maxWidth: 1440, margin: "0 auto", position: "relative" }}>
-
-      {/* Notification Banner */}
-      {banner && (
-        <div style={{ background: LIME, color: "#000", padding: "9px 16px", fontSize: 11, fontWeight: "bold", letterSpacing: 0.5, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span>{banner}</span>
-          <span onClick={() => setBanner(null)} style={{ cursor: "pointer", fontSize: 16, lineHeight: 1 }}>✕</span>
-        </div>
-      )}
-
-      {/* Header */}
-      <div style={{ padding: "18px 16px 0", borderBottom: `1px solid ${BORDER}` }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <div>
-            <div style={{ color: LIME, fontSize: 9, letterSpacing: 4, marginBottom: 4 }}>SOLO — SALES OS</div>
-            <div style={{ fontSize: 18, fontWeight: "bold", letterSpacing: -0.5 }}>
-              {tab === "today" ? "Today's Session" : tab === "outreach" ? "Outreach Scheduler" : tab === "history" ? "History" : tab === "followups" ? "Follow-Ups" : tab === "ongoing" ? "Ongoing Projects" : tab === "payments" ? "Money" : tab === "stats" ? "Performance Stats" : "System Flow"}
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={resetDatabase} style={{ background: SURF2, border: `1px solid ${WARM_C}55`, color: WARM_C, borderRadius: 999, padding: "7px 10px", fontSize: 10, cursor: "pointer", fontFamily: FONT, letterSpacing: 0.5 }}>
-              Reset
-            </button>
-            {tab === "today" && <TargetCtrl target={data.target} onChange={setTarget} />}
-          </div>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <span style={{ fontSize: 9, color: DIM, letterSpacing: 1 }}>{cloudStatus}</span>
-          <button onClick={() => setShowCloudSetup(true)} style={{ background: "none", border: "none", color: DIM, fontFamily: FONT, fontSize: 9, cursor: "pointer", letterSpacing: 0.5, padding: 0, marginRight: 14 }}>Cloud settings</button>
-          <button onClick={syncNow} style={{ background: "none", border: "none", color: LIME, fontFamily: FONT, fontSize: 10, cursor: "pointer", letterSpacing: 0.5, padding: 0 }}>
-            ↻ Sync now
-          </button>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: 10 }}>
-          {[
-            { label: "WORK", items: [
-              { k: "today", l: "Today" },
-              { k: "outreach", l: "Outreach" },
-              { k: "followups", l: pending.length ? `Due (${pending.length})` : "Due" },
-              { k: "ongoing", l: "Ongoing" },
-            ] },
-            { label: "RECORDS", items: [
-              { k: "payments", l: "Money" },
-              { k: "stats", l: "Stats" },
-              { k: "history", l: "History" },
-              { k: "flow", l: "Guide" },
-            ] },
-          ].map(group => (
-            <div key={group.label}>
-              <div style={{ fontSize: 8, color: DIM, letterSpacing: 2, marginBottom: 5 }}>{group.label}</div>
-              <div style={{ display: "grid", gridTemplateColumns: `repeat(${group.items.length}, 1fr)`, gap: 6 }}>
-                {group.items.map(({ k, l }) => (
-                  <button key={k} onClick={() => setTab(k)} style={{
-                    padding: "8px 6px", background: tab === k ? LIME + "18" : SURF2, border: `1px solid ${tab === k ? LIME + "66" : BORDER}`,
-                    borderRadius: 6, color: tab === k ? LIME : DIM, fontSize: 10, letterSpacing: 0.5,
-                    textTransform: "uppercase", cursor: "pointer", fontFamily: FONT, transition: "all 0.15s",
-                    minWidth: 0
-                  }}>{l}</button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* View */}
-      <div style={{ padding: "16px 16px 100px" }}>
+    <ClientActions.Provider value={{ deleteClient }}>
+      <AppShell tab={tab} setTab={selectTab} pendingCount={pending.length} cloudStatus={cloudStatus}
+        banner={banner} onDismissBanner={() => setBanner(null)} onSync={syncNow}
+        onOpenCloud={() => setShowCloudSetup(true)} onReset={resetDatabase}
+        topExtra={tab === "today" ? <TargetCtrl target={data.target} onChange={setTarget} /> : null}>
         {tab === "today" && <TodayView outreach={data.outreach} clients={data.clients} target={data.target} today={today} onMarkDone={markOutreachDone} onAddLead={openAddLeadFromOutreach} />}
         {tab === "outreach" && <OutreachView outreach={data.outreach} clients={data.clients} target={data.target} today={today} onUpdate={(id, u) => updateClient(today, id, u)} onUndoLog={undoOutreachLog} onOpenAddClient={() => { setFormDefaults(null); setShowForm(true); }} />}
         {tab === "history" && <HistoryView clients={data.clients} sortedDates={sortedDates} today={today} selected={histSel} onSelect={setHistSel} onUpdate={updateClient} />}
@@ -889,11 +846,10 @@ export default function App() {
         {tab === "payments" && <MoneyView data={data} onSave={save} onUpdateClient={updateClient} onAddExpense={addExpense} onUpdateExpense={updateExpense} onDeleteExpense={deleteExpense} />}
         {tab === "stats" && <StatsView clients={data.clients} target={data.target} />}
         {tab === "flow" && <SystemFlowView />}
-      </div>
-
+      </AppShell>
       {showForm && <ClientForm initialValues={formDefaults} onAdd={addClient} onClose={() => { setShowForm(false); setFormDefaults(null); }} />}
       {showCloudSetup && <CloudSetupModal onClose={() => setShowCloudSetup(false)} onSaved={config => { setCloudConfig(config); setCloudStatus("Connecting..."); }} />}
-    </div>
+    </ClientActions.Provider>
   );
 }
 
@@ -1353,7 +1309,7 @@ function fmtUGX(n) {
   return `UGX ${Number(n || 0).toLocaleString()}`;
 }
 function getClientServices(client) {
-  return Array.isArray(client.services) && client.services.length ? client.services : [makeServiceFromClient(client).service];
+  return Array.isArray(client.services) ? client.services : [makeServiceFromClient(client).service];
 }
 function servicePayments(client, serviceId) {
   const payments = client.payments || [];
@@ -1381,6 +1337,10 @@ function dueDateStr(issueDate) {
 
 function printInvoice(client, service = null) {
   const activeService = service || getClientServices(client)[0];
+  if (!activeService) {
+    alert("Add a service before creating an invoice.");
+    return;
+  }
   const invoiceNum = getInvoiceNum(client, activeService);
   const issueDate = activeService?.createdAt || client.date || todayStr();
   const dueDate = dueDateStr(issueDate);
@@ -1492,6 +1452,10 @@ function printInvoice(client, service = null) {
 
 function printReceipt(client, payment) {
   const service = getClientServices(client).find(s => s.id === payment.serviceId) || getClientServices(client)[0];
+  if (!service) {
+    alert("This payment has no service to include on a receipt.");
+    return;
+  }
   const invoiceNum = getInvoiceNum(client, service);
   const receiptNum = getReceiptNum(payment);
   const total = serviceTotal(client, service);
@@ -1595,670 +1559,59 @@ function printReceipt(client, payment) {
 
 // ── Client Card
 function ClientCard({ client: c, date, onUpdate, highlight }) {
-  const [exp, setExp] = useState(false);
-  const [showDocs, setShowDocs] = useState(false);
-  const [showPaidServices, setShowPaidServices] = useState(false);
-  const [showActions, setShowActions] = useState(false);
-  const [openLedgerServiceIds, setOpenLedgerServiceIds] = useState({});
-  const [isWinForm, setIsWinForm] = useState(false);
-  const [dealPrice, setDealPrice] = useState(c.quotedPrice ? c.quotedPrice.replace(/\D/g, "") : "");
-  const [deposit, setDeposit] = useState("0");
-
-  const [isRescheduleForm, setIsRescheduleForm] = useState(false);
-  const [newFollowDate, setNewFollowDate] = useState(c.followUpDate || todayStr());
-
-  const [isPaymentForm, setIsPaymentForm] = useState(false);
-  const [paymentAmt, setPaymentAmt] = useState("");
-  const [paymentNote, setPaymentNote] = useState("");
-  const [paymentServiceId, setPaymentServiceId] = useState("");
-  const [editingPaymentId, setEditingPaymentId] = useState("");
-  const [isServiceForm, setIsServiceForm] = useState(false);
-  const [serviceTitle, setServiceTitle] = useState("");
-  const [serviceDueDate, setServiceDueDate] = useState("");
-  const [serviceItems, setServiceItems] = useState([{ id: "draft-1", title: "", price: "" }]);
-
-  const [isEditDealForm, setIsEditDealForm] = useState(false);
-  const [editingServiceId, setEditingServiceId] = useState("");
-  const [editServiceTitle, setEditServiceTitle] = useState("");
-  const [editServiceDueDate, setEditServiceDueDate] = useState("");
-  const [editServiceItems, setEditServiceItems] = useState([]);
-
-  const textToMatch = c.businessType || c.business || "";
-  const packageMatch = PACKAGE_TEMPLATES.find(p => p.match.test(textToMatch));
-  const accentColor = packageMatch ? packageMatch.color : null;
-
-  const autoSuggest = (e) => {
-    e.stopPropagation();
-    if (!textToMatch) return alert("This client needs a business name or type to auto-suggest.");
-    
-    if (packageMatch) {
-      onUpdate(c.id, { servicesToOffer: packageMatch.services, quotedPrice: packageMatch.price });
-    } else {
-      alert("No exact match found based on their business type.");
-    }
-  };
-
-  const today = todayStr();
-  const isLead = c.status !== "ongoing";
-  const isHighlighted = highlight && isLead && (c.followUp === "needed" || (c.followUp === "done" && c.followUpDate && today >= c.followUpDate));
-  
-  // Followup expiration check
-  const isOverdue = c.followUpDate && today >= c.followUpDate;
-
-  const handleReschedule = (days) => {
-    const nextDate = addDays(days);
-    onUpdate(c.id, { followUp: "done", followUpDate: nextDate });
-    setIsRescheduleForm(false);
-  };
-
-  const handleCustomReschedule = () => {
-    if (!newFollowDate) return alert("Please select a date.");
-    onUpdate(c.id, { followUp: "done", followUpDate: newFollowDate });
-    setIsRescheduleForm(false);
-  };
-
-  const openPaymentForm = (serviceId = "") => {
-    setEditingPaymentId("");
-    setPaymentAmt("");
-    setPaymentNote("");
-    setPaymentServiceId(serviceId || services[0]?.id || "");
-    setIsPaymentForm(true);
-    setIsServiceForm(false);
-    setIsEditDealForm(false);
-    setExp(false);
-  };
-
-  const handleConvert = () => {
-    const parsedPrice = Number(dealPrice) || 0;
-    const parsedDeposit = Number(deposit) || 0;
-    if (parsedPrice <= 0) return alert("Please enter a valid agreed price.");
-    
-    const serviceId = `svc-${Date.now()}`;
-    const service = {
-      id: serviceId,
-      title: c.package && c.package !== "Undecided" ? c.package : "Client Service",
-          categories: c.servicesToOffer || "",
-          agreedPrice: parsedPrice,
-          dueDate: "",
-          status: "active",
-      createdAt: today,
-    };
-    const initialPayments = parsedDeposit > 0 
-      ? [{ id: newPaymentId(), date: today, amount: parsedDeposit, note: "Initial Deposit", serviceId }]
-      : [];
-
-    onUpdate(c.id, {
-      status: "ongoing",
-      totalAgreedPrice: parsedPrice,
-      amountPaid: parsedDeposit,
-      services: [service],
-      payments: initialPayments,
-      followUp: "done"
-    });
-    setIsWinForm(false);
-  };
-
-  const handleRecordPayment = () => {
-    const amt = Number(paymentAmt) || 0;
-    if (amt <= 0) return alert("Please enter a valid payment amount.");
-    const selectedServiceId = paymentServiceId || getClientServices(c)[0]?.id || "";
-    const newPayments = editingPaymentId
-      ? (c.payments || []).map(p => p.id === editingPaymentId ? { ...p, amount: amt, note: paymentNote.trim() || "Payment", serviceId: selectedServiceId } : p)
-      : [...(c.payments || []), {
-        id: newPaymentId(),
-        date: today,
-        amount: amt,
-        note: paymentNote.trim() || "Payment",
-        serviceId: selectedServiceId
-      }];
-    const totalPaid = newPayments.reduce((sum, p) => sum + p.amount, 0);
-
-    onUpdate(c.id, {
-      payments: newPayments,
-      amountPaid: totalPaid
-    });
-
-    setPaymentAmt("");
-    setPaymentNote("");
-    setPaymentServiceId("");
-    setEditingPaymentId("");
-    setIsPaymentForm(false);
-  };
-
-  const openEditPaymentForm = (payment, serviceId = "") => {
-    setEditingPaymentId(payment.id);
-    setPaymentAmt(String(payment.amount || ""));
-    setPaymentNote(payment.note || "");
-    setPaymentServiceId(serviceId || payment.serviceId || services[0]?.id || "");
-    setIsPaymentForm(true);
-    setIsServiceForm(false);
-    setIsEditDealForm(false);
-    setExp(false);
-  };
-
-  const deleteClientPayment = (payment) => {
-    if (!confirm("Delete this client payment? Its Money ledger entry will be removed too.")) return;
-    const payments = (c.payments || []).filter(p => p.id !== payment.id);
-    onUpdate(c.id, { payments, amountPaid: payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) });
-  };
-
-  const handleAddService = () => {
-    if (!serviceTitle.trim()) return alert("Please enter a service name.");
-    const items = serviceItems
-      .map(item => ({ id: item.id, title: item.title.trim(), price: Number(item.price) || 0 }))
-      .filter(item => item.title || item.price > 0);
-    if (!items.length) return alert("Add at least one sub-service.");
-    if (items.some(item => !item.title || item.price <= 0)) return alert("Every sub-service needs a name and valid price.");
-    const price = items.reduce((sum, item) => sum + item.price, 0);
-    const service = {
-      id: `svc-${Date.now()}`,
-      title: serviceTitle.trim(),
-      categories: items.map(item => item.title).join(", "),
-      items,
-      agreedPrice: price,
-      dueDate: serviceDueDate,
-      status: "active",
-      createdAt: today,
-    };
-    const services = [...getClientServices(c), service];
-    onUpdate(c.id, {
-      services,
-      totalAgreedPrice: services.reduce((sum, s) => sum + (Number(s.agreedPrice) || 0), 0),
-    });
-    setServiceTitle("");
-    setServiceDueDate("");
-    setServiceItems([{ id: "draft-1", title: "", price: "" }]);
-    setIsServiceForm(false);
-  };
-
-  const openEditServiceForm = (service) => {
-    setEditingServiceId(service.id);
-    setEditServiceTitle(service.title || "");
-    setEditServiceDueDate(service.dueDate || "");
-    setEditServiceItems(Array.isArray(service.items) && service.items.length
-      ? service.items.map(item => ({ id: item.id, title: item.title || "", price: String(item.price || "") }))
-      : [{ id: `edit-${Date.now()}`, title: service.categories || service.title || "", price: String(serviceTotal(c, service) || "") }]
-    );
-    setIsEditDealForm(true);
-    setIsServiceForm(false);
-    setIsPaymentForm(false);
-  };
-
-  const handleSaveEditedService = () => {
-    const items = editServiceItems
-      .map(item => ({ id: item.id, title: item.title.trim(), price: Number(item.price) || 0 }))
-      .filter(item => item.title || item.price > 0);
-    if (!editServiceTitle.trim()) return alert("Please enter a service name.");
-    if (!items.length) return alert("Add at least one sub-service.");
-    if (items.some(item => !item.title || item.price <= 0)) return alert("Every sub-service needs a name and valid price.");
-    const updatedServices = services.map(s => s.id === editingServiceId
-      ? {
-        ...s,
-        title: editServiceTitle.trim(),
-        categories: items.map(item => item.title).join(", "),
-        items,
-        agreedPrice: items.reduce((sum, item) => sum + item.price, 0),
-        dueDate: editServiceDueDate,
-      }
-      : s
-    );
-    onUpdate(c.id, {
-      services: updatedServices,
-      totalAgreedPrice: updatedServices.reduce((sum, s) => sum + serviceTotal(c, s), 0),
-    });
-    setIsEditDealForm(false);
-    setEditingServiceId("");
-  };
-
-  const services = getClientServices(c);
-  const ledgerServices = showPaidServices ? services : services.filter(s => serviceTotal(c, s) - servicePaid(c, s.id) > 0);
-  const paidServiceCount = services.filter(s => serviceTotal(c, s) - servicePaid(c, s.id) <= 0).length;
-  const totals = clientTotals(c);
-  const remainingBalance = isLead ? 0 : totals.balance;
-  const nextDueDate = services.map(s => s.dueDate).filter(Boolean).sort()[0] || c.followUpDate || "";
-
-  return (
-    <div style={{
-      background: SURF, borderRadius: 10, marginBottom: 10, overflow: "hidden",
-      border: isHighlighted ? `1px solid ${LIME}66` : `1px solid ${BORDER}`,
-      borderLeft: accentColor ? `3px solid ${accentColor}` : (isHighlighted ? `1px solid ${LIME}66` : `1px solid ${BORDER}`),
-      boxShadow: isHighlighted ? `0 0 16px ${LIME}22` : "none"
-    }}>
-      <div style={{ padding: "13px 14px 10px", cursor: "pointer" }} onClick={() => setExp(e => !e)}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, fontFamily: BODY_FONT, letterSpacing: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</div>
-            <div style={{ fontSize: 11, color: DIM, fontFamily: BODY_FONT, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.business || "No business"}{c.businessType ? ` · ${c.businessType}` : ""}</div>
-          </div>
-          <div style={{ textAlign: "right", flexShrink: 0 }}>
-            {!isLead ? (
-              <>
-                <div style={{ fontSize: 12, color: remainingBalance > 0 ? WARM_C : LIME, fontWeight: "bold" }}>{remainingBalance > 0 ? fmtUGX(remainingBalance) : "Paid"}</div>
-                <div style={{ fontSize: 9, color: DIM, marginTop: 3 }}>{nextDueDate ? fmtDate(nextDueDate) : `${services.length} service${services.length !== 1 ? "s" : ""}`}</div>
-              </>
-            ) : (
-              <>
-                <div style={{ fontSize: 10, color: c.temp === "warm" ? WARM_C : COLD_C, fontWeight: "bold", textTransform: "uppercase" }}>{c.temp}</div>
-                <div style={{ fontSize: 9, color: isOverdue ? WARM_C : DIM, marginTop: 3 }}>{c.followUpDate ? fmtDate(c.followUpDate) : "No timeline"}</div>
-              </>
-            )}
-          </div>
-        </div>
-        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 9, color: DIM }}>{exp ? "Close" : "Open"}</span>
-          {isHighlighted && <span style={{ fontSize: 8, color: WARM_C, fontWeight: "bold" }}>FOLLOW-UP DUE</span>}
-        </div>
-      </div>
-
-      {exp && (
-      <>
-      {/* Top */}
-      <div style={{ padding: "12px 14px 8px", cursor: "pointer" }} onClick={() => setExp(e => !e)}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: "flex", gap: 7, alignItems: "center", marginBottom: 2, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 13, fontWeight: "bold" }}>{c.name}</span>
-              {isLead ? (
-                <>
-                  <TempBadge temp={c.temp} />
-                  {c.ownerAround === "yes" && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 10, background: LIME + "22", color: LIME, letterSpacing: 0.5 }}>👤 OWNER PRESENT</span>}
-                  {c.ownerAround === "no" && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 10, background: SURF2, color: DIM, letterSpacing: 0.5 }}>👥 STAFF ONLY</span>}
-                  {isHighlighted && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 10, background: WARM_C + "22", color: WARM_C, fontWeight: "bold", letterSpacing: 0.5 }}>⚡ FOLLOW-UP DUE</span>}
-                </>
-              ) : (
-                <span style={{ fontSize: 8, padding: "2px 7px", borderRadius: 20, background: LIME + "22", color: LIME, fontWeight: "bold", letterSpacing: 0.5 }}>🏆 ONGOING CLIENT</span>
-              )}
-            </div>
-            <div style={{ fontSize: 10, color: DIM }}>{c.business || "—"}{c.businessType ? ` · ${c.businessType}` : ""}</div>
-          </div>
-          <div style={{ textAlign: "right", marginLeft: 8 }}>
-            <div style={{ fontSize: 9, color: DIM }}>{c.time}</div>
-            {c.date && c.date !== todayStr() && <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>{fmtDate(c.date)}</div>}
-          </div>
-        </div>
-        
-        {/* Status Indicators & Timeline Badges */}
-        <div style={{ display: "flex", gap: 5, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <Chip>{c.pitchMethod}</Chip>
-          {isLead && <Chip>{c.package || "Undecided"}</Chip>}
-          {isLead && c.quotedPrice && <Chip style={{ color: LIME }}>💰 {c.quotedPrice}</Chip>}
-          
-          {!isLead && (
-            <>
-              <Chip style={{ color: "#fff", background: SURF2 }}>💰 Agreed: {(c.totalAgreedPrice || 0).toLocaleString()} UGX</Chip>
-              <Chip style={{ color: LIME, background: SURF2 }}>💵 Paid: {(c.amountPaid || 0).toLocaleString()} UGX</Chip>
-              <Chip style={{ 
-                color: remainingBalance > 0 ? WARM_C : LIME, 
-                background: remainingBalance > 0 ? WARM_C + "11" : LIME + "11",
-                border: `1px solid ${remainingBalance > 0 ? WARM_C + "22" : LIME + "22"}`
-              }}>
-                {remainingBalance > 0 ? `🔴 Bal: ${remainingBalance.toLocaleString()} UGX` : "✓ Paid in Full"}
-              </Chip>
-            </>
-          )}
-
-          <Chip style={{ background: c.demoShown === "yes" ? LIME + "18" : SURF2, color: c.demoShown === "yes" ? LIME : DIM }}>
-            Demo {c.demoShown === "yes" ? "✓" : "✗"}
-          </Chip>
-          
-          {isLead && c.followUpDate && (
-            <Chip style={{ 
-              color: isOverdue ? WARM_C : DIM, 
-              background: isOverdue ? WARM_C + "18" : SURF2,
-              fontWeight: isOverdue ? "bold" : "normal"
-            }}>
-              📅 {isOverdue ? "Overdue" : "Next"}: {fmtDate(c.followUpDate)}
-            </Chip>
-          )}
-
-          {(c.notes || c.servicesToOffer || (!isLead && c.payments && c.payments.length > 0)) && (
-            <Chip style={{ color: DIM }}>📝 Details {exp ? "▲" : "▼"}</Chip>
-          )}
-        </div>
-      </div>
-      </>
-      )}
-
-      {/* Inline Forms */}
-      {isWinForm && (
-        <div style={{ padding: 14, background: SURF2, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>🏆 Win Deal — Convert to Ongoing Client</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div>
-              <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>AGREED PRICE (UGX)</div>
-              <input type="number" value={dealPrice} onChange={e => setDealPrice(e.target.value)} placeholder="e.g. 350000" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }} />
-            </div>
-            <div>
-              <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>INITIAL DEPOSIT (UGX) - Optional</div>
-              <input type="number" value={deposit} onChange={e => setDeposit(e.target.value)} placeholder="e.g. 150000" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }} />
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              <button onClick={handleConvert} style={{ flex: 1, background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>Confirm Conversion</button>
-              <button onClick={() => setIsWinForm(false)} style={{ flex: 1, background: BORDER, color: "#fff", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isRescheduleForm && (
-        <div style={{ padding: 14, background: SURF2, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>📅 Set Follow-Up Timeline</div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-            <button onClick={() => handleReschedule(3)} style={{ flex: 1, background: SURF, border: `1px solid ${BORDER}`, color: "#fff", padding: "6px 0", borderRadius: 4, fontSize: 9, fontFamily: FONT, cursor: "pointer" }}>+3 Days</button>
-            <button onClick={() => handleReschedule(7)} style={{ flex: 1, background: SURF, border: `1px solid ${BORDER}`, color: "#fff", padding: "6px 0", borderRadius: 4, fontSize: 9, fontFamily: FONT, cursor: "pointer" }}>+7 Days</button>
-            <button onClick={() => handleReschedule(14)} style={{ flex: 1, background: SURF, border: `1px solid ${BORDER}`, color: "#fff", padding: "6px 0", borderRadius: 4, fontSize: 9, fontFamily: FONT, cursor: "pointer" }}>+14 Days</button>
-            <button onClick={() => handleReschedule(30)} style={{ flex: 1, background: SURF, border: `1px solid ${BORDER}`, color: "#fff", padding: "6px 0", borderRadius: 4, fontSize: 9, fontFamily: FONT, cursor: "pointer" }}>+30 Days</button>
-          </div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <input type="date" value={newFollowDate} onChange={e => setNewFollowDate(e.target.value)} style={{ flex: 1, background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "6px 10px", fontSize: 11, fontFamily: FONT }} />
-            <button onClick={handleCustomReschedule} style={{ background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "0 14px", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>Save</button>
-            <button onClick={() => setIsRescheduleForm(false)} style={{ background: BORDER, color: "#fff", border: "none", borderRadius: 6, padding: "0 10px", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {isPaymentForm && (
-        <div style={{ position: "fixed", left: "50%", bottom: 14, transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 452, maxHeight: "78vh", overflowY: "auto", zIndex: 140, padding: 14, background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 12, boxShadow: "0 18px 60px rgba(0,0,0,0.65)" }}>
-          <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>💰 Record Client Payment</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div>
-              <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>PAYMENT AMOUNT (UGX)</div>
-              <input type="number" value={paymentAmt} onChange={e => setPaymentAmt(e.target.value)} placeholder="e.g. 50000" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }} />
-            </div>
-            <div>
-              <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>NOTES / REFERENCE</div>
-              <input type="text" value={paymentNote} onChange={e => setPaymentNote(e.target.value)} placeholder="e.g. Cash, Mobile Money, Second installment" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }} />
-            </div>
-            <div>
-              <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>SERVICE THIS PAYMENT BELONGS TO</div>
-              <select value={paymentServiceId} onChange={e => setPaymentServiceId(e.target.value)} style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }}>
-                {services.map(s => (
-                  <option key={s.id} value={s.id}>{s.title} - {fmtUGX(serviceTotal(c, s))}</option>
-                ))}
-              </select>
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              <button onClick={handleRecordPayment} style={{ flex: 1, background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>Save Payment</button>
-              <button onClick={() => setIsPaymentForm(false)} style={{ flex: 1, background: BORDER, color: "#fff", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isServiceForm && (
-        <div style={{ padding: 14, background: SURF2, borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
-          <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>Add Service / Order</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <input type="text" value={serviceTitle} onChange={e => setServiceTitle(e.target.value)} placeholder="Service name e.g. Website Design" style={{ width: "100%", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 12, fontFamily: FONT }} />
-            <div>
-              <div style={{ fontSize: 9, color: DIM, marginBottom: 4 }}>PAYMENT DUE DATE / AGREEMENT</div>
-              <input type="date" value={serviceDueDate} onChange={e => setServiceDueDate(e.target.value)} style={{ width: "100%", boxSizing: "border-box", background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 11, fontFamily: FONT }} />
-            </div>
-            <div style={{ fontSize: 9, color: DIM, letterSpacing: 1 }}>SUB-SERVICES / LINE ITEMS</div>
-            {serviceItems.map((item, index) => (
-              <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 110px 32px", gap: 6 }}>
-                <input type="text" value={item.title} onChange={e => setServiceItems(items => items.map(row => row.id === item.id ? { ...row, title: e.target.value } : row))} placeholder="e.g. Landing page" style={{ minWidth: 0, background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 11, fontFamily: FONT }} />
-                <input type="number" value={item.price} onChange={e => setServiceItems(items => items.map(row => row.id === item.id ? { ...row, price: e.target.value } : row))} placeholder="Price" style={{ minWidth: 0, background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 8px", fontSize: 11, fontFamily: FONT }} />
-                <button onClick={() => setServiceItems(items => items.length === 1 ? items : items.filter(row => row.id !== item.id))} style={{ background: SURF, border: `1px solid ${BORDER}`, color: index === 0 && serviceItems.length === 1 ? DIM : WARM_C, borderRadius: 6, cursor: serviceItems.length === 1 ? "default" : "pointer", fontFamily: FONT }}>×</button>
-              </div>
-            ))}
-            <button onClick={() => setServiceItems(items => [...items, { id: `draft-${Date.now()}`, title: "", price: "" }])} style={{ alignSelf: "flex-start", background: SURF, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 6, padding: "7px 10px", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>+ Add sub-service</button>
-            <div style={{ fontSize: 10, color: DIM }}>Order total: <b style={{ color: LIME }}>{fmtUGX(serviceItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0))}</b></div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={handleAddService} style={{ flex: 1, background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>Save Service</button>
-              <button onClick={() => setIsServiceForm(false)} style={{ flex: 1, background: BORDER, color: "#fff", border: "none", borderRadius: 6, padding: "8px 0", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isEditDealForm && (
-        <div style={{ position: "fixed", left: "50%", bottom: 14, transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: 452, maxHeight: "78vh", overflowY: "auto", zIndex: 140, padding: 14, background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 12, boxShadow: "0 18px 60px rgba(0,0,0,0.65)" }}>
-          <div style={{ fontSize: 11, fontWeight: "bold", marginBottom: 8, color: LIME }}>✏️ Edit Agreed Deal Price</div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-              <input type="text" value={editServiceTitle} onChange={e => setEditServiceTitle(e.target.value)} placeholder="Service name" style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 11, fontFamily: FONT }} />
-              <input type="date" value={editServiceDueDate} onChange={e => setEditServiceDueDate(e.target.value)} style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 11, fontFamily: FONT }} />
-              {editServiceItems.map(item => (
-                <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 110px", gap: 6 }}>
-                  <input type="text" value={item.title} onChange={e => setEditServiceItems(items => items.map(row => row.id === item.id ? { ...row, title: e.target.value } : row))} placeholder="Sub-service" style={{ minWidth: 0, background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 10px", fontSize: 11, fontFamily: FONT }} />
-                  <input type="number" value={item.price} onChange={e => setEditServiceItems(items => items.map(row => row.id === item.id ? { ...row, price: e.target.value } : row))} placeholder="Price" style={{ minWidth: 0, background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "8px 8px", fontSize: 11, fontFamily: FONT }} />
-                </div>
-              ))}
-              <input type="number" value={editServiceItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0)} readOnly placeholder="Service Total (UGX)" style={{ background: BG, border: `1px solid ${BORDER}`, borderRadius: 6, color: "#fff", padding: "6px 10px", fontSize: 11, fontFamily: FONT }} />
-            </div>
-            <button onClick={handleSaveEditedService} style={{ background: LIME, color: "#000", border: "none", borderRadius: 6, padding: "0 14px", fontSize: 10, fontWeight: "bold", cursor: "pointer", fontFamily: FONT }}>Save</button>
-            <button onClick={() => setIsEditDealForm(false)} style={{ background: BORDER, color: "#fff", border: "none", borderRadius: 6, padding: "0 10px", fontSize: 10, cursor: "pointer", fontFamily: FONT }}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {/* Action Buttons Row */}
-      <div style={{ padding: "0 14px 12px", display: "flex", gap: 7, flexWrap: "wrap" }}>
-        {c.phone ? (
-          <>
-            {(!c.hasWhatsApp || c.hasWhatsApp === "yes") && (
-              <ABtn color={GREEN_WA + "22"} tc={GREEN_WA}
-                onClick={() => window.open(`https://wa.me/${toWaNumber(c.phone)}`, "_blank")}>
-                📲 WhatsApp
-              </ABtn>
-            )}
-            <ABtn color={COLD_C + "22"} tc={COLD_C}
-              onClick={() => window.open(`tel:${c.phone}`, "_blank")}>
-              📞 Call
-            </ABtn>
-          </>
-        ) : (
-          <span style={{ fontSize: 9, padding: "7px 11px", color: DIM, background: SURF2, borderRadius: 6 }}>📵 Phone Unavailable</span>
-        )}
-
-        {isLead ? (
-          <>
-            <ABtn
-              color={c.followUp === "needed" ? LIME + "22" : SURF2}
-              tc={c.followUp === "needed" ? LIME : DIM}
-              onClick={() => {
-                const nextFollow = c.followUp === "needed" ? "done" : "needed";
-                // If marking done, clear followUpDate or prompt rescheduling
-                if (nextFollow === "done" && c.followUpDate) {
-                  const keep = confirm("Keep the follow-up date reminder active?\nClick OK to keep, Cancel to clear it.");
-                  onUpdate(c.id, { followUp: nextFollow, ...(keep ? {} : { followUpDate: "" }) });
-                } else {
-                  onUpdate(c.id, { followUp: nextFollow });
-                }
-              }}>
-              {c.followUp === "needed" ? "✓ Mark Done" : "↩ Follow-Up"}
-            </ABtn>
-            
-            <ABtn color={SURF2} tc={LIME} onClick={() => setIsRescheduleForm(true)}>
-              📅 Timeline
-            </ABtn>
-
-            <ABtn
-              color={c.temp === "warm" ? WARM_C + "22" : COLD_C + "22"}
-              tc={c.temp === "warm" ? WARM_C : COLD_C}
-              onClick={() => onUpdate(c.id, { temp: c.temp === "warm" ? "cold" : "warm" })}>
-              {c.temp === "warm" ? "🔥 Warm" : "❄️ Cold"}
-            </ABtn>
-
-            <ABtn color={LIME} tc="#000" onClick={() => setIsWinForm(true)}>
-              🏆 Won! Ongoing
-            </ABtn>
-
-            {(!c.quotedPrice || !c.servicesToOffer) && (
-              <ABtn color={SURF2} tc={LIME} onClick={autoSuggest}>
-                ✨ Suggest
-              </ABtn>
-            )}
-          </>
-        ) : (
-          <>
-            <ABtn color={LIME} tc="#000" onClick={() => openPaymentForm()}>
-              💰 Record Payment
-            </ABtn>
-            <ABtn color={SURF2} tc={DIM} onClick={() => setShowActions(v => !v)}>
-              {showActions ? "Hide Actions" : "Actions"}
-            </ABtn>
-            {showActions && (
-              <>
-            <ABtn color={SURF2} tc={COLD_C} onClick={() => setIsServiceForm(true)}>
-              + Service
-            </ABtn>
-            <ABtn color={SURF2} tc={LIME} onClick={() => openEditServiceForm(services[0])}>
-              Edit Service
-            </ABtn>
-            <ABtn color={SURF2} tc={DIM} onClick={() => setExp(e => !e)}>
-              {exp ? "Hide Ledger" : "Ledger"}
-            </ABtn>
-            <ABtn color={SURF2} tc={DIM} onClick={() => {
-              if (confirm("Move this client back to follow-up status? This will delete ongoing transaction states.")) {
-                onUpdate(c.id, { status: "lead", totalAgreedPrice: "", amountPaid: 0, payments: [], followUp: "needed" });
-              }
-            }}>
-              ↩ Make Lead
-            </ABtn>
-              </>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Expanded Notes & Services */}
-      {exp && (c.notes || c.servicesToOffer || (!isLead && (services.length > 0 || (c.payments && c.payments.length > 0)))) && (
-        <div style={{ padding: "10px 14px 12px", borderTop: `1px solid ${BORDER}` }}>
-          <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 8 }}>OVERVIEW</div>
-          {c.servicesToOffer && (
-            <div style={{ marginBottom: (c.notes || (!isLead && c.payments && c.payments.length > 0)) ? 12 : 0 }}>
-              <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 5 }}>SERVICES TO OFFER</div>
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                {c.servicesToOffer.split(",").map(s => s.trim()).filter(Boolean).map((s, i) => (
-                  <span key={i} style={{ 
-                    fontSize: 9, padding: "3px 8px", borderRadius: 4, 
-                    background: accentColor ? accentColor + "18" : SURF2, 
-                    color: accentColor || "#ccc",
-                    border: `1px solid ${accentColor ? accentColor + "33" : BORDER}`
-                  }}>{s}</span>
-                ))}
-              </div>
-            </div>
-          )}
-          {c.notes && (
-            <div style={{ marginBottom: (!isLead && c.payments && c.payments.length > 0) ? 12 : 0 }}>
-              <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 3 }}>NOTES</div>
-              <div style={{ fontSize: 11, color: "#ccc", lineHeight: 1.5 }}>{c.notes}</div>
-            </div>
-          )}
-          {!isLead && services.length > 0 && (
-            <div style={{ marginBottom: (c.payments && c.payments.length > 0) ? 12 : 0 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <div style={{ fontSize: 9, color: DIM, letterSpacing: 2 }}>SERVICES</div>
-                <button onClick={() => setShowDocs(v => !v)} style={{ background: BG, border: `1px solid ${BORDER}`, color: showDocs ? LIME : DIM, borderRadius: 5, padding: "5px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
-                  {showDocs ? "Hide documents" : "Documents"}
-                </button>
-                {paidServiceCount > 0 && (
-                  <button onClick={() => setShowPaidServices(v => !v)} style={{ marginLeft: 6, background: BG, border: `1px solid ${BORDER}`, color: showPaidServices ? LIME : DIM, borderRadius: 5, padding: "5px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
-                    {showPaidServices ? "Hide paid" : `Show paid ${paidServiceCount}`}
-                  </button>
-                )}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {ledgerServices.length === 0 ? <Empty text="All services for this client are paid. Use Show paid to review history." /> : ledgerServices.map(s => {
-                  const paid = servicePaid(c, s.id);
-                  const total = serviceTotal(c, s);
-                  const balance = total - paid;
-                  const payments = servicePayments(c, s.id);
-                  const serviceOpen = openLedgerServiceIds[s.id] ?? false;
-                  return (
-                    <div key={s.id} style={{ background: SURF2, border: `1px solid ${serviceOpen ? (balance > 0 ? WARM_C + "55" : LIME + "55") : BORDER}`, borderRadius: 6, padding: 9, fontSize: 10 }}>
-                      <div onClick={() => setOpenLedgerServiceIds(ids => ({ ...ids, [s.id]: !serviceOpen }))} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", cursor: "pointer" }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ color: "#fff", fontSize: 11, fontWeight: "bold", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.title}</div>
-                          <div style={{ color: DIM, fontSize: 9, marginTop: 3 }}>{s.dueDate ? `Due ${fmtDate(s.dueDate)}` : "No due date"} · {payments.length} payment{payments.length !== 1 ? "s" : ""}</div>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ color: balance > 0 ? WARM_C : LIME, fontSize: 10, fontWeight: "bold" }}>{balance > 0 ? `${fmtUGX(balance)} left` : "Paid"}</div>
-                          <div style={{ color: DIM, fontSize: 9, marginTop: 2 }}>{serviceOpen ? "Hide" : "Open"}</div>
-                        </div>
-                      </div>
-                      {serviceOpen && (
-                        <div style={{ marginTop: 8, borderTop: `1px solid ${BORDER}`, paddingTop: 8 }}>
-                          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 8 }}>
-                            {["FEE", "PAID", "BALANCE"].map((k) => {
-                              const value = k === "FEE" ? total : k === "PAID" ? paid : balance;
-                              const color = k === "FEE" ? "#fff" : k === "PAID" ? LIME : balance > 0 ? WARM_C : LIME;
-                              return (
-                                <div key={k} style={{ background: BG, borderRadius: 5, padding: 7 }}>
-                                  <div style={{ fontSize: 8, color: DIM, letterSpacing: 1 }}>{k}</div>
-                                  <div style={{ fontSize: 10, color, marginTop: 2 }}>{fmtUGX(value)}</div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          {Array.isArray(s.items) && s.items.length > 0 ? (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 8 }}>
-                              {s.items.map(item => (
-                                <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, color: DIM }}>
-                                  <span>{item.title}</span>
-                                  <span>{Number(item.price) > 0 ? fmtUGX(item.price) : "Included"}</span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : s.categories && <div style={{ color: DIM, lineHeight: 1.5, marginBottom: 8 }}>{s.categories}</div>}
-                          {s.dueDate && <div style={{ marginBottom: 8, color: today >= s.dueDate && balance > 0 ? WARM_C : DIM }}>Due: {fmtDate(s.dueDate)}</div>}
-                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: payments.length ? 8 : 0 }}>
-                            {showDocs && (
-                              <button onClick={() => printInvoice({ ...c, date }, s)} style={{ background: BG, border: `1px solid ${BORDER}`, color: COLD_C, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
-                                Invoice
-                              </button>
-                            )}
-                            <button onClick={() => openPaymentForm(s.id)} style={{ background: BG, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
-                              Record payment
-                            </button>
-                            <button onClick={() => openEditServiceForm(s)} style={{ background: BG, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "6px 8px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
-                              Edit agreement
-                            </button>
-                          </div>
-                          {payments.length > 0 && (
-                            <div>
-                              <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 5 }}>PAYMENTS</div>
-                              {payments.map(p => (
-                                <div key={p.id} style={{ display: "grid", gridTemplateColumns: showDocs ? "1fr auto auto auto auto" : "1fr auto auto auto", gap: 8, alignItems: "center", background: BG, borderRadius: 4, padding: "5px 8px", fontSize: 10, marginTop: 4 }}>
-                                  <span style={{ color: DIM }}>{p.date} · <span style={{ color: "#fff" }}>{p.note}</span></span>
-                                  <span style={{ color: LIME, fontWeight: "bold", whiteSpace: "nowrap" }}>+{p.amount.toLocaleString()} UGX</span>
-                                  <button onClick={() => openEditPaymentForm(p, s.id)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Edit</button>
-                                  <button onClick={() => deleteClientPayment(p)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Delete</button>
-                                  {showDocs && <button onClick={() => printReceipt({ ...c, date }, p)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Receipt</button>}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          {exp === "legacy-transactions" && !isLead && c.payments && c.payments.length > 0 && (
-            <div>
-              <div style={{ fontSize: 9, color: DIM, letterSpacing: 2, marginBottom: 6 }}>TRANSACTION HISTORY</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {c.payments.map((p) => (
-                  <div key={p.id} style={{ display: "grid", gridTemplateColumns: showDocs ? "1fr auto auto auto" : "1fr auto auto", gap: 8, alignItems: "center", background: SURF2, borderRadius: 4, padding: "5px 8px", fontSize: 10 }}>
-                    <span style={{ color: DIM }}>{p.date} · <span style={{ color: "#fff" }}>{p.note}</span></span>
-                    <span style={{ color: LIME, fontWeight: "bold", whiteSpace: "nowrap" }}>+{p.amount.toLocaleString()} UGX</span>
-                    <button onClick={() => openEditPaymentForm(p)} style={{ background: BG, border: `1px solid ${BORDER}`, color: WARM_C, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Edit</button>
-                    {showDocs && <button onClick={() => printReceipt({ ...c, date }, p)} style={{ background: BG, border: `1px solid ${BORDER}`, color: LIME, borderRadius: 5, padding: "4px 6px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>Receipt</button>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+  const actions = useContext(ClientActions);
+  const [exp,setExp]=useState(false),[infoOpen,setInfoOpen]=useState(false),[svcEditor,setSvcEditor]=useState(null),[openServices,setOpenServices]=useState({});
+  const [isWinForm,setIsWinForm]=useState(false),[dealPrice,setDealPrice]=useState(c.quotedPrice?c.quotedPrice.replace(/\D/g,""):""),[deposit,setDeposit]=useState("0");
+  const [isRescheduleForm,setIsRescheduleForm]=useState(false),[newFollowDate,setNewFollowDate]=useState(c.followUpDate||todayStr());
+  const [isPaymentForm,setIsPaymentForm]=useState(false),[paymentAmt,setPaymentAmt]=useState(""),[paymentNote,setPaymentNote]=useState(""),[paymentServiceId,setPaymentServiceId]=useState(""),[editingPaymentId,setEditingPaymentId]=useState("");
+  const today=todayStr(),isLead=c.status!=="ongoing",isOverdue=c.followUpDate&&today>=c.followUpDate;
+  const isHighlighted=highlight&&isLead&&(c.followUp==="needed"||(c.followUp==="done"&&c.followUpDate&&today>=c.followUpDate));
+  const textToMatch=c.businessType||c.business||"",packageMatch=PACKAGE_TEMPLATES.find(p=>p.match.test(textToMatch)),accentColor=packageMatch?packageMatch.color:null;
+  const services=getClientServices(c),totals=clientTotals(c),remainingBalance=isLead?0:totals.balance;
+  const nextDueDate=services.map(s=>s.dueDate).filter(Boolean).sort()[0]||c.followUpDate||"";
+  const saveInfo=fields=>{onUpdate(c.id,fields);setInfoOpen(false);};
+  const saveService=draft=>{onUpdate(c.id,upsertService(c,draft));setSvcEditor(null);};
+  const deleteService=s=>{const linked=paymentsForService(c,s.id),sum=linked.reduce((n,p)=>n+(Number(p.amount)||0),0);const msg=linked.length?`Delete "${s.title}"? This also deletes ${linked.length} payment(s) totalling ${fmtUGX(sum)} from this client and the Money ledger. This cannot be undone.`:`Delete "${s.title}"? This cannot be undone.`;if(!confirm(msg))return;onUpdate(c.id,removeService(c,s.id));setSvcEditor(null);};
+  const deleteThisClient=()=>{const pays=c.payments||[],paid=pays.reduce((n,p)=>n+(Number(p.amount)||0),0);if(confirm("Delete "+c.name+"? "+(pays.length?"Their "+pays.length+" payment(s) ("+fmtUGX(paid)+") will also disappear from the Money ledger. ":"")+"This cannot be undone."))actions?.deleteClient(date,c.id);};
+  const openPaymentForm=(serviceId="")=>{setEditingPaymentId("");setPaymentAmt("");setPaymentNote("");setPaymentServiceId(serviceId||services[0]?.id||"");setIsPaymentForm(true);};
+  const openEditPaymentForm=(p,serviceId="")=>{setEditingPaymentId(p.id);setPaymentAmt(String(p.amount||""));setPaymentNote(p.note||"");setPaymentServiceId(serviceId||p.serviceId||services[0]?.id||"");setIsPaymentForm(true);};
+  const savePayment=()=>{const amount=Number(paymentAmt)||0;if(amount<=0)return alert("Please enter a valid payment amount.");const serviceId=paymentServiceId||services[0]?.id||"",payments=editingPaymentId?(c.payments||[]).map(p=>p.id===editingPaymentId?{...p,amount,note:paymentNote.trim()||"Payment",serviceId}:p):[...(c.payments||[]),{id:newPaymentId(),date:today,amount,note:paymentNote.trim()||"Payment",serviceId}];onUpdate(c.id,{payments,amountPaid:payments.reduce((n,p)=>n+(Number(p.amount)||0),0)});setIsPaymentForm(false);};
+  const deleteClientPayment=p=>{if(!confirm("Delete this client payment? Its Money ledger entry will be removed too."))return;const payments=(c.payments||[]).filter(x=>x.id!==p.id);onUpdate(c.id,{payments,amountPaid:payments.reduce((n,x)=>n+(Number(x.amount)||0),0)});};
+  const markDone=()=>{const followUp=c.followUp==="needed"?"done":"needed";if(followUp==="done"&&c.followUpDate){const keep=confirm("Keep the follow-up date reminder active? Click OK to keep, Cancel to clear it.");onUpdate(c.id,{followUp,...(keep?{}:{followUpDate:""})});}else onUpdate(c.id,{followUp});};
+  const convert=()=>{const price=Number(dealPrice)||0,paid=Number(deposit)||0;if(price<=0)return alert("Please enter a valid agreed price.");const id="svc-"+Date.now(),service={id,title:c.package&&c.package!=="Undecided"?c.package:"Client Service",categories:c.servicesToOffer||"",agreedPrice:price,dueDate:"",status:"active",createdAt:today},payments=paid>0?[{id:newPaymentId(),date:today,amount:paid,note:"Initial Deposit",serviceId:id}]:[];onUpdate(c.id,{status:"ongoing",totalAgreedPrice:price,amountPaid:paid,services:[service],payments,followUp:"done"});setIsWinForm(false);};
+  const reschedule=d=>{const followUpDate=addDays(d);onUpdate(c.id,{followUp:"done",followUpDate});setIsRescheduleForm(false);};
+  const saveReschedule=()=>{if(!newFollowDate)return alert("Please select a date.");onUpdate(c.id,{followUp:"done",followUpDate:newFollowDate});setIsRescheduleForm(false);};
+  const moveBack=()=>{if(confirm("Move this client back to follow-up status? This will delete ongoing transaction states."))onUpdate(c.id,{status:"lead",totalAgreedPrice:"",amountPaid:0,payments:[],services:[],followUp:"needed"});};
+  const suggest=()=>{if(!textToMatch)return alert("This client needs a business name or type to auto-suggest.");if(packageMatch)onUpdate(c.id,{servicesToOffer:packageMatch.services,quotedPrice:packageMatch.price});else alert("No exact match found based on their business type.");};
+  const paymentForm=isPaymentForm&&<div className="cc-form"><h4>{editingPaymentId?"Edit payment":"Record payment"}</h4><label>Amount (UGX)<input type="number" value={paymentAmt} onChange={e=>setPaymentAmt(e.target.value)}/></label><label>Note<input value={paymentNote} onChange={e=>setPaymentNote(e.target.value)}/></label><label>Service<select value={paymentServiceId} onChange={e=>setPaymentServiceId(e.target.value)}>{services.map(s=><option value={s.id} key={s.id}>{s.title} · {fmtUGX(serviceTotal(c,s))}</option>)}</select></label><button className="primary" onClick={savePayment}>Save payment</button><button onClick={()=>setIsPaymentForm(false)}>Cancel</button></div>;
+  return <div className={"cc"+(isHighlighted?" cc-hot":"")} style={accentColor?{"--accent":accentColor}:undefined}>
+    <button type="button" className="cc-head" onClick={()=>setExp(e=>!e)} aria-expanded={!!exp}>
+      <span className="cc-id"><b className="cc-name">{c.name}</b><small>{c.business||"No business"}{c.businessType?" · "+c.businessType:""}</small></span>
+      <span className="cc-meta">{isLead?<><b className={c.temp==="warm"?"warm":"cold"}>{c.temp}</b><small className={isOverdue?"overdue":""}>{c.followUpDate?fmtDate(c.followUpDate):"No timeline"}</small></>:<><b className={remainingBalance>0?"warm":"lime"}>{remainingBalance>0?fmtUGX(remainingBalance):"Paid"}</b><small>{nextDueDate?fmtDate(nextDueDate):services.length+" services"}</small></>}</span>
+      {isHighlighted && <span className="cc-due">FOLLOW-UP DUE</span>}
+      {isHighlighted&&<span className="cc-due">FOLLOW-UP DUE</span>}<span className="cc-chev">{exp?"▴":"▾"}</span>
+    </button>
+    {c.phone&&<div className="cc-quick">{(!c.hasWhatsApp||c.hasWhatsApp==="yes")&&<a className="cc-whatsapp" href={"https://wa.me/"+toWaNumber(c.phone)} target="_blank" rel="noreferrer">WhatsApp</a>}<a className="cc-call" href={"tel:"+c.phone}>Call</a></div>}
+    {exp&&<div className="cc-body">
+      <div className="cc-chips"><Chip style={{background:isLead?(c.temp==="warm"?WARM_C+"18":COLD_C+"18"):LIME+"18",color:isLead?(c.temp==="warm"?WARM_C:COLD_C):LIME}}>{isLead?"LEAD":"ONGOING"}</Chip>{isLead&&<Chip style={{background:SURF2,color:DIM}}>{c.followUp==="needed"?"FOLLOW-UP NEEDED":"FOLLOW-UP DONE"}</Chip>}<Chip style={{background:SURF2,color:DIM}}>Demo {c.demoShown==="yes"?"✓":"×"}</Chip></div>
+      <div className="cc-actions">{isLead?<><button onClick={markDone}>{c.followUp==="needed"?"✓ Mark done":"↩ Follow-up"}</button><button onClick={()=>setIsRescheduleForm(true)}>Timeline</button><button onClick={()=>onUpdate(c.id,{temp:c.temp==="warm"?"cold":"warm"})}>{c.temp==="warm"?"Warm":"Cold"}</button><button className="primary" onClick={()=>setIsWinForm(true)}>Won</button>{(!c.quotedPrice||!c.servicesToOffer)&&<button onClick={suggest}>Suggest</button>}</>:<><button className="primary" onClick={()=>openPaymentForm()}>Record payment</button><button onClick={()=>setSvcEditor({service:null})}>+ Service</button></>}</div>
+      <section className="cc-sec"><header><h4>Client details</h4><button onClick={()=>setInfoOpen(true)}>Edit</button></header><dl>{c.phone&&<div><dt>Phone</dt><dd>{c.phone}</dd></div>}<div><dt>Pitch method</dt><dd>{c.pitchMethod||"—"}</dd></div><div><dt>Owner around</dt><dd>{c.ownerAround||"unknown"}</dd></div><div><dt>WhatsApp</dt><dd>{c.hasWhatsApp==="yes"?"Available":"Unavailable"}</dd></div></dl>{c.servicesToOffer&&<div className="cc-tags">{c.servicesToOffer.split(",").map((x,i)=><span key={i}>{x.trim()}</span>)}</div>}{c.notes&&<p className="cc-notes">{c.notes}</p>}</section>
+      {!isLead&&<section className="cc-sec"><header><h4>Services ({services.length})</h4><button onClick={()=>setSvcEditor({service:null})}>+ Add service</button></header>{!services.length&&<div className="cc-empty">No services yet. Add one.</div>}
+      {services.map(s=>{const paid=servicePaid(c,s.id),total=serviceTotal(c,s),balance=total-paid,payments=servicePayments(c,s.id),opened=!!openServices[s.id];return <article className="cc-svc" key={s.id}>
+        <button className="cc-svc-head" onClick={()=>setOpenServices(prev=>({...prev,[s.id]:!opened}))} aria-expanded={opened}><span><b>{s.title}</b><small>{s.dueDate?"Due "+fmtDate(s.dueDate):"No due date"}</small></span><strong className={balance>0?"warm":"lime"}>{balance>0?fmtUGX(balance)+" due":"Paid"}</strong></button>
+        {opened&&<div className="cc-svc-details"><div className="cc-totals">{[["FEE",total],["PAID",paid],["BALANCE",balance]].map(([k,v])=><div key={k}><small>{k}</small><b>{fmtUGX(v)}</b></div>)}</div>
+        {(s.items||[]).map(item=><div className="cc-item" key={item.id}><span>{item.title}</span><span>{Number(item.price)>0?fmtUGX(item.price):"Included"}</span></div>)}
+        <div className="cc-svc-actions"><button onClick={()=>openPaymentForm(s.id)}>Record payment</button><button onClick={()=>setSvcEditor({service:s})}>Edit</button><button onClick={()=>printInvoice({...c,date},s)}>Invoice</button><button className="danger" onClick={()=>deleteService(s)}>Delete</button></div>
+        {payments.map(p=><div className="cc-payment" key={p.id}><span>{p.date||"Date unknown"} · {p.note||"Payment"} · {fmtUGX(p.amount)}</span><button onClick={()=>openEditPaymentForm(p,s.id)}>Edit</button><button className="danger" onClick={()=>deleteClientPayment(p)}>Delete</button><button onClick={()=>printReceipt({...c,date},p)}>Receipt</button></div>)}</div>}
+      </article>;})}</section>}
+      <details className="cc-danger"><summary>More</summary>{!isLead&&<button onClick={moveBack}>Move back to lead</button>}<button className="danger" onClick={deleteThisClient}>Delete client</button></details>
+    </div>}
+    {isWinForm&&<div className="cc-form"><h4>Win deal · Convert to ongoing client</h4><label>Agreed price (UGX)<input type="number" value={dealPrice} onChange={e=>setDealPrice(e.target.value)}/></label><label>Initial deposit (UGX)<input type="number" value={deposit} onChange={e=>setDeposit(e.target.value)}/></label><button className="primary" onClick={convert}>Confirm conversion</button><button onClick={()=>setIsWinForm(false)}>Cancel</button></div>}
+    {isRescheduleForm&&<div className="cc-form"><h4>Set follow-up timeline</h4><div className="cc-actions">{[3,7,14,30].map(d=><button key={d} onClick={()=>reschedule(d)}>+{d} days</button>)}</div><label>Date<input type="date" value={newFollowDate} onChange={e=>setNewFollowDate(e.target.value)}/></label><button className="primary" onClick={saveReschedule}>Save</button><button onClick={()=>setIsRescheduleForm(false)}>Cancel</button></div>}
+    {paymentForm}
+    {infoOpen&&<ClientInfoEditor client={c} onUpdate={saveInfo} onClose={()=>setInfoOpen(false)}/>}
+    {svcEditor&&<ServiceEditor service={svcEditor.service} fallbackTotal={svcEditor.service?serviceTotal(c,svcEditor.service):0} onSave={saveService} onDelete={svcEditor.service?()=>deleteService(svcEditor.service):undefined} onClose={()=>setSvcEditor(null)}/>}
+  </div>;
 }
 
 // ── Client Form
