@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import './AppShell.css';
 
 const views = [
   { group: 'Work', items: [['today', 'Today'], ['outreach', 'Outreach'], ['followups', 'Due'], ['ongoing', 'Ongoing']] },
