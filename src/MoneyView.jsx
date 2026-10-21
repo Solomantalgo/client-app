@@ -6,6 +6,7 @@ import {
   getTransactions,
 } from "./money.js";
 import { outstandingBalances, pausedBalances } from "./clients.js";
+import { useConfirm } from "./Confirm.jsx";
 
 const money = (n) => `UGX ${Math.round(n || 0).toLocaleString("en-UG")}`;
 const uid = () => `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -19,6 +20,7 @@ export default function MoneyView({
   onUpdateExpense,
   onDeleteExpense,
 }) {
+  const ask = useConfirm();
   const finance = data.finance || DEFAULT_FINANCE;
   const [tab, setTab] = useState("Overview");
   const [form, setForm] = useState("");
@@ -237,7 +239,13 @@ export default function MoneyView({
       closeForm();
     }
   };
-  const archiveBucket = (bucket) =>
+  const archiveBucket = async (bucket) => {
+    if (!(await ask({
+      title: `Archive ${bucket.name}?`,
+      body: "Past allocations remain in history. This bucket will stop receiving new allocations.",
+      requireText: bucket.name,
+      confirmLabel: "Archive bucket",
+    }))) return;
     onSave({
       ...data,
       finance: {
@@ -249,6 +257,7 @@ export default function MoneyView({
         ),
       },
     });
+  };
   const restoreBucket = (bucket) =>
     onSave({
       ...data,
@@ -280,7 +289,12 @@ export default function MoneyView({
       },
     });
   };
-  const archiveAccount = (account) =>
+  const archiveAccount = async (account) => {
+    if (!(await ask({
+      title: `Archive ${account.name}?`,
+      body: "The account will be hidden from new transactions. Existing history remains.",
+      confirmLabel: "Archive account",
+    }))) return;
     onSave({
       ...data,
       finance: {
@@ -292,6 +306,7 @@ export default function MoneyView({
         ),
       },
     });
+  };
   const setPaymentAccount = (transaction, accountId) => {
     const entry = Object.entries(data.clients).find(([, clients]) =>
       clients.some((c) => c.id === transaction.clientId),
@@ -346,7 +361,10 @@ export default function MoneyView({
     });
     setPaymentEdit(null);
   };
-  const archiveTransaction = (t) => {
+  const archiveTransaction = async (t) => {
+    if (t.type === "income" && t.sourceType !== "client_payment") {
+      if (!(await ask({ title: "Delete this income entry?", body: "This income entry will be removed from Money history." }))) return;
+    }
     if (t.type === "income" && t.sourceType !== "client_payment")
       onSave({
         ...data,

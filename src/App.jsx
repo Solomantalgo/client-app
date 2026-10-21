@@ -10,6 +10,7 @@ import { normalizeData, touchData, makeServiceFromClient, splitServiceItems } fr
 import { upsertService, removeService, paymentsForService } from "./clients.js";
 import { ClientInfoEditor, ServiceEditor } from "./ClientEditors.jsx";
 import "./ClientCard.css";
+import { ConfirmProvider, useConfirm } from "./Confirm.jsx";
 
 const ClientActions = createContext(null);
 
@@ -377,7 +378,8 @@ async function persistBackup(data) {
 }
 
 // ══════════════════════════════════════════════════════════
-export default function App() {
+function AppBody() {
+  const ask = useConfirm();
   const [data, setData] = useState(null);
   const [openClient, setOpenClient] = useState(null);
   const listScroll = useRef(0);
@@ -556,7 +558,21 @@ export default function App() {
     void save(next);
   };
 
-  const deleteClient = (date, id) => {
+  const deleteClient = async (date, id) => {
+    const client = data.clients[date]?.find((item) => item.id === id);
+    if (!client) return;
+    const payments = client.payments || [];
+    const paid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+    const ok = await ask({
+      title: `Delete ${client.name}?`,
+      body: `This also deletes ${payments.length} payment(s) (${fmtUGX(paid)}) from the Money ledger. This cannot be undone.`,
+      confirmLabel: "Delete client",
+      requireText: client.name,
+      altAction: client.status === "ongoing" && clientTotals(client).balance > 0
+        ? { label: "Pause instead", run: () => updateClient(date, id, { paused: true, pausedAt: todayStr(), pauseReason: "No payment" }) }
+        : undefined,
+    });
+    if (!ok) return;
     setOpenClient(null);
     void save(removeClientFromData(data, date, id));
   };
@@ -569,8 +585,9 @@ export default function App() {
     const next = { ...data, expenses: (data.expenses || []).map(e => e.id === id ? { ...e, ...updates } : e) };
     void save(next);
   };
-  const deleteExpense = (id) => {
-    if (!confirm("Delete this expense?")) return;
+  const deleteExpense = async (id) => {
+    const ok = await ask({ title: "Delete this expense?", body: "This expense will be removed from your Money records." });
+    if (!ok) return;
     void save({ ...data, expenses: (data.expenses || []).filter(e => e.id !== id) });
   };
 
@@ -646,12 +663,12 @@ export default function App() {
     }
   };
 
-  const undoOutreachLog = (logId) => {
+  const undoOutreachLog = async (logId) => {
     if (!data || !data.outreach) return;
     const logToUndo = data.outreach.logs.find(l => l.id === logId);
     if (!logToUndo) return;
 
-    if (!confirm(`Undo completion log for ${logToUndo.area} (${logToUndo.track})?`)) return;
+    if (!(await ask({ title: "Undo outreach completion?", body: `Remove the completion log for ${logToUndo.area} (${logToUndo.track})?` }))) return;
 
     let nextRemote = data.outreach.remotePointer;
     let nextPhysical = data.outreach.physicalPointer;
@@ -688,11 +705,12 @@ export default function App() {
   };
 
   const resetDatabase = async () => {
-    if ((prompt('Type RESET to empty all records.') || "").trim() !== "RESET") {
-      setBanner("Reset cancelled.");
-      return;
-    }
-    if (!confirm("Empty all clients, services, payments, followups, expenses, and outreach progress?")) return;
+    if (!(await ask({
+      title: "Reset all data?",
+      body: "This empties clients, services, payments, follow-ups, expenses, and outreach progress.",
+      requireText: "RESET",
+      confirmLabel: "Reset data",
+    }))) return;
     const emptyData = touchData({ ...DEFAULT_DATA, meta: { emptyStateResetAt: new Date().toISOString() } });
     setData(emptyData);
     await persist(emptyData);
@@ -759,6 +777,14 @@ export default function App() {
 }
 
 // ── Target Control
+export default function App() {
+  return (
+    <ConfirmProvider>
+      <AppBody />
+    </ConfirmProvider>
+  );
+}
+
 function TargetCtrl({ target, onChange }) {
   return (
     <div style={{ textAlign: "right" }}>
@@ -1536,6 +1562,7 @@ function ClientRow({ client: c, date, highlight }) {
 
 function ClientScreen({ client: c, date, onUpdate, onBack }) {
   const actions = useContext(ClientActions);
+  const ask = useConfirm();
   const [infoOpen, setInfoOpen] = useState(false);
   const [svcEditor, setSvcEditor] = useState(null);
   const [isWinForm, setIsWinForm] = useState(false);
@@ -1571,7 +1598,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
     onUpdate(c.id, upsertService(c, draft));
     setSvcEditor(null);
   };
-  const deleteService = (service) => {
+  const deleteService = async (service) => {
     const linked = paymentsForService(c, service.id);
     const amount = linked.reduce(
       (sum, payment) => sum + (Number(payment.amount) || 0),
@@ -1581,21 +1608,17 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
       ? `Delete "${service.title}"? This also deletes ${linked.length} payment(s) totalling ` +
         `${fmtUGX(amount)} from this client and the Money ledger. This cannot be undone.`
       : `Delete "${service.title}"? This cannot be undone.`;
-    if (!confirm(message)) return;
+    if (!(await ask({
+      title: `Delete ${service.title}?`,
+      body: message,
+      confirmLabel: "Delete service",
+      requireText: linked.length ? service.title : undefined,
+    }))) return;
     onUpdate(c.id, removeService(c, service.id));
     setSvcEditor(null);
   };
   const deleteThisClient = () => {
-    const pays = c.payments || [];
-    const paid = pays.reduce(
-      (sum, payment) => sum + (Number(payment.amount) || 0),
-      0,
-    );
-    const paymentsNotice = pays.length
-      ? `Their ${pays.length} payment(s) (${fmtUGX(paid)}) will also disappear from the Money ledger. `
-      : "";
-    const message = `Delete ${c.name}? ${paymentsNotice}This cannot be undone.`;
-    if (confirm(message)) actions?.deleteClient(date, c.id);
+    actions?.deleteClient(date, c.id);
   };
   const openPaymentForm = (serviceId = "") => {
     setEditingPaymentId("");
@@ -1647,13 +1670,8 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
     });
     setIsPaymentForm(false);
   };
-  const deleteClientPayment = (payment) => {
-    if (
-      !confirm(
-        "Delete this client payment? Its Money ledger entry will be removed too.",
-      )
-    )
-      return;
+  const deleteClientPayment = async (payment) => {
+    if (!(await ask({ title: "Delete this payment?", body: "Its Money ledger entry will also be removed." }))) return;
     const payments = (c.payments || []).filter(
       (item) => item.id !== payment.id,
     );
@@ -1665,12 +1683,14 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
       ),
     });
   };
-  const markDone = () => {
+  const markDone = async () => {
     const followUp = c.followUp === "needed" ? "done" : "needed";
     if (followUp === "done" && c.followUpDate) {
-      const keep = confirm(
-        "Keep the follow-up date reminder active? Click OK to keep, Cancel to clear it.",
-      );
+      const keep = await ask({
+        title: "Keep the follow-up reminder?",
+        body: "Keep the current follow-up date or cancel to clear it.",
+        confirmLabel: "Keep reminder",
+      });
       onUpdate(c.id, { followUp, ...(keep ? {} : { followUpDate: "" }) });
     } else onUpdate(c.id, { followUp });
   };
@@ -1721,12 +1741,14 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
     onUpdate(c.id, { followUp: "done", followUpDate });
     setIsRescheduleForm(false);
   };
-  const moveBack = () => {
-    if (
-      confirm(
-        "Move this client back to follow-up status? This will delete ongoing transaction states.",
-      )
-    ) {
+  const moveBack = async () => {
+    const paid = (c.payments || []).reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+    if (await ask({
+      title: "Move back to lead?",
+      body: `This wipes ${services.length} service(s) and ${c.payments?.length || 0} payments (${fmtUGX(paid)}).`,
+      confirmLabel: "Move back",
+      requireText: c.name,
+    })) {
       onUpdate(c.id, {
         status: "lead",
         totalAgreedPrice: "",

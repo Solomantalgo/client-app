@@ -117,6 +117,32 @@
   padding: 10px;
 }
 
+.confirm-dialog h2 {
+  margin: 0 0 10px;
+}
+
+.confirm-dialog p {
+  color: #aaa;
+  line-height: 1.5;
+}
+
+.confirm-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.confirm-dialog footer button {
+  min-height: 44px;
+}
+
+.confirm-dialog button.danger {
+  color: #ff7a3d;
+  border-color: #ff7a3d;
+}
+
 .cr-chev {
   color: #777;
   font-size: 22px;
