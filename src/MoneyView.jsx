@@ -29,6 +29,9 @@ export default function MoneyView({
   const [message, setMessage] = useState("");
   const [paymentEdit, setPaymentEdit] = useState(null);
   const [paymentEditError, setPaymentEditError] = useState("");
+  const [resetBucket, setResetBucket] = useState(null);
+  const [resetOpening, setResetOpening] = useState("0");
+  const [resetNote, setResetNote] = useState("");
   const [draft, setDraft] = useState({
     date: today(),
     amount: "",
@@ -48,6 +51,10 @@ export default function MoneyView({
   );
   const allocationTotal = activeBuckets.reduce(
     (n, b) => n + (Number(b.percentage) || 0),
+    0,
+  );
+  const assignedBalance = Object.values(totals.buckets).reduce(
+    (sum, bucket) => sum + bucket.allocated - bucket.spent,
     0,
   );
   const startForm = (type, item = null) => {
@@ -307,6 +314,32 @@ export default function MoneyView({
       },
     });
   };
+  const clearBucket = async (bucket) => {
+    const current = totals.buckets[bucket.id] || { allocated: 0, spent: 0 };
+    if (!(await ask({
+      title: `Start fresh for ${bucket.name}?`,
+      body: "Past transactions stay in history. This only stops counting the old balance under this purpose.",
+      requireText: bucket.name,
+      confirmLabel: "Start fresh",
+    }))) return;
+    const reset = {
+      id: uid(),
+      bucketId: bucket.id,
+      at: new Date().toISOString(),
+      allocated: current.allocated,
+      spent: current.spent,
+      opening: Math.max(0, Number(resetOpening) || 0),
+      note: resetNote.trim(),
+    };
+    onSave({ ...data, finance: { ...finance, bucketResets: [...(finance.bucketResets || []), reset] } });
+    setResetBucket(null);
+    setResetOpening("0");
+    setResetNote("");
+  };
+  const undoBucketClear = (reset) => onSave({
+    ...data,
+    finance: { ...finance, bucketResets: (finance.bucketResets || []).filter((item) => item.id !== reset.id) },
+  });
   const setPaymentAccount = (transaction, accountId) => {
     const entry = Object.entries(data.clients).find(([, clients]) =>
       clients.some((c) => c.id === transaction.clientId),
@@ -488,6 +521,24 @@ export default function MoneyView({
                               : "No target"}
                           </span>
                         </div>
+                        <div className="m-row-actions">
+                          <button className="m-quiet" onClick={() => startForm("bucket", b)}>Edit</button>
+                          <button className="m-quiet" onClick={() => { setResetBucket(b); setResetOpening("0"); }}>
+                            Start fresh
+                          </button>
+                          <button className="m-quiet" onClick={() => archiveBucket(b)}>Archive</button>
+                        </div>
+                        {(finance.bucketResets || [])
+                          .filter((reset) => reset.bucketId === b.id)
+                          .slice(-1)
+                          .map((reset) => (
+                            <p className="m-muted" key={reset.id}>
+                              Counting since {new Date(reset.at).toLocaleDateString("en-UG")} ·{" "}
+                              <button className="m-quiet" onClick={() => undoBucketClear(reset)}>
+                                Undo clear
+                              </button>
+                            </p>
+                          ))}
                       </article>
                     );
                   })}
@@ -500,6 +551,9 @@ export default function MoneyView({
                   label="Set up buckets"
                 />
               )}
+              <p className="m-muted">
+                Not assigned to a purpose: {money(totals.available - assignedBalance)}
+              </p>
             </div>
             <div className="m-two-col">
               <div className="m-panel">
@@ -647,6 +701,17 @@ export default function MoneyView({
                       </div>
                     </div>
                     <b>{b.percentage}%</b>
+                    {(finance.bucketResets || [])
+                      .filter((reset) => reset.bucketId === b.id)
+                      .slice(-1)
+                      .map((reset) => (
+                        <small className="m-muted" key={reset.id}>
+                          Counting since {new Date(reset.at).toLocaleDateString("en-UG")} ·{" "}
+                          <button className="m-quiet" onClick={() => undoBucketClear(reset)}>
+                            Undo clear
+                          </button>
+                        </small>
+                      ))}
                     {b.status === "archived" ? (
                       <button
                         className="m-quiet"
@@ -680,6 +745,12 @@ export default function MoneyView({
                         </button>
                         <button
                           className="m-quiet"
+                          onClick={() => { setResetBucket(b); setResetOpening("0"); }}
+                        >
+                          Start fresh
+                        </button>
+                        <button
+                          className="m-quiet"
                           onClick={() => archiveBucket(b)}
                         >
                           Archive
@@ -695,6 +766,9 @@ export default function MoneyView({
                 exceed 100%.
               </p>
             )}
+            <p className="m-muted">
+              Not assigned to a purpose: {money(totals.available - assignedBalance)}
+            </p>
           </div>
         )}
         {tab === "Accounts" && (
@@ -1103,6 +1177,25 @@ export default function MoneyView({
               <button className="m-primary" type="submit">
                 Save
               </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {resetBucket && (
+        <div className="m-overlay" onMouseDown={(event) => event.target === event.currentTarget && setResetBucket(null)}>
+          <form className="m-dialog" onSubmit={(event) => { event.preventDefault(); void clearBucket(resetBucket); }}>
+            <h2>Start fresh: {resetBucket.name}</h2>
+            <p>Current balance: {money((totals.buckets[resetBucket.id]?.allocated || 0) - (totals.buckets[resetBucket.id]?.spent || 0))}</p>
+            <p>Past transactions stay in history. This only stops counting the old balance under this purpose.</p>
+            <label>Opening balance (UGX)
+              <input type="number" min="0" value={resetOpening} onChange={(event) => setResetOpening(event.target.value)} />
+            </label>
+            <label>Note
+              <input value={resetNote} onChange={(event) => setResetNote(event.target.value)} />
+            </label>
+            <div className="m-dialog-actions">
+              <button type="button" className="m-secondary" onClick={() => setResetBucket(null)}>Cancel</button>
+              <button className="m-primary">Continue</button>
             </div>
           </form>
         </div>

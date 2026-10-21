@@ -69,5 +69,11 @@ export function getBalances(transactions, finance) {
       if (accounts[t.accountId] !== undefined) accounts[t.accountId] -= t.amount;
     }
   }
+  for (const reset of finance.bucketResets || []) {
+    const bucket = buckets[reset.bucketId];
+    if (!bucket) continue;
+    bucket.allocated += (Number(reset.opening) || 0) - (Number(reset.allocated) || 0);
+    bucket.spent -= Number(reset.spent) || 0;
+  }
   return { income, expenses, clientIncome, otherIncome, unallocated, available: income - expenses, buckets, accounts };
 }

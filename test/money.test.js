@@ -69,3 +69,49 @@ test('a newer empty remote state is kept from hiding local data unless marked as
   remote.meta.emptyStateResetAt = '2026-10-07T12:00:00Z';
   assert.equal(chooseSnapshot(local, remote), 'remote');
 });
+
+test("bucket reset zeroes the old balance without changing available money", () => {
+  const finance = {
+    ...DEFAULT_FINANCE,
+    buckets: [{ id: "living", name: "Living", percentage: 100, status: "active" }],
+    bucketResets: [{ id: "r1", bucketId: "living", allocated: 100, spent: 30, opening: 0 }],
+  };
+  const balances = getBalances([
+    { type: "income", amount: 100, allocations: [{ bucketId: "living", amount: 100 }] },
+    { type: "expense", amount: 30, bucketId: "living" },
+  ], finance);
+  assert.equal(balances.buckets.living.allocated, 0);
+  assert.equal(balances.buckets.living.spent, 0);
+  assert.equal(balances.available, 70);
+});
+
+test("new income after a bucket reset counts from zero", () => {
+  const finance = {
+    ...DEFAULT_FINANCE,
+    buckets: [{ id: "living", name: "Living", percentage: 100, status: "active" }],
+    bucketResets: [{ id: "r1", bucketId: "living", allocated: 100, spent: 30, opening: 0 }],
+  };
+  const balances = getBalances([
+    { type: "income", amount: 100, allocations: [{ bucketId: "living", amount: 100 }] },
+    { type: "expense", amount: 30, bucketId: "living" },
+    { type: "income", amount: 40, allocations: [{ bucketId: "living", amount: 40 }] },
+  ], finance);
+  assert.equal(balances.buckets.living.allocated, 40);
+  assert.equal(balances.buckets.living.spent, 0);
+  assert.equal(balances.available, 110);
+});
+
+test("bucket reset opening balance is added while undo restores the previous count", () => {
+  const baseTransactions = [
+    { type: "income", amount: 100, allocations: [{ bucketId: "living", amount: 100 }] },
+    { type: "expense", amount: 30, bucketId: "living" },
+  ];
+  const reset = { id: "r1", bucketId: "living", allocated: 100, spent: 30, opening: 15 };
+  const finance = { ...DEFAULT_FINANCE, bucketResets: [reset] };
+  const after = getBalances(baseTransactions, finance);
+  assert.equal(after.buckets.living.allocated, 15);
+  assert.equal(after.buckets.living.spent, 0);
+  assert.equal(after.available, 70);
+  const undone = getBalances(baseTransactions, { ...finance, bucketResets: [] });
+  assert.equal(undone.buckets.living.allocated - undone.buckets.living.spent, 70);
+});
