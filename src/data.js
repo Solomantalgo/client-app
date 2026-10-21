@@ -34,6 +34,9 @@ export function makeServiceFromClient(c) {
     dueDate: c.paymentDueDate || "",
     status: c.status === "ongoing" ? "active" : "quoted",
     createdAt: c.date || todayStr(),
+    mergedFrom: [],
+    paymentMap: {},
+    invoiceNo: "",
   };
   return { service };
 }
@@ -72,6 +75,10 @@ export function normalizeData(d) {
           hasWhatsApp: c.hasWhatsApp || "yes",
           totalAgreedPrice: c.totalAgreedPrice || "",
           amountPaid: c.amountPaid ?? 0,
+          paused: c.paused === true,
+          pausedAt: c.pausedAt || "",
+          pauseReason: c.pauseReason || "",
+          receiptGroups: Array.isArray(c.receiptGroups) ? c.receiptGroups : [],
           payments: (c.payments || []).map((p, index) => ({
             ...p,
             id: p.id || `payment-${c.id || date}-${index + 1}`,
@@ -107,6 +114,12 @@ export function normalizeData(d) {
                 dueDate: s.dueDate || s.paymentDueDate || "",
                 status: s.status || "active",
                 createdAt: s.createdAt || date,
+                mergedFrom: Array.isArray(s.mergedFrom) ? s.mergedFrom : [],
+                paymentMap:
+                  s.paymentMap && typeof s.paymentMap === "object"
+                    ? s.paymentMap
+                    : {},
+                invoiceNo: s.invoiceNo || "",
               }))
             : c.status === "ongoing" || c.totalAgreedPrice || c.amountPaid
               ? [makeServiceFromClient({ ...c, date }).service]
@@ -140,6 +153,9 @@ export function normalizeData(d) {
           },
     ),
     paymentSnapshots: { ...(financeSource.paymentSnapshots || {}) },
+    bucketResets: Array.isArray(financeSource.bucketResets)
+      ? financeSource.bucketResets
+      : [],
   };
   // Snapshots written by the first Money migration had no origin marker and
   // applied today's rules to pre-existing receipts. Treat those as legacy cash.
@@ -182,6 +198,21 @@ export function normalizeData(d) {
           };
         }
       }
+  for (const arr of Object.values(normalizedClients)) {
+    for (const client of arr) {
+      const paymentIds = new Set(
+        (client.payments || []).map((payment) => payment.id),
+      );
+      client.receiptGroups = (client.receiptGroups || [])
+        .map((group) => ({
+          ...group,
+          paymentIds: (group.paymentIds || []).filter((paymentId) =>
+            paymentIds.has(paymentId),
+          ),
+        }))
+        .filter((group) => group.paymentIds.length >= 2);
+    }
+  }
   return {
     ...source,
     finance,
@@ -210,6 +241,7 @@ export function normalizeData(d) {
     },
     meta: {
       ...(source.meta || {}),
+      counters: { invoice: 0, receipt: 0, ...(source.meta?.counters || {}) },
       updatedAt: source.meta?.updatedAt || "1970-01-01T00:00:00.000Z",
     },
   };

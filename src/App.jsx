@@ -5,7 +5,7 @@ import AppShell from "./AppShell.jsx";
 import "./AppShell.css";
 import { DEFAULT_FINANCE, allocateAmount } from "./money.js";
 import { chooseSnapshot, hasSavedContent } from "./sync.js";
-import { removeClientFromData } from "./clients.js";
+import { removeClientFromData, serviceTotal } from "./clients.js";
 import { normalizeData, touchData, makeServiceFromClient, splitServiceItems } from "./data.js";
 import { upsertService, removeService, paymentsForService } from "./clients.js";
 import { ClientInfoEditor, ServiceEditor } from "./ClientEditors.jsx";
@@ -1223,14 +1223,9 @@ function servicePayments(client, serviceId) {
 function servicePaid(client, serviceId) {
   return servicePayments(client, serviceId).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 }
-function serviceTotal(client, service) {
-  const itemTotal = Array.isArray(service?.items) ? service.items.reduce((sum, item) => sum + (Number(item.price) || 0), 0) : 0;
-  if (itemTotal > 0) return itemTotal;
-  return Number(service?.agreedPrice) || Number(client.totalAgreedPrice) || 0;
-}
 function clientTotals(client) {
   const services = getClientServices(client);
-  const total = services.reduce((sum, s) => sum + serviceTotal(client, s), 0);
+  const total = services.reduce((sum, service) => sum + serviceTotal(service, client), 0);
   const paid = (client.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   return { total, paid, balance: total - paid };
 }
@@ -1252,7 +1247,7 @@ function printInvoice(client, service = null) {
   const invoiceItems = Array.isArray(activeService?.items) && activeService.items.length
     ? activeService.items
     : splitServiceItems(activeService?.categories || client.servicesToOffer || activeService?.title).map(title => ({ title, price: 0 }));
-  const total = serviceTotal(client, activeService);
+  const total = serviceTotal(activeService, client);
   const paid = servicePaid(client, activeService?.id);
   const balance = total - paid;
   const stamp = paid === 0 ? "AWAITING PAYMENT" : paid >= total ? "PAID IN FULL" : "PARTIAL PAYMENT RECEIVED";
@@ -1363,7 +1358,7 @@ function printReceipt(client, payment) {
   }
   const invoiceNum = getInvoiceNum(client, service);
   const receiptNum = getReceiptNum(payment);
-  const total = serviceTotal(client, service);
+  const total = serviceTotal(service, client);
   // Calculate running balance AFTER this payment
   const paymentsUpTo = servicePayments(client, service?.id);
   const paidBeforeThis = paymentsUpTo
@@ -1926,7 +1921,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
               )}
               {services.map((service) => {
                 const paid = servicePaid(c, service.id);
-                const total = serviceTotal(c, service);
+                const total = serviceTotal(service, c);
                 const balance = total - paid;
                 return (
                   <article className="cs-service" key={service.id}>
@@ -2034,7 +2029,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
         <ServiceEditor
           service={svcEditor.service}
           fallbackTotal={
-            svcEditor.service ? serviceTotal(c, svcEditor.service) : 0
+            svcEditor.service ? serviceTotal(svcEditor.service, c) : 0
           }
           onSave={saveService}
           onDelete={
@@ -2187,7 +2182,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
               >
                 {services.map((service) => (
                   <option key={service.id} value={service.id}>
-                    {service.title} · {fmtUGX(serviceTotal(c, service))}
+                    {service.title} · {fmtUGX(serviceTotal(service, c))}
                   </option>
                 ))}
               </select>
