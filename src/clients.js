@@ -1,22 +1,14 @@
 export function servicesFor(client, legacyService) {
-  return Array.isArray(client?.services)
-    ? client.services
-    : [legacyService(client)];
+  return Array.isArray(client?.services) ? client.services : [legacyService(client)];
 }
 
 export const itemsTotal = (service) =>
-  (service?.items || []).reduce(
-    (total, item) => total + (Number(item.price) || 0),
-    0,
-  );
+  (service?.items || []).reduce((total, item) => total + (Number(item.price) || 0), 0);
 
 export function serviceTotal(service, client) {
   const items = itemsTotal(service);
   if (items > 0) return items;
-  return (
-    Number(service?.agreedPrice) ||
-    (client?.services?.length === 1 ? Number(client.totalAgreedPrice) || 0 : 0)
-  );
+  return Number(service?.agreedPrice) || (client?.services?.length === 1 ? Number(client.totalAgreedPrice) || 0 : 0);
 }
 
 export function applyServicePricing(mode, lump, items) {
@@ -54,10 +46,7 @@ export function outstandingBalances(clients) {
           .map((service) => {
             const total = serviceTotal(service, client);
             const payments = paymentsForService(client, service.id);
-            const paid = payments.reduce(
-              (sum, payment) => sum + (Number(payment.amount) || 0),
-              0,
-            );
+            const paid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
             return {
               id: `${date}:${client.id}:${service.id}`,
               date,
@@ -83,22 +72,24 @@ export function pausedBalances(clients) {
         const services = Array.isArray(client.services)
           ? client.services
           : [{ id: "default", title: client.package || "Client service", agreedPrice: client.totalAgreedPrice }];
-        return services.map((service) => {
-          const total = serviceTotal(service, client);
-          const payments = paymentsForService(client, service.id);
-          const paid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
-          return {
-            id: `${date}:${client.id}:${service.id}`,
-            date,
-            clientId: client.id,
-            name: client.business || client.name,
-            service: service.title,
-            total,
-            paid,
-            balance: Math.max(0, total - paid),
-            payments,
-          };
-        }).filter((item) => item.balance > 0);
+        return services
+          .map((service) => {
+            const total = serviceTotal(service, client);
+            const payments = paymentsForService(client, service.id);
+            const paid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+            return {
+              id: `${date}:${client.id}:${service.id}`,
+              date,
+              clientId: client.id,
+              name: client.business || client.name,
+              service: service.title,
+              total,
+              paid,
+              balance: Math.max(0, total - paid),
+              payments,
+            };
+          })
+          .filter((item) => item.balance > 0);
       }),
   );
 }
@@ -112,8 +103,7 @@ export function upsertService(client, draft) {
   const index = services.findIndex((service) => service.id === draft.id);
   const service = {
     ...draft,
-    id:
-      draft.id || `svc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: draft.id || `svc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   };
   if (index < 0) services.push(service);
   else services[index] = { ...services[index], ...service };
@@ -123,24 +113,18 @@ export function upsertService(client, draft) {
 export function paymentsForService(client, serviceId) {
   const firstId = client.services?.[0]?.id;
   return (client.payments || []).filter(
-    (payment) =>
-      payment.serviceId === serviceId ||
-      (!payment.serviceId && serviceId === firstId),
+    (payment) => payment.serviceId === serviceId || (!payment.serviceId && serviceId === firstId),
   );
 }
 
 export function removeService(client, serviceId) {
-  const services = (client.services || []).filter(
-    (service) => service.id !== serviceId,
-  );
+  const services = (client.services || []).filter((service) => service.id !== serviceId);
   const removedPayments = paymentsForService(client, serviceId);
   const removed = new Set(removedPayments.map((payment) => payment.id));
   return recomputeClient({
     ...client,
     services,
-    payments: (client.payments || []).filter(
-      (payment) => !removed.has(payment.id),
-    ),
+    payments: (client.payments || []).filter((payment) => !removed.has(payment.id)),
   });
 }
 
@@ -167,8 +151,16 @@ export function mergeServices(client, serviceIds, title) {
     paymentMap[payment.id] = assigned;
     return { ...payment, serviceId: id };
   });
-  const createdAt = selected.map((service) => service.createdAt).filter(Boolean).sort()[0] || "";
-  const dueDate = selected.map((service) => service.dueDate).filter(Boolean).sort()[0] || "";
+  const createdAt =
+    selected
+      .map((service) => service.createdAt)
+      .filter(Boolean)
+      .sort()[0] || "";
+  const dueDate =
+    selected
+      .map((service) => service.dueDate)
+      .filter(Boolean)
+      .sort()[0] || "";
   const merged = {
     id,
     title: title?.trim() || selected.map((service) => service.title).join(" + "),
@@ -208,17 +200,10 @@ function recomputeClient(client) {
   const totalAgreedPrice = (client.services || []).reduce(
     (sum, service) =>
       sum +
-      (Number(service.agreedPrice) ||
-        (service.items || []).reduce(
-          (n, item) => n + (Number(item.price) || 0),
-          0,
-        )),
+      (Number(service.agreedPrice) || (service.items || []).reduce((n, item) => n + (Number(item.price) || 0), 0)),
     0,
   );
-  const amountPaid = (client.payments || []).reduce(
-    (sum, payment) => sum + (Number(payment.amount) || 0),
-    0,
-  );
+  const amountPaid = (client.payments || []).reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
   return { ...client, totalAgreedPrice, amountPaid };
 }
 
@@ -228,8 +213,7 @@ export function removeClientFromData(data, date, id) {
   clients[date] = (clients[date] || []).filter((item) => item.id !== id);
   if (!clients[date].length) delete clients[date];
   const paymentSnapshots = { ...(data.finance?.paymentSnapshots || {}) };
-  for (const payment of client?.payments || [])
-    delete paymentSnapshots[payment.id];
+  for (const payment of client?.payments || []) delete paymentSnapshots[payment.id];
   return { ...data, clients, finance: { ...data.finance, paymentSnapshots } };
 }
 

@@ -102,7 +102,10 @@
   color: #aaa;
   border: 1px solid #555;
   padding: 3px 6px;
-  font: 9px 'DM Mono', 'Courier New', monospace;
+  font:
+    9px "DM Mono",
+    "Courier New",
+    monospace;
 }
 
 .paused-balance {
@@ -174,7 +177,10 @@
   border: 1px solid #466600;
   border-radius: 999px;
   padding: 4px 8px;
-  font: 9px 'DM Mono', 'Courier New', monospace;
+  font:
+    9px "DM Mono",
+    "Courier New",
+    monospace;
 }
 
 .confirm-dialog h2 {

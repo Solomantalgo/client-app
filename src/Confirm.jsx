@@ -40,12 +40,18 @@ export function ConfirmProvider({ children }) {
               </label>
             )}
             <footer>
-              <button autoFocus onClick={() => finish(false)}>Cancel</button>
+              <button autoFocus onClick={() => finish(false)}>
+                Cancel
+              </button>
               {dialog.altAction && (
-                <button onClick={() => {
-                  dialog.altAction.run?.();
-                  finish(false);
-                }}>{dialog.altAction.label}</button>
+                <button
+                  onClick={() => {
+                    dialog.altAction.run?.();
+                    finish(false);
+                  }}
+                >
+                  {dialog.altAction.label}
+                </button>
               )}
               <button
                 className="danger"

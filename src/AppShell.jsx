@@ -54,8 +54,7 @@ export default function AppShell({
   const select = (key) => {
     setTab(key);
     setMore(false);
-    if (["outreach", "followups", "ongoing"].includes(key))
-      setLastPipeline(key);
+    if (["outreach", "followups", "ongoing"].includes(key)) setLastPipeline(key);
   };
   const statusTone = /synced|connected/i.test(cloudStatus)
     ? "green"
@@ -84,15 +83,9 @@ export default function AppShell({
             <section key={group.group}>
               <h2>{group.group}</h2>
               {group.items.map(([key, label]) => (
-                <button
-                  key={key}
-                  className={tab === key ? "active" : ""}
-                  onClick={() => select(key)}
-                >
+                <button key={key} className={tab === key ? "active" : ""} onClick={() => select(key)}>
                   {label}
-                  {key === "followups" && pendingCount > 0 && (
-                    <i>{pendingCount}</i>
-                  )}
+                  {key === "followups" && pendingCount > 0 && <i>{pendingCount}</i>}
                 </button>
               ))}
             </section>
@@ -110,11 +103,7 @@ export default function AppShell({
       <div className="os-main">
         <header className="os-topbar">
           <h1>{titles[tab] || "Today"}</h1>
-          <button
-            className={`os-sync ${statusTone}`}
-            onClick={onSync}
-            title="Sync now"
-          >
+          <button className={`os-sync ${statusTone}`} onClick={onSync} title="Sync now">
             <span />
             {cloudStatus}
           </button>
@@ -132,20 +121,13 @@ export default function AppShell({
           </div>
         )}
         {pipeline && (
-          <nav
-            className={`os-segments${detail ? " has-detail" : ""}`}
-            aria-label="Pipeline views"
-          >
+          <nav className={`os-segments${detail ? " has-detail" : ""}`} aria-label="Pipeline views">
             {[
               ["outreach", "Outreach"],
               ["followups", `Due${pendingCount ? ` (${pendingCount})` : ""}`],
               ["ongoing", "Ongoing"],
             ].map(([key, label]) => (
-              <button
-                key={key}
-                className={tab === key ? "active" : ""}
-                onClick={() => select(key)}
-              >
+              <button key={key} className={tab === key ? "active" : ""} onClick={() => select(key)}>
                 {label}
               </button>
             ))}
@@ -162,13 +144,7 @@ export default function AppShell({
           <button
             key={key}
             className={
-              (
-                key === "pipeline"
-                  ? pipeline
-                  : key === "more"
-                    ? more
-                    : tab === (key === "money" ? "payments" : key)
-              )
+              (key === "pipeline" ? pipeline : key === "more" ? more : tab === (key === "money" ? "payments" : key))
                 ? "active"
                 : ""
             }
@@ -185,11 +161,7 @@ export default function AppShell({
       </nav>
       {more && (
         <>
-          <button
-            className="os-sheet-backdrop"
-            aria-label="Close menu"
-            onClick={() => setMore(false)}
-          />
+          <button className="os-sheet-backdrop" aria-label="Close menu" onClick={() => setMore(false)} />
           <section className="os-more-sheet">
             <h2>More</h2>
             {[
@@ -217,7 +189,12 @@ export default function AppShell({
             >
               Cloud settings
             </button>
-            <button onClick={() => { setMore(false); onExportBackup(); }}>
+            <button
+              onClick={() => {
+                setMore(false);
+                onExportBackup();
+              }}
+            >
               Export backup
             </button>
             <button

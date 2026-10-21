@@ -18,7 +18,10 @@ test("group receipt total is the sum of the payment lines", () => {
   const html = buildReceiptHtml({
     number: "RCP-2026-1",
     clientName: "Ada",
-    lines: [{ title: "Deposit", amount: 200_000 }, { title: "Balance", amount: 300_000 }],
+    lines: [
+      { title: "Deposit", amount: 200_000 },
+      { title: "Balance", amount: 300_000 },
+    ],
   });
   assert.match(html, /UGX 500,000/);
 });

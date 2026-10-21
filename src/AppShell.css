@@ -266,6 +266,32 @@
   cursor: pointer;
 }
 
+.os-undo-toast {
+  position: fixed;
+  z-index: 80;
+  right: 16px;
+  bottom: calc(82px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border: 1px solid #454545;
+  border-radius: 9px;
+  background: #1a1a1a;
+  color: #ddd;
+  box-shadow: 0 8px 30px #0009;
+  font-size: 12px;
+}
+
+.os-undo-toast button {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--lime);
+  font-weight: 700;
+}
+
 .os-content {
   min-width: 0;
   padding: 16px 24px 40px;
