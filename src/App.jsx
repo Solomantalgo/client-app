@@ -5,7 +5,13 @@ import AppShell from "./AppShell.jsx";
 import "./AppShell.css";
 import { DEFAULT_FINANCE, allocateAmount } from "./money.js";
 import { chooseSnapshot, hasSavedContent } from "./sync.js";
-import { outstandingBalances, removeClientFromData, serviceTotal } from "./clients.js";
+import {
+  mergeServices,
+  outstandingBalances,
+  removeClientFromData,
+  serviceTotal,
+  unmergeService,
+} from "./clients.js";
 import { normalizeData, touchData, makeServiceFromClient, splitServiceItems } from "./data.js";
 import { upsertService, removeService, paymentsForService } from "./clients.js";
 import { ClientInfoEditor, ServiceEditor } from "./ClientEditors.jsx";
@@ -1582,6 +1588,10 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
   const [pauseOpen, setPauseOpen] = useState(false);
   const [pauseReason, setPauseReason] = useState("No payment");
   const [pauseNote, setPauseNote] = useState("");
+  const [mergeMode, setMergeMode] = useState(false);
+  const [selectedServices, setSelectedServices] = useState([]);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeTitle, setMergeTitle] = useState("");
   const today = todayStr();
   const isLead = c.status !== "ongoing";
   const services = getClientServices(c);
@@ -1597,6 +1607,26 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
   const saveService = (draft) => {
     onUpdate(c.id, upsertService(c, draft));
     setSvcEditor(null);
+  };
+  const saveMerge = () => {
+    try {
+      onUpdate(c.id, mergeServices(c, selectedServices, mergeTitle));
+      setMergeOpen(false);
+      setMergeMode(false);
+      setSelectedServices([]);
+      setMergeTitle("");
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+  const unmerge = async (service) => {
+    const titles = (service.mergedFrom || []).map((item) => item.title).join(", ");
+    if (!(await ask({
+      title: "Unmerge this service?",
+      body: `This restores ${titles}. Edits made to the merged service will be discarded.`,
+      confirmLabel: "Unmerge",
+    }))) return;
+    onUpdate(c.id, unmergeService(c, service.id));
   };
   const deleteService = async (service) => {
     const linked = paymentsForService(c, service.id);
@@ -1950,10 +1980,21 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
             <section className="cs-card">
               <header>
                 <h3>Services ({services.length})</h3>
-                <button onClick={() => setSvcEditor({ service: null })}>
-                  + Add service
-                </button>
+                <div className="cs-service-tools">
+                  <button onClick={() => setSvcEditor({ service: null })}>+ Add service</button>
+                  {services.length > 1 && <button onClick={() => {
+                    setMergeMode((value) => !value);
+                    setSelectedServices([]);
+                  }}>{mergeMode ? "Cancel select" : "Select"}</button>}
+                </div>
               </header>
+              {mergeMode && (
+                <div className="cs-merge-tools">
+                  <button disabled={selectedServices.length < 2} onClick={() => setMergeOpen(true)}>
+                    Merge ({selectedServices.length})
+                  </button>
+                </div>
+              )}
               {services.length === 0 && (
                 <p className="cs-empty">No services yet. Add service.</p>
               )}
@@ -1963,6 +2004,15 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                 const balance = total - paid;
                 return (
                   <article className="cs-service" key={service.id}>
+                    {mergeMode && !service.mergedFrom?.length && (
+                      <label className="cs-select-service">
+                        <input type="checkbox" checked={selectedServices.includes(service.id)}
+                          onChange={(event) => setSelectedServices((ids) => event.target.checked
+                            ? [...ids, service.id]
+                            : ids.filter((id) => id !== service.id))} />
+                        Select service
+                      </label>
+                    )}
                     <header className="cs-service-head">
                       <div>
                         <h4>{service.title}</h4>
@@ -1972,6 +2022,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                             : "No due date"}
                         </small>
                       </div>
+                      {service.mergedFrom?.length > 0 && (
+                        <span className="cs-merged-badge">MERGED ×{service.mergedFrom.length}</span>
+                      )}
                       <b className={balance > 0 ? "warm" : "lime"}>
                         {balance > 0 ? fmtUGX(balance) : "Paid"}
                       </b>
@@ -2018,6 +2071,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                       >
                         Delete
                       </button>
+                      {service.mergedFrom?.length > 0 && (
+                        <button onClick={() => unmerge(service)}>Unmerge</button>
+                      )}
                     </div>
                     {servicePayments(c, service.id).map((payment) => (
                       <div className="cs-payment" key={payment.id}>
@@ -2090,6 +2146,21 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
             </label>
             <footer><button type="button" onClick={() => setPauseOpen(false)}>Cancel</button>
               <button className="primary">Pause client</button></footer>
+          </form>
+        </div>
+      )}
+      {mergeOpen && (
+        <div className="ce-overlay" onMouseDown={(event) => event.target === event.currentTarget && setMergeOpen(false)}>
+          <form className="ce-dialog" onSubmit={(event) => { event.preventDefault(); saveMerge(); }}>
+            <h2>Merge services</h2>
+            <label className="ce-field">Merged service title
+              <input value={mergeTitle} onChange={(event) => setMergeTitle(event.target.value)}
+                placeholder={services.filter((service) => selectedServices.includes(service.id)).map((service) => service.title).join(" + ")} />
+            </label>
+            <p>Total {fmtUGX(services.filter((service) => selectedServices.includes(service.id))
+              .reduce((sum, service) => sum + serviceTotal(service, c), 0))}</p>
+            <footer><button type="button" onClick={() => setMergeOpen(false)}>Cancel</button>
+              <button className="primary">Merge services</button></footer>
           </form>
         </div>
       )}

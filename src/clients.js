@@ -144,6 +144,66 @@ export function removeService(client, serviceId) {
   });
 }
 
+export function mergeServices(client, serviceIds, title) {
+  const ids = [...new Set(serviceIds || [])];
+  if (ids.length < 2) throw new Error("Choose at least two services.");
+  const selected = ids.map((id) => client.services?.find((service) => service.id === id));
+  if (selected.some((service) => !service)) throw new Error("A selected service no longer exists.");
+  if (selected.some((service) => service.mergedFrom?.length)) {
+    throw new Error("Unmerge selected services before merging them again.");
+  }
+  const id = `svc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const selectedIds = new Set(ids);
+  const mergedFrom = selected.map((service) => ({ ...service }));
+  const items = selected.flatMap((service) =>
+    itemsTotal(service) > 0
+      ? service.items.map((item) => ({ ...item }))
+      : [{ id: `item-${service.id}`, title: service.title, price: serviceTotal(service) }],
+  );
+  const paymentMap = {};
+  const payments = (client.payments || []).map((payment) => {
+    const assigned = payment.serviceId || client.services?.[0]?.id;
+    if (!selectedIds.has(assigned)) return payment;
+    paymentMap[payment.id] = assigned;
+    return { ...payment, serviceId: id };
+  });
+  const createdAt = selected.map((service) => service.createdAt).filter(Boolean).sort()[0] || "";
+  const dueDate = selected.map((service) => service.dueDate).filter(Boolean).sort()[0] || "";
+  const merged = {
+    id,
+    title: title?.trim() || selected.map((service) => service.title).join(" + "),
+    status: "active",
+    createdAt,
+    dueDate,
+    items,
+    agreedPrice: selected.reduce((sum, service) => sum + serviceTotal(service), 0),
+    mergedFrom,
+    paymentMap,
+    invoiceNo: "",
+  };
+  return recomputeClient({
+    ...client,
+    services: [...(client.services || []).filter((service) => !selectedIds.has(service.id)), merged],
+    payments,
+  });
+}
+
+export function unmergeService(client, mergedId) {
+  const merged = client.services?.find((service) => service.id === mergedId);
+  if (!merged?.mergedFrom?.length) throw new Error("This service is not merged.");
+  const restored = merged.mergedFrom.map((service) => ({ ...service }));
+  const firstId = restored[0].id;
+  const payments = (client.payments || []).map((payment) => {
+    if (payment.serviceId !== mergedId) return payment;
+    return { ...payment, serviceId: merged.paymentMap?.[payment.id] || firstId };
+  });
+  return recomputeClient({
+    ...client,
+    services: [...client.services.filter((service) => service.id !== mergedId), ...restored],
+    payments,
+  });
+}
+
 function recomputeClient(client) {
   const totalAgreedPrice = (client.services || []).reduce(
     (sum, service) =>

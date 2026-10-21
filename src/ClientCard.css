@@ -117,6 +117,28 @@
   padding: 10px;
 }
 
+.cs-service-tools,
+.cs-merge-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cs-select-service {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.cs-merged-badge {
+  color: #aaff00;
+  border: 1px solid #466600;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font: 9px 'DM Mono', 'Courier New', monospace;
+}
+
 .confirm-dialog h2 {
   margin: 0 0 10px;
 }

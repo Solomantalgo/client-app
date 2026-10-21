@@ -10,6 +10,8 @@ import {
   serviceTotal,
   outstandingBalances,
   pausedBalances,
+  mergeServices,
+  unmergeService,
 } from "../src/clients.js";
 import { normalizeData } from "../src/data.js";
 
@@ -254,4 +256,31 @@ test("paused clients are excluded from active balances and resume restores them"
   assert.equal(pausedBalances({ day: [paused] })[0].balance, 80);
   const resumed = normalizeData({ clients: { day: [{ ...paused, paused: false }] } });
   assert.equal(outstandingBalances(resumed.clients)[0].balance, 80);
+});
+
+test("merging and unmerging services restores service snapshots and payment assignments", () => {
+  const client = {
+    services: [
+      { id: "a", title: "Design", agreedPrice: 100, createdAt: "2026-01-01", items: [] },
+      { id: "b", title: "Copy", agreedPrice: 200, dueDate: "2026-03-01", items: [] },
+    ],
+    payments: [
+      { id: "pa", serviceId: "a", amount: 25 },
+      { id: "pb", serviceId: "b", amount: 50 },
+    ],
+  };
+  const merged = mergeServices(client, ["a", "b"], "Website package");
+  const service = merged.services[0];
+  assert.equal(serviceTotal(service), 300);
+  assert.equal(merged.amountPaid, 75);
+  assert.deepEqual(merged.payments.map((payment) => payment.serviceId), [service.id, service.id]);
+  const afterNewPayment = {
+    ...merged,
+    payments: [...merged.payments, { id: "pc", serviceId: service.id, amount: 10 }],
+  };
+  const restored = unmergeService(afterNewPayment, service.id);
+  assert.deepEqual(restored.services.map((item) => item.id).sort(), ["a", "b"]);
+  assert.deepEqual(restored.payments.map((payment) => payment.serviceId), ["a", "b", "a"]);
+  assert.deepEqual(restored.services.find((item) => item.id === "a"), client.services[0]);
+  assert.equal(restored.amountPaid, 85);
 });
