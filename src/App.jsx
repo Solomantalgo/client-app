@@ -5,7 +5,7 @@ import AppShell from "./AppShell.jsx";
 import "./AppShell.css";
 import { DEFAULT_FINANCE, allocateAmount } from "./money.js";
 import { chooseSnapshot, hasSavedContent } from "./sync.js";
-import { removeClientFromData, serviceTotal } from "./clients.js";
+import { outstandingBalances, removeClientFromData, serviceTotal } from "./clients.js";
 import { normalizeData, touchData, makeServiceFromClient, splitServiceItems } from "./data.js";
 import { upsertService, removeService, paymentsForService } from "./clients.js";
 import { ClientInfoEditor, ServiceEditor } from "./ClientEditors.jsx";
@@ -289,6 +289,7 @@ function getPending(clients) {
   return Object.entries(clients).flatMap(([date, arr]) =>
     arr.filter(c => {
       const isLead = c.status !== "ongoing";
+      if (c.paused) return false;
       const timelineReached = c.followUpDate && today >= c.followUpDate;
       const undatedOlderLead = !c.followUpDate && c.followUp === "needed" && date < today;
       return isLead && (timelineReached || undatedOlderLead);
@@ -1468,6 +1469,7 @@ function ClientRow({ client: c, date, highlight }) {
     (c.followUp === "needed" ||
       (c.followUp === "done" && c.followUpDate && today >= c.followUpDate));
   const balance = isLead ? 0 : clientTotals(c).balance;
+  const excludedBalance = c.paused && !isLead ? balance : 0;
   const services = getClientServices(c);
   const due = services
     .map((service) => service.dueDate)
@@ -1490,6 +1492,7 @@ function ClientRow({ client: c, date, highlight }) {
           </small>
         </span>
         <span className="cr-meta">
+          {c.paused && <em className="cr-paused">PAUSED</em>}
           {isLead ? (
             <>
               <b className={c.temp === "warm" ? "warm" : "cold"}>
@@ -1501,8 +1504,8 @@ function ClientRow({ client: c, date, highlight }) {
             </>
           ) : (
             <>
-              <b className={balance > 0 ? "warm" : "lime"}>
-                {balance > 0 ? fmtUGX(balance) : "Paid"}
+              <b className={c.paused ? "paused-balance" : balance > 0 ? "warm" : "lime"}>
+                {c.paused ? `${fmtUGX(excludedBalance)} excluded` : balance > 0 ? fmtUGX(balance) : "Paid"}
               </b>
               <small>{due ? fmtDate(due) : "No due date"}</small>
             </>
@@ -1549,6 +1552,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
   const [paymentNote, setPaymentNote] = useState("");
   const [paymentServiceId, setPaymentServiceId] = useState("");
   const [editingPaymentId, setEditingPaymentId] = useState("");
+  const [pauseOpen, setPauseOpen] = useState(false);
+  const [pauseReason, setPauseReason] = useState("No payment");
+  const [pauseNote, setPauseNote] = useState("");
   const today = todayStr();
   const isLead = c.status !== "ongoing";
   const services = getClientServices(c);
@@ -1778,6 +1784,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                 : "CLIENT"}
             </span>
             <span>Demo {c.demoShown === "yes" ? "✓" : "×"}</span>
+            {c.paused && <span className="cr-paused">PAUSED</span>}
           </div>
           {c.phone && (
             <div className="cs-contact">
@@ -1826,6 +1833,13 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                 <button onClick={() => setSvcEditor({ service: null })}>
                   + Add service
                 </button>
+                {c.paused ? (
+                  <button onClick={() => onUpdate(c.id, { paused: false, pausedAt: "", pauseReason: "" })}>
+                    Resume client
+                  </button>
+                ) : (
+                  <button onClick={() => setPauseOpen(true)}>Pause client</button>
+                )}
               </>
             )}
           </div>
@@ -1902,7 +1916,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                 ].map(([label, value]) => (
                   <div key={label}>
                     <small>{label}</small>
-                    <b>{fmtUGX(value)}</b>
+                    <b className={c.paused && label === "Balance" ? "paused-balance" : ""}>
+                      {c.paused && label === "Balance" ? `${fmtUGX(value)} excluded` : fmtUGX(value)}
+                    </b>
                   </div>
                 ))}
               </div>
@@ -1946,7 +1962,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                       ].map(([label, value]) => (
                         <div key={label}>
                           <small>{label}</small>
-                          <b>{fmtUGX(value)}</b>
+                        <b className={c.paused && label === "BALANCE" ? "paused-balance" : ""}>
+                          {c.paused && label === "BALANCE" ? `${fmtUGX(value)} excluded` : fmtUGX(value)}
+                        </b>
                         </div>
                       ))}
                     </div>
@@ -2013,11 +2031,46 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
         </div>
       </div>
       <section className="cs-danger">
+        {c.paused ? (
+          <button onClick={() => onUpdate(c.id, { paused: false, pausedAt: "", pauseReason: "" })}>
+            Resume client
+          </button>
+        ) : !isLead ? (
+          <button onClick={() => setPauseOpen(true)}>Pause client</button>
+        ) : null}
         {!isLead && <button onClick={moveBack}>Move back to lead</button>}
         <button className="danger" onClick={deleteThisClient}>
           Delete client
         </button>
       </section>
+      {c.paused && isPaymentForm && <p className="cs-paused-note">Client is paused</p>}
+      {pauseOpen && (
+        <div className="ce-overlay" onMouseDown={(event) => event.target === event.currentTarget && setPauseOpen(false)}>
+          <form className="ce-dialog" onSubmit={(event) => {
+            event.preventDefault();
+            onUpdate(c.id, {
+              paused: true,
+              pausedAt: today,
+              pauseReason: [pauseReason, pauseNote.trim()].filter(Boolean).join(": "),
+            });
+            setPauseOpen(false);
+          }}>
+            <h2>Pause client</h2>
+            <p>Their outstanding balance will be excluded from active totals.</p>
+            <label className="ce-field">Reason
+              <select value={pauseReason} onChange={(event) => setPauseReason(event.target.value)}>
+                <option>No payment</option><option>Waiting on client</option>
+                <option>Dispute</option><option>Other</option>
+              </select>
+            </label>
+            <label className="ce-field">Note
+              <textarea value={pauseNote} onChange={(event) => setPauseNote(event.target.value)} />
+            </label>
+            <footer><button type="button" onClick={() => setPauseOpen(false)}>Cancel</button>
+              <button className="primary">Pause client</button></footer>
+          </form>
+        </div>
+      )}
       {infoOpen && (
         <ClientInfoEditor
           client={c}
@@ -2510,13 +2563,14 @@ function SystemFlowView() {
 
 // ── Ongoing View
 function OngoingView({ clients }) {
-  const [showCleared, setShowCleared] = useState(true);
+  const [filter, setFilter] = useState("Active");
   const ongoing = Object.entries(clients).flatMap(([date, arr]) =>
     arr.filter(c => c.status === "ongoing").map(c => ({ ...c, date }))
   );
-  const active = ongoing.filter(c => clientTotals(c).balance > 0);
-  const cleared = ongoing.filter(c => clientTotals(c).balance <= 0);
-  const visible = showCleared ? ongoing : active;
+  const activeIds = new Set(outstandingBalances(clients).map((item) => item.clientId));
+  const active = ongoing.filter((client) => !client.paused && activeIds.has(client.id));
+  const paused = ongoing.filter((client) => client.paused);
+  const visible = filter === "Paused" ? paused : filter === "All" ? ongoing : active;
 
   if (ongoing.length === 0) {
     return <Empty text="No ongoing projects yet. Win some deals to move them here! 🏆" />;
@@ -2524,17 +2578,14 @@ function OngoingView({ clients }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ fontSize: 10, color: DIM, letterSpacing: 2 }}>
-          {active.length} ACTIVE · {cleared.length} PAID
-        </div>
-        {cleared.length > 0 && (
-          <button onClick={() => setShowCleared(v => !v)} style={{ background: SURF2, border: `1px solid ${BORDER}`, color: showCleared ? LIME : DIM, borderRadius: 6, padding: "6px 9px", fontSize: 9, cursor: "pointer", fontFamily: FONT }}>
-            {showCleared ? `Hide paid (${cleared.length})` : `Show paid (${cleared.length})`}
+      <div className="os-segments" role="group" aria-label="Ongoing clients">
+        {["Active", "Paused", "All"].map((item) => (
+          <button className={filter === item ? "active" : ""} key={item} onClick={() => setFilter(item)}>
+            {item}{item === "Paused" ? ` (${paused.length})` : item === "Active" ? ` (${active.length})` : ""}
           </button>
-        )}
+        ))}
       </div>
-      {visible.length === 0 ? <Empty text="No active projects with balances due." /> : visible.map(c => (
+      {visible.length === 0 ? <Empty text={`No ${filter.toLowerCase()} ongoing clients.`} /> : visible.map(c => (
         <ClientRow key={c.id + c.date} client={c} date={c.date} />
       ))}
     </div>
@@ -2577,6 +2628,7 @@ function ServiceAccountList({ accounts, onUpdate, tone, label }) {
 }
 
 function StatsView({ clients, target }) {
+  const activeOutstanding = outstandingBalances(clients).reduce((sum, item) => sum + item.balance, 0);
   const allClients = Object.entries(clients).flatMap(([date, arr]) =>
     arr.map(c => ({ ...c, date }))
   );
@@ -2665,6 +2717,7 @@ function StatsView({ clients, target }) {
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 11, color: "#ccc" }}><b>{totalOngoing}</b> Won Clients</div>
             <div style={{ fontSize: 11, color: "#ccc", marginTop: 2 }}><b>{totalLeads}</b> Active Leads</div>
+              <div style={{ fontSize: 10, color: DIM, marginTop: 4 }}>Active balance due: {fmtUGX(activeOutstanding)}</div>
             <div style={{ fontSize: 10, color: DIM, marginTop: 4 }}>Out of {totalOutreaches} total pitches</div>
           </div>
         </div>

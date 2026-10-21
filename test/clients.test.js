@@ -8,6 +8,8 @@ import {
   removeClientFromData,
   findClient,
   serviceTotal,
+  outstandingBalances,
+  pausedBalances,
 } from "../src/clients.js";
 import { normalizeData } from "../src/data.js";
 
@@ -235,4 +237,21 @@ test("service pricing edits converted lump services and preserves itemized price
   };
   const itemDraft = applyServicePricing("items", "999", itemized.items);
   assert.equal(serviceTotal({ ...itemized, ...itemDraft }), 60);
+});
+
+test("paused clients are excluded from active balances and resume restores them", () => {
+  const active = {
+    id: "c1",
+    name: "Ada",
+    status: "ongoing",
+    services: [{ id: "s1", agreedPrice: 100, items: [] }],
+    payments: [{ id: "p1", serviceId: "s1", amount: 20 }],
+  };
+  const clients = { day: [active] };
+  assert.equal(outstandingBalances(clients)[0].balance, 80);
+  const paused = { ...active, paused: true, pausedAt: "2026-10-21", pauseReason: "No payment" };
+  assert.equal(outstandingBalances({ day: [paused] }).length, 0);
+  assert.equal(pausedBalances({ day: [paused] })[0].balance, 80);
+  const resumed = normalizeData({ clients: { day: [{ ...paused, paused: false }] } });
+  assert.equal(outstandingBalances(resumed.clients)[0].balance, 80);
 });

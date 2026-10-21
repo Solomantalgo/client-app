@@ -75,6 +75,34 @@ export function outstandingBalances(clients) {
   );
 }
 
+export function pausedBalances(clients) {
+  return Object.entries(clients || {}).flatMap(([date, group]) =>
+    group
+      .filter((client) => client.status === "ongoing" && client.paused)
+      .flatMap((client) => {
+        const services = Array.isArray(client.services)
+          ? client.services
+          : [{ id: "default", title: client.package || "Client service", agreedPrice: client.totalAgreedPrice }];
+        return services.map((service) => {
+          const total = serviceTotal(service, client);
+          const payments = paymentsForService(client, service.id);
+          const paid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+          return {
+            id: `${date}:${client.id}:${service.id}`,
+            date,
+            clientId: client.id,
+            name: client.business || client.name,
+            service: service.title,
+            total,
+            paid,
+            balance: Math.max(0, total - paid),
+            payments,
+          };
+        }).filter((item) => item.balance > 0);
+      }),
+  );
+}
+
 export function normalizeServices(client, legacyService) {
   return servicesFor(client, legacyService);
 }

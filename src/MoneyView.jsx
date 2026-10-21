@@ -5,7 +5,7 @@ import {
   getBalances,
   getTransactions,
 } from "./money.js";
-import { outstandingBalances } from "./clients.js";
+import { outstandingBalances, pausedBalances } from "./clients.js";
 
 const money = (n) => `UGX ${Math.round(n || 0).toLocaleString("en-UG")}`;
 const uid = () => `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -776,6 +776,20 @@ export default function MoneyView({
                 text="Client balances will appear here when payments are due."
               />
             )}
+            <details className="m-paused">
+              <summary>
+                Paused ({pausedBalances(data.clients).length}) · {money(
+                  pausedBalances(data.clients).reduce((sum, row) => sum + row.balance, 0),
+                )} not counted
+              </summary>
+              {pausedBalances(data.clients).map((row) => (
+                <div className="m-list-row" key={row.id}>
+                  <div><strong>{row.name}</strong><div className="m-muted">{row.service}</div></div>
+                  <strong className="m-muted">{money(row.balance)}</strong>
+                </div>
+              ))}
+              {!pausedBalances(data.clients).length && <p className="m-muted">No paused client balances.</p>}
+            </details>
           </div>
         )}
       </section>

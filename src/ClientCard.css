@@ -97,6 +97,26 @@
   white-space: nowrap;
 }
 
+.cr-paused {
+  display: inline-block;
+  color: #aaa;
+  border: 1px solid #555;
+  padding: 3px 6px;
+  font: 9px 'DM Mono', 'Courier New', monospace;
+}
+
+.paused-balance {
+  color: #888 !important;
+}
+
+.cs-paused-note {
+  color: #aaa;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 10px;
+}
+
 .cr-chev {
   color: #777;
   font-size: 22px;
