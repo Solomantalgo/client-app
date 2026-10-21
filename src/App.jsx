@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, createContext, useContext } from "react";
+import { useState, useEffect, useCallback, createContext, useContext, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import MoneyView from "./MoneyView.jsx";
 import AppShell from "./AppShell.jsx";
@@ -378,6 +378,8 @@ async function persistBackup(data) {
 // ══════════════════════════════════════════════════════════
 export default function App() {
   const [data, setData] = useState(null);
+  const [openClient, setOpenClient] = useState(null);
+  const listScroll = useRef(0);
   const [tab, setTab] = useState(() => new URLSearchParams(window.location.search).get("view") === "money" ? "payments" : "today");
   const [showForm, setShowForm] = useState(false);
   const [formDefaults, setFormDefaults] = useState(null);
@@ -387,6 +389,15 @@ export default function App() {
   const [cloudConfig, setCloudConfig] = useState(getStoredCloudConfig() || { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY });
   const [cloudStatus, setCloudStatus] = useState("Local only");
   const today = todayStr();
+
+  useEffect(() => {
+    const onPop = () => {
+      setOpenClient(null);
+      requestAnimationFrame(() => window.scrollTo(0, listScroll.current));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   useEffect(() => {
     if (!localStorage.getItem(CLOUD_URL_KEY) && !localStorage.getItem(CLOUD_KEY_KEY)) {
@@ -545,6 +556,7 @@ export default function App() {
   };
 
   const deleteClient = (date, id) => {
+    setOpenClient(null);
     void save(removeClientFromData(data, date, id));
   };
 
@@ -675,10 +687,8 @@ export default function App() {
   };
 
   const resetDatabase = async () => {
-    const password = prompt("Enter reset password to empty all records.");
-    if (password === null) return;
-    if (password !== "Kmantalgo#1") {
-      setBanner("Reset cancelled: wrong password.");
+    if ((prompt('Type RESET to empty all records.') || "").trim() !== "RESET") {
+      setBanner("Reset cancelled.");
       return;
     }
     if (!confirm("Empty all clients, services, payments, followups, expenses, and outreach progress?")) return;
@@ -704,23 +714,39 @@ export default function App() {
   const sortedDates = Object.keys(data.clients).sort((a, b) => b.localeCompare(a));
 
   const selectTab = next => {
+    setOpenClient(null);
     setTab(next);
     const url = new URL(window.location.href);
     if (next === "payments") url.searchParams.set("view", "money");
     else url.searchParams.delete("view");
     window.history.replaceState({}, "", url);
   };
+  const openClientScreen = (date, id) => {
+    listScroll.current = window.scrollY;
+    setOpenClient({ date, id });
+    window.history.pushState({ client: id }, "", window.location.href);
+    window.scrollTo(0, 0);
+  };
+  const closeClientScreen = () => {
+    if (window.history.state?.client) window.history.back();
+    else setOpenClient(null);
+  };
+  const current = openClient
+    ? data.clients[openClient.date]?.find((client) => client.id === openClient.id)
+    : null;
   return (
-    <ClientActions.Provider value={{ deleteClient }}>
+    <ClientActions.Provider value={{ deleteClient, openClientScreen, closeClientScreen, openId: current?.id || null }}>
       <AppShell tab={tab} setTab={selectTab} pendingCount={pending.length} cloudStatus={cloudStatus}
         banner={banner} onDismissBanner={() => setBanner(null)} onSync={syncNow}
         onOpenCloud={() => setShowCloudSetup(true)} onReset={resetDatabase}
-        topExtra={tab === "today" ? <TargetCtrl target={data.target} onChange={setTarget} /> : null}>
+        topExtra={tab === "today" ? <TargetCtrl target={data.target} onChange={setTarget} /> : null}
+        detail={current ? <ClientScreen key={current.id} client={current} date={openClient.date}
+          onUpdate={(id, updates) => updateClient(openClient.date, id, updates)} onBack={closeClientScreen} /> : null}>
         {tab === "today" && <TodayView outreach={data.outreach} clients={data.clients} target={data.target} today={today} onMarkDone={markOutreachDone} onAddLead={openAddLeadFromOutreach} />}
         {tab === "outreach" && <OutreachView outreach={data.outreach} clients={data.clients} target={data.target} today={today} onUpdate={(id, u) => updateClient(today, id, u)} onUndoLog={undoOutreachLog} onOpenAddClient={() => { setFormDefaults(null); setShowForm(true); }} />}
-        {tab === "history" && <HistoryView clients={data.clients} sortedDates={sortedDates} today={today} selected={histSel} onSelect={setHistSel} onUpdate={updateClient} />}
-        {tab === "followups" && <FollowupsView pending={pending} onUpdate={updateClient} />}
-        {tab === "ongoing" && <OngoingView clients={data.clients} onUpdate={updateClient} />}
+        {tab === "history" && <HistoryView clients={data.clients} sortedDates={sortedDates} today={today} selected={histSel} onSelect={setHistSel} />}
+        {tab === "followups" && <FollowupsView pending={pending} />}
+        {tab === "ongoing" && <OngoingView clients={data.clients} />}
         {tab === "payments" && <MoneyView data={data} onSave={save} onUpdateClient={updateClient} onAddExpense={addExpense} onUpdateExpense={updateExpense} onDeleteExpense={deleteExpense} />}
         {tab === "stats" && <StatsView clients={data.clients} target={data.target} />}
         {tab === "flow" && <SystemFlowView />}
@@ -876,6 +902,7 @@ function TodayView({ outreach, clients, target, today, onMarkDone, onAddLead }) 
 }
 
 // ── Outreach View
+// eslint-disable-next-line no-unused-vars
 function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, onOpenAddClient }) {
   const [filterTrack, setFilterTrack] = useState("all");
   const [showMap, setShowMap] = useState(false);
@@ -932,7 +959,7 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
         {todayClients.length === 0 ? (
           <Empty text="No clients recorded yet today. Use + Add Client above or + Add Lead on Today's cards." />
         ) : (
-          todayClients.map(c => <ClientCard key={c.id} client={c} date={today} onUpdate={onUpdate} />)
+          todayClients.map(c => <ClientRow key={c.id} client={c} date={today} />)
         )}
       </div>
 
@@ -1098,7 +1125,7 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
 }
 
 // ── History View
-function HistoryView({ clients, sortedDates, today, selected, onSelect, onUpdate }) {
+function HistoryView({ clients, sortedDates, today, selected, onSelect }) {
   const dates = sortedDates.filter(d => d !== today);
   if (selected) {
     const dc = clients[selected] || [];
@@ -1106,7 +1133,7 @@ function HistoryView({ clients, sortedDates, today, selected, onSelect, onUpdate
       <div>
         <button onClick={() => onSelect(null)} style={{ background: "none", border: "none", color: LIME, fontFamily: FONT, fontSize: 11, cursor: "pointer", letterSpacing: 1, padding: 0, marginBottom: 12 }}>← BACK</button>
         <div style={{ fontSize: 13, fontWeight: "bold", marginBottom: 14, color: "#fff" }}>{fmtDate(selected)}</div>
-        {dc.length === 0 ? <Empty text="No clients for this day." /> : dc.map(c => <ClientCard key={c.id} client={c} date={selected} onUpdate={(id, u) => onUpdate(selected, id, u)} />)}
+        {dc.length === 0 ? <Empty text="No clients for this day." /> : dc.map(c => <ClientRow key={c.id} client={c} date={selected} />)}
       </div>
     );
   }
@@ -1136,7 +1163,7 @@ function HistoryView({ clients, sortedDates, today, selected, onSelect, onUpdate
 }
 
 // ── Follow-Ups View
-function FollowupsView({ pending, onUpdate }) {
+function FollowupsView({ pending }) {
   if (pending.length === 0) return <Empty text="All caught up. No pending follow-ups 🎯" />;
 
   const today = todayStr();
@@ -1152,7 +1179,7 @@ function FollowupsView({ pending, onUpdate }) {
             TIMELINE EXPIRED / RE-FOLLOWUP DUE ({overdue.length})
           </div>
           {overdue.map(c => (
-            <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} highlight />
+            <ClientRow key={c.id + c.date} client={c} date={c.date} highlight />
           ))}
         </div>
       )}
@@ -1164,7 +1191,7 @@ function FollowupsView({ pending, onUpdate }) {
             ACTIVE LEADS ({regular.length})
           </div>
           {regular.map(c => (
-            <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} highlight={false} />
+            <ClientRow key={c.id + c.date} client={c} date={c.date} highlight={false} />
           ))}
         </div>
       )}
@@ -1436,63 +1463,748 @@ function printReceipt(client, payment) {
 }
 
 // ── Client Card
-function ClientCard({ client: c, date, onUpdate, highlight }) {
+function ClientRow({ client: c, date, highlight }) {
   const actions = useContext(ClientActions);
-  const [exp,setExp]=useState(false),[infoOpen,setInfoOpen]=useState(false),[svcEditor,setSvcEditor]=useState(null),[openServices,setOpenServices]=useState({});
-  const [isWinForm,setIsWinForm]=useState(false),[dealPrice,setDealPrice]=useState(c.quotedPrice?c.quotedPrice.replace(/\D/g,""):""),[deposit,setDeposit]=useState("0");
-  const [isRescheduleForm,setIsRescheduleForm]=useState(false),[newFollowDate,setNewFollowDate]=useState(c.followUpDate||todayStr());
-  const [isPaymentForm,setIsPaymentForm]=useState(false),[paymentAmt,setPaymentAmt]=useState(""),[paymentNote,setPaymentNote]=useState(""),[paymentServiceId,setPaymentServiceId]=useState(""),[editingPaymentId,setEditingPaymentId]=useState("");
-  const today=todayStr(),isLead=c.status!=="ongoing",isOverdue=c.followUpDate&&today>=c.followUpDate;
-  const isHighlighted=highlight&&isLead&&(c.followUp==="needed"||(c.followUp==="done"&&c.followUpDate&&today>=c.followUpDate));
-  const textToMatch=c.businessType||c.business||"",packageMatch=PACKAGE_TEMPLATES.find(p=>p.match.test(textToMatch)),accentColor=packageMatch?packageMatch.color:null;
-  const services=getClientServices(c),totals=clientTotals(c),remainingBalance=isLead?0:totals.balance;
-  const nextDueDate=services.map(s=>s.dueDate).filter(Boolean).sort()[0]||c.followUpDate||"";
-  const saveInfo=fields=>{onUpdate(c.id,fields);setInfoOpen(false);};
-  const saveService=draft=>{onUpdate(c.id,upsertService(c,draft));setSvcEditor(null);};
-  const deleteService=s=>{const linked=paymentsForService(c,s.id),sum=linked.reduce((n,p)=>n+(Number(p.amount)||0),0);const msg=linked.length?`Delete "${s.title}"? This also deletes ${linked.length} payment(s) totalling ${fmtUGX(sum)} from this client and the Money ledger. This cannot be undone.`:`Delete "${s.title}"? This cannot be undone.`;if(!confirm(msg))return;onUpdate(c.id,removeService(c,s.id));setSvcEditor(null);};
-  const deleteThisClient=()=>{const pays=c.payments||[],paid=pays.reduce((n,p)=>n+(Number(p.amount)||0),0);if(confirm("Delete "+c.name+"? "+(pays.length?"Their "+pays.length+" payment(s) ("+fmtUGX(paid)+") will also disappear from the Money ledger. ":"")+"This cannot be undone."))actions?.deleteClient(date,c.id);};
-  const openPaymentForm=(serviceId="")=>{setEditingPaymentId("");setPaymentAmt("");setPaymentNote("");setPaymentServiceId(serviceId||services[0]?.id||"");setIsPaymentForm(true);};
-  const openEditPaymentForm=(p,serviceId="")=>{setEditingPaymentId(p.id);setPaymentAmt(String(p.amount||""));setPaymentNote(p.note||"");setPaymentServiceId(serviceId||p.serviceId||services[0]?.id||"");setIsPaymentForm(true);};
-  const savePayment=()=>{const amount=Number(paymentAmt)||0;if(amount<=0)return alert("Please enter a valid payment amount.");const serviceId=paymentServiceId||services[0]?.id||"",payments=editingPaymentId?(c.payments||[]).map(p=>p.id===editingPaymentId?{...p,amount,note:paymentNote.trim()||"Payment",serviceId}:p):[...(c.payments||[]),{id:newPaymentId(),date:today,amount,note:paymentNote.trim()||"Payment",serviceId}];onUpdate(c.id,{payments,amountPaid:payments.reduce((n,p)=>n+(Number(p.amount)||0),0)});setIsPaymentForm(false);};
-  const deleteClientPayment=p=>{if(!confirm("Delete this client payment? Its Money ledger entry will be removed too."))return;const payments=(c.payments||[]).filter(x=>x.id!==p.id);onUpdate(c.id,{payments,amountPaid:payments.reduce((n,x)=>n+(Number(x.amount)||0),0)});};
-  const markDone=()=>{const followUp=c.followUp==="needed"?"done":"needed";if(followUp==="done"&&c.followUpDate){const keep=confirm("Keep the follow-up date reminder active? Click OK to keep, Cancel to clear it.");onUpdate(c.id,{followUp,...(keep?{}:{followUpDate:""})});}else onUpdate(c.id,{followUp});};
-  const convert=()=>{const price=Number(dealPrice)||0,paid=Number(deposit)||0;if(price<=0)return alert("Please enter a valid agreed price.");const id=newPaymentId(),service={id,title:c.package&&c.package!=="Undecided"?c.package:"Client Service",categories:c.servicesToOffer||"",agreedPrice:price,dueDate:"",status:"active",createdAt:today},payments=paid>0?[{id:newPaymentId(),date:today,amount:paid,note:"Initial Deposit",serviceId:id}]:[];onUpdate(c.id,{status:"ongoing",totalAgreedPrice:price,amountPaid:paid,services:[service],payments,followUp:"done"});setIsWinForm(false);};
-  const reschedule=d=>{const followUpDate=addDays(d);onUpdate(c.id,{followUp:"done",followUpDate});setIsRescheduleForm(false);};
-  const saveReschedule=()=>{if(!newFollowDate)return alert("Please select a date.");onUpdate(c.id,{followUp:"done",followUpDate:newFollowDate});setIsRescheduleForm(false);};
-  const moveBack=()=>{if(confirm("Move this client back to follow-up status? This will delete ongoing transaction states."))onUpdate(c.id,{status:"lead",totalAgreedPrice:"",amountPaid:0,payments:[],services:[],followUp:"needed"});};
-  const suggest=()=>{if(!textToMatch)return alert("This client needs a business name or type to auto-suggest.");if(packageMatch)onUpdate(c.id,{servicesToOffer:packageMatch.services,quotedPrice:packageMatch.price});else alert("No exact match found based on their business type.");};
-  const paymentForm=isPaymentForm&&<div className="cc-form"><h4>{editingPaymentId?"Edit payment":"Record payment"}</h4><label>Amount (UGX)<input type="number" value={paymentAmt} onChange={e=>setPaymentAmt(e.target.value)}/></label><label>Note<input value={paymentNote} onChange={e=>setPaymentNote(e.target.value)}/></label><label>Service<select value={paymentServiceId} onChange={e=>setPaymentServiceId(e.target.value)}>{services.map(s=><option value={s.id} key={s.id}>{s.title} · {fmtUGX(serviceTotal(c,s))}</option>)}</select></label><button className="primary" onClick={savePayment}>Save payment</button><button onClick={()=>setIsPaymentForm(false)}>Cancel</button></div>;
-  return <div className={`cc${isHighlighted ? " cc-hot" : ""}`} style={accentColor ? { "--accent": accentColor } : undefined}>
-    <button type="button" className="cc-head" onClick={()=>setExp(e=>!e)} aria-expanded={!!exp}>
-      <span className="cc-id"><b className="cc-name">{c.name}</b><small>{c.business||"No business"}{c.businessType?" · "+c.businessType:""}</small></span>
-      <span className="cc-meta">{isLead?<><b className={c.temp==="warm"?"warm":"cold"}>{c.temp}</b><small className={isOverdue?"overdue":""}>{c.followUpDate?fmtDate(c.followUpDate):"No timeline"}</small></>:<><b className={remainingBalance>0?"warm":"lime"}>{remainingBalance>0?fmtUGX(remainingBalance):"Paid"}</b><small>{nextDueDate?fmtDate(nextDueDate):services.length+" services"}</small></>}</span>
-      {isHighlighted && <span className="cc-due">FOLLOW-UP DUE</span>}
-      {isHighlighted&&<span className="cc-due">FOLLOW-UP DUE</span>}<span className="cc-chev">{exp?"▴":"▾"}</span>
-    </button>
-    {c.phone&&<div className="cc-quick">{(!c.hasWhatsApp||c.hasWhatsApp==="yes")&&<a className="cc-whatsapp" href={"https://wa.me/"+toWaNumber(c.phone)} target="_blank" rel="noreferrer">WhatsApp</a>}<a className="cc-call" href={"tel:"+c.phone}>Call</a></div>}
-    {exp&&<div className="cc-body">
-      <div className="cc-chips"><span className={"cc-chip "+(isLead?(c.temp==="warm"?"warm":"cold"):"lime")}>{isLead?"LEAD":"ONGOING"}</span>{isLead&&<span className="cc-chip">{c.followUp==="needed"?"FOLLOW-UP NEEDED":"FOLLOW-UP DONE"}</span>}<span className="cc-chip">Demo {c.demoShown==="yes"?"✓":"×"}</span></div>
-      <div className="cc-actions">{isLead?<><button onClick={markDone}>{c.followUp==="needed"?"✓ Mark done":"↩ Follow-up"}</button><button onClick={()=>setIsRescheduleForm(true)}>Timeline</button><button onClick={()=>onUpdate(c.id,{temp:c.temp==="warm"?"cold":"warm"})}>{c.temp==="warm"?"Warm":"Cold"}</button><button className="primary" onClick={()=>setIsWinForm(true)}>Won</button>{(!c.quotedPrice||!c.servicesToOffer)&&<button onClick={suggest}>Suggest</button>}</>:<><button className="primary" onClick={()=>openPaymentForm()}>Record payment</button><button onClick={()=>setSvcEditor({service:null})}>+ Service</button></>}</div>
-      <section className="cc-sec"><header><h4>Client details</h4><button onClick={()=>setInfoOpen(true)}>Edit</button></header><dl>{c.phone&&<div><dt>Phone</dt><dd>{c.phone}</dd></div>}<div><dt>Pitch method</dt><dd>{c.pitchMethod||"—"}</dd></div><div><dt>Owner around</dt><dd>{c.ownerAround||"unknown"}</dd></div><div><dt>WhatsApp</dt><dd>{c.hasWhatsApp==="yes"?"Available":"Unavailable"}</dd></div></dl>{c.servicesToOffer&&<div className="cc-tags">{c.servicesToOffer.split(",").map((x,i)=><span key={i}>{x.trim()}</span>)}</div>}{c.notes&&<p className="cc-notes">{c.notes}</p>}</section>
-      {!isLead&&<section className="cc-sec"><header><h4>Services ({services.length})</h4><button onClick={()=>setSvcEditor({service:null})}>+ Add service</button></header>{!services.length&&<div className="cc-empty">No services yet. Add one.</div>}
-      {services.map(s=>{const paid=servicePaid(c,s.id),total=serviceTotal(c,s),balance=total-paid,payments=servicePayments(c,s.id),opened=!!openServices[s.id];return <article className="cc-svc" key={s.id}>
-        <button className="cc-svc-head" onClick={()=>setOpenServices(prev=>({...prev,[s.id]:!opened}))} aria-expanded={opened}><span><b>{s.title}</b><small>{s.dueDate?"Due "+fmtDate(s.dueDate):"No due date"}</small></span><strong className={balance>0?"warm":"lime"}>{balance>0?fmtUGX(balance)+" due":"Paid"}</strong></button>
-        {opened&&<div className="cc-svc-details"><div className="cc-totals">{[["FEE",total],["PAID",paid],["BALANCE",balance]].map(([k,v])=><div key={k}><small>{k}</small><b>{fmtUGX(v)}</b></div>)}</div>
-        {(s.items||[]).map(item=><div className="cc-item" key={item.id}><span>{item.title}</span><span>{Number(item.price)>0?fmtUGX(item.price):"Included"}</span></div>)}
-        <div className="cc-svc-actions"><button onClick={()=>openPaymentForm(s.id)}>Record payment</button><button onClick={()=>setSvcEditor({service:s})}>Edit</button><button onClick={()=>printInvoice({...c,date},s)}>Invoice</button><button className="danger" onClick={()=>deleteService(s)}>Delete</button></div>
-        {payments.map(p=><div className="cc-payment" key={p.id}><span>{p.date||"Date unknown"} · {p.note||"Payment"} · {fmtUGX(p.amount)}</span><button onClick={()=>openEditPaymentForm(p,s.id)}>Edit</button><button className="danger" onClick={()=>deleteClientPayment(p)}>Delete</button><button onClick={()=>printReceipt({...c,date},p)}>Receipt</button></div>)}</div>}
-      </article>;})}</section>}
-      <details className="cc-danger"><summary>More</summary>{!isLead&&<button onClick={moveBack}>Move back to lead</button>}<button className="danger" onClick={deleteThisClient}>Delete client</button></details>
-    </div>}
-    {isWinForm&&<div className="cc-form"><h4>Win deal · Convert to ongoing client</h4><label>Agreed price (UGX)<input type="number" value={dealPrice} onChange={e=>setDealPrice(e.target.value)}/></label><label>Initial deposit (UGX)<input type="number" value={deposit} onChange={e=>setDeposit(e.target.value)}/></label><button className="primary" onClick={convert}>Confirm conversion</button><button onClick={()=>setIsWinForm(false)}>Cancel</button></div>}
-    {isRescheduleForm&&<div className="cc-form"><h4>Set follow-up timeline</h4><div className="cc-actions">{[3,7,14,30].map(d=><button key={d} onClick={()=>reschedule(d)}>+{d} days</button>)}</div><label>Date<input type="date" value={newFollowDate} onChange={e=>setNewFollowDate(e.target.value)}/></label><button className="primary" onClick={saveReschedule}>Save</button><button onClick={()=>setIsRescheduleForm(false)}>Cancel</button></div>}
-    {paymentForm}
-    {infoOpen&&<ClientInfoEditor client={c} onUpdate={(_id,fields)=>saveInfo(fields)} onClose={()=>setInfoOpen(false)}/>}
-    {svcEditor&&<ServiceEditor service={svcEditor.service} fallbackTotal={svcEditor.service?serviceTotal(c,svcEditor.service):0} onSave={saveService} onDelete={svcEditor.service?()=>deleteService(svcEditor.service):undefined} onClose={()=>setSvcEditor(null)}/>}
-  </div>;
+  const isLead = c.status !== "ongoing";
+  const today = todayStr();
+  const hot =
+    highlight &&
+    isLead &&
+    (c.followUp === "needed" ||
+      (c.followUp === "done" && c.followUpDate && today >= c.followUpDate));
+  const balance = isLead ? 0 : clientTotals(c).balance;
+  const services = getClientServices(c);
+  const due = services
+    .map((service) => service.dueDate)
+    .filter(Boolean)
+    .sort()[0];
+  return (
+    <article
+      className={`cr${actions?.openId === c.id ? " selected" : ""}${hot ? " hot" : ""}`}
+    >
+      <button
+        type="button"
+        className="cr-main"
+        onClick={() => actions?.openClientScreen(date, c.id)}
+      >
+        <span className="cr-id">
+          <b>{c.name}</b>
+          <small>
+            {c.business || "No business"}
+            {c.businessType ? ` · ${c.businessType}` : ""}
+          </small>
+        </span>
+        <span className="cr-meta">
+          {isLead ? (
+            <>
+              <b className={c.temp === "warm" ? "warm" : "cold"}>
+                {c.temp || "warm"}
+              </b>
+              <small>
+                {c.followUpDate ? fmtDate(c.followUpDate) : "No timeline"}
+              </small>
+            </>
+          ) : (
+            <>
+              <b className={balance > 0 ? "warm" : "lime"}>
+                {balance > 0 ? fmtUGX(balance) : "Paid"}
+              </b>
+              <small>{due ? fmtDate(due) : "No due date"}</small>
+            </>
+          )}
+          {hot && <em className="cr-due">FOLLOW-UP DUE</em>}
+        </span>
+        <span className="cr-chev" aria-hidden>
+          ›
+        </span>
+      </button>
+      {c.phone && (
+        <div className="cr-quick">
+          {c.hasWhatsApp !== "no" && (
+            <a
+              href={`https://wa.me/${toWaNumber(c.phone)}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              WhatsApp
+            </a>
+          )}
+          <a href={`tel:${c.phone}`}>Call</a>
+        </div>
+      )}
+    </article>
+  );
 }
 
-// ── Client Form
+function ClientScreen({ client: c, date, onUpdate, onBack }) {
+  const actions = useContext(ClientActions);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [svcEditor, setSvcEditor] = useState(null);
+  const [isWinForm, setIsWinForm] = useState(false);
+  const [dealPrice, setDealPrice] = useState(
+    c.quotedPrice ? c.quotedPrice.replace(/\D/g, "") : "",
+  );
+  const [deposit, setDeposit] = useState("0");
+  const [isRescheduleForm, setIsRescheduleForm] = useState(false);
+  const [newFollowDate, setNewFollowDate] = useState(
+    c.followUpDate || todayStr(),
+  );
+  const [isPaymentForm, setIsPaymentForm] = useState(false);
+  const [paymentAmt, setPaymentAmt] = useState("");
+  const [paymentNote, setPaymentNote] = useState("");
+  const [paymentServiceId, setPaymentServiceId] = useState("");
+  const [editingPaymentId, setEditingPaymentId] = useState("");
+  const today = todayStr();
+  const isLead = c.status !== "ongoing";
+  const services = getClientServices(c);
+  const totals = clientTotals(c);
+  const textToMatch = c.businessType || c.business || "";
+  const packageMatch = PACKAGE_TEMPLATES.find((item) =>
+    item.match.test(textToMatch),
+  );
+  const saveInfo = (fields) => {
+    onUpdate(c.id, fields);
+    setInfoOpen(false);
+  };
+  const saveService = (draft) => {
+    onUpdate(c.id, upsertService(c, draft));
+    setSvcEditor(null);
+  };
+  const deleteService = (service) => {
+    const linked = paymentsForService(c, service.id);
+    const amount = linked.reduce(
+      (sum, payment) => sum + (Number(payment.amount) || 0),
+      0,
+    );
+    const message = linked.length
+      ? `Delete "${service.title}"? This also deletes ${linked.length} payment(s) totalling ` +
+        `${fmtUGX(amount)} from this client and the Money ledger. This cannot be undone.`
+      : `Delete "${service.title}"? This cannot be undone.`;
+    if (!confirm(message)) return;
+    onUpdate(c.id, removeService(c, service.id));
+    setSvcEditor(null);
+  };
+  const deleteThisClient = () => {
+    const pays = c.payments || [];
+    const paid = pays.reduce(
+      (sum, payment) => sum + (Number(payment.amount) || 0),
+      0,
+    );
+    const paymentsNotice = pays.length
+      ? `Their ${pays.length} payment(s) (${fmtUGX(paid)}) will also disappear from the Money ledger. `
+      : "";
+    const message = `Delete ${c.name}? ${paymentsNotice}This cannot be undone.`;
+    if (confirm(message)) actions?.deleteClient(date, c.id);
+  };
+  const openPaymentForm = (serviceId = "") => {
+    setEditingPaymentId("");
+    setPaymentAmt("");
+    setPaymentNote("");
+    setPaymentServiceId(serviceId || services[0]?.id || "");
+    setIsPaymentForm(true);
+  };
+  const openEditPaymentForm = (payment, serviceId = "") => {
+    setEditingPaymentId(payment.id);
+    setPaymentAmt(String(payment.amount || ""));
+    setPaymentNote(payment.note || "");
+    setPaymentServiceId(
+      serviceId || payment.serviceId || services[0]?.id || "",
+    );
+    setIsPaymentForm(true);
+  };
+  const savePayment = () => {
+    const amount = Number(paymentAmt) || 0;
+    if (amount <= 0) return alert("Please enter a valid payment amount.");
+    const serviceId = paymentServiceId || services[0]?.id || "";
+    const payments = editingPaymentId
+      ? (c.payments || []).map((payment) =>
+          payment.id === editingPaymentId
+            ? {
+                ...payment,
+                amount,
+                note: paymentNote.trim() || "Payment",
+                serviceId,
+              }
+            : payment,
+        )
+      : [
+          ...(c.payments || []),
+          {
+            id: newPaymentId(),
+            date: today,
+            amount,
+            note: paymentNote.trim() || "Payment",
+            serviceId,
+          },
+        ];
+    onUpdate(c.id, {
+      payments,
+      amountPaid: payments.reduce(
+        (sum, payment) => sum + (Number(payment.amount) || 0),
+        0,
+      ),
+    });
+    setIsPaymentForm(false);
+  };
+  const deleteClientPayment = (payment) => {
+    if (
+      !confirm(
+        "Delete this client payment? Its Money ledger entry will be removed too.",
+      )
+    )
+      return;
+    const payments = (c.payments || []).filter(
+      (item) => item.id !== payment.id,
+    );
+    onUpdate(c.id, {
+      payments,
+      amountPaid: payments.reduce(
+        (sum, item) => sum + (Number(item.amount) || 0),
+        0,
+      ),
+    });
+  };
+  const markDone = () => {
+    const followUp = c.followUp === "needed" ? "done" : "needed";
+    if (followUp === "done" && c.followUpDate) {
+      const keep = confirm(
+        "Keep the follow-up date reminder active? Click OK to keep, Cancel to clear it.",
+      );
+      onUpdate(c.id, { followUp, ...(keep ? {} : { followUpDate: "" }) });
+    } else onUpdate(c.id, { followUp });
+  };
+  const convert = () => {
+    const price = Number(dealPrice) || 0;
+    const paid = Number(deposit) || 0;
+    if (price <= 0) return alert("Please enter a valid agreed price.");
+    const serviceId = newPaymentId();
+    const service = {
+      id: serviceId,
+      title:
+        c.package && c.package !== "Undecided" ? c.package : "Client Service",
+      categories: c.servicesToOffer || "",
+      agreedPrice: price,
+      dueDate: "",
+      status: "active",
+      createdAt: today,
+    };
+    const payments =
+      paid > 0
+        ? [
+            {
+              id: newPaymentId(),
+              date: today,
+              amount: paid,
+              note: "Initial Deposit",
+              serviceId,
+            },
+          ]
+        : [];
+    onUpdate(c.id, {
+      status: "ongoing",
+      totalAgreedPrice: price,
+      amountPaid: paid,
+      services: [service],
+      payments,
+      followUp: "done",
+    });
+    setIsWinForm(false);
+  };
+  const saveReschedule = () => {
+    if (!newFollowDate) return alert("Please select a date.");
+    onUpdate(c.id, { followUp: "done", followUpDate: newFollowDate });
+    setIsRescheduleForm(false);
+  };
+  const reschedule = (days) => {
+    const followUpDate = addDays(days);
+    onUpdate(c.id, { followUp: "done", followUpDate });
+    setIsRescheduleForm(false);
+  };
+  const moveBack = () => {
+    if (
+      confirm(
+        "Move this client back to follow-up status? This will delete ongoing transaction states.",
+      )
+    ) {
+      onUpdate(c.id, {
+        status: "lead",
+        totalAgreedPrice: "",
+        amountPaid: 0,
+        payments: [],
+        services: [],
+        followUp: "needed",
+      });
+    }
+  };
+  const suggest = () => {
+    if (!textToMatch)
+      return alert(
+        "This client needs a business name or type to auto-suggest.",
+      );
+    if (packageMatch)
+      onUpdate(c.id, {
+        servicesToOffer: packageMatch.services,
+        quotedPrice: packageMatch.price,
+      });
+    else alert("No exact match found based on their business type.");
+  };
+  return (
+    <div className="cs">
+      <header className="cs-bar">
+        <button type="button" className="cs-back" onClick={onBack}>
+          ← Back
+        </button>
+        <div className="cs-title">
+          <h2>{c.name}</h2>
+          <p>
+            {c.business || "No business"}
+            {c.businessType ? ` · ${c.businessType}` : ""}
+          </p>
+        </div>
+        <button type="button" onClick={() => setInfoOpen(true)}>
+          Edit
+        </button>
+      </header>
+      <div className="cs-grid">
+        <div className="cs-col">
+          <div className="cs-chips">
+            <span
+              className={
+                isLead ? (c.temp === "cold" ? "cold" : "warm") : "lime"
+              }
+            >
+              {isLead ? "LEAD" : "ONGOING"}
+            </span>
+            <span>
+              {isLead
+                ? c.followUp === "needed"
+                  ? "FOLLOW-UP NEEDED"
+                  : "FOLLOW-UP DONE"
+                : "CLIENT"}
+            </span>
+            <span>Demo {c.demoShown === "yes" ? "✓" : "×"}</span>
+          </div>
+          {c.phone && (
+            <div className="cs-contact">
+              {c.hasWhatsApp !== "no" && (
+                <a
+                  href={`https://wa.me/${toWaNumber(c.phone)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  WhatsApp
+                </a>
+              )}
+              <a href={`tel:${c.phone}`}>Call {c.phone}</a>
+            </div>
+          )}
+          <div className="cs-actions">
+            {isLead ? (
+              <>
+                <button onClick={markDone}>
+                  {c.followUp === "needed" ? "✓ Mark done" : "↩ Follow-up"}
+                </button>
+                <button onClick={() => setIsRescheduleForm(true)}>
+                  Timeline
+                </button>
+                <button
+                  onClick={() =>
+                    onUpdate(c.id, {
+                      temp: c.temp === "warm" ? "cold" : "warm",
+                    })
+                  }
+                >
+                  {c.temp === "warm" ? "Warm" : "Cold"}
+                </button>
+                <button className="primary" onClick={() => setIsWinForm(true)}>
+                  Won!
+                </button>
+                {(!c.quotedPrice || !c.servicesToOffer) && (
+                  <button onClick={suggest}>Suggest</button>
+                )}
+              </>
+            ) : (
+              <>
+                <button className="primary" onClick={() => openPaymentForm()}>
+                  Record payment
+                </button>
+                <button onClick={() => setSvcEditor({ service: null })}>
+                  + Add service
+                </button>
+              </>
+            )}
+          </div>
+          <section className="cs-card">
+            <header>
+              <h3>Client details</h3>
+              <button onClick={() => setInfoOpen(true)}>Edit</button>
+            </header>
+            <dl>
+              <div>
+                <dt>Phone</dt>
+                <dd>{c.phone || "Not provided"}</dd>
+              </div>
+              <div>
+                <dt>Pitch method</dt>
+                <dd>{c.pitchMethod || "Not provided"}</dd>
+              </div>
+              <div>
+                <dt>Owner around</dt>
+                <dd>{c.ownerAround || "unknown"}</dd>
+              </div>
+              <div>
+                <dt>WhatsApp</dt>
+                <dd>{c.hasWhatsApp === "no" ? "No" : "Yes"}</dd>
+              </div>
+              {isLead && (
+                <>
+                  <div>
+                    <dt>Temperature</dt>
+                    <dd>{c.temp || "warm"}</dd>
+                  </div>
+                  <div>
+                    <dt>Quoted price</dt>
+                    <dd>{c.quotedPrice || "Not provided"}</dd>
+                  </div>
+                </>
+              )}
+            </dl>
+            {isLead && c.servicesToOffer && (
+              <div className="cs-tags">
+                {c.servicesToOffer.split(",").map((item, index) => (
+                  <span key={index}>{item.trim()}</span>
+                ))}
+              </div>
+            )}
+            {c.notes && <p className="cs-notes">{c.notes}</p>}
+          </section>
+        </div>
+        <div className="cs-col">
+          {isLead && (
+            <section className="cs-card">
+              <header>
+                <h3>Follow-up</h3>
+                <button onClick={() => setIsRescheduleForm(true)}>
+                  Timeline
+                </button>
+              </header>
+              <p>
+                {c.followUpDate ? fmtDate(c.followUpDate) : "No timeline set"}
+              </p>
+              <p className="cs-notes">{c.notes || "No notes yet."}</p>
+            </section>
+          )}
+          {!isLead && (
+            <section className="cs-card">
+              <header>
+                <h3>Totals</h3>
+              </header>
+              <div className="cs-totals">
+                {[
+                  ["Agreed", totals.total],
+                  ["Paid", totals.paid],
+                  ["Balance", totals.balance],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <small>{label}</small>
+                    <b>{fmtUGX(value)}</b>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+          {!isLead && (
+            <section className="cs-card">
+              <header>
+                <h3>Services ({services.length})</h3>
+                <button onClick={() => setSvcEditor({ service: null })}>
+                  + Add service
+                </button>
+              </header>
+              {services.length === 0 && (
+                <p className="cs-empty">No services yet. Add service.</p>
+              )}
+              {services.map((service) => {
+                const paid = servicePaid(c, service.id);
+                const total = serviceTotal(c, service);
+                const balance = total - paid;
+                return (
+                  <article className="cs-service" key={service.id}>
+                    <header className="cs-service-head">
+                      <div>
+                        <h4>{service.title}</h4>
+                        <small>
+                          {service.dueDate
+                            ? `Due ${fmtDate(service.dueDate)}`
+                            : "No due date"}
+                        </small>
+                      </div>
+                      <b className={balance > 0 ? "warm" : "lime"}>
+                        {balance > 0 ? fmtUGX(balance) : "Paid"}
+                      </b>
+                    </header>
+                    <div className="cs-totals">
+                      {[
+                        ["FEE", total],
+                        ["PAID", paid],
+                        ["BALANCE", balance],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <small>{label}</small>
+                          <b>{fmtUGX(value)}</b>
+                        </div>
+                      ))}
+                    </div>
+                    {(service.items || []).map((item) => (
+                      <div className="cs-item" key={item.id}>
+                        <span>{item.title}</span>
+                        <span>
+                          {Number(item.price) > 0
+                            ? fmtUGX(item.price)
+                            : "Included"}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="cs-service-actions">
+                      <button onClick={() => openPaymentForm(service.id)}>
+                        Record payment
+                      </button>
+                      <button onClick={() => setSvcEditor({ service })}>
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => printInvoice({ ...c, date }, service)}
+                      >
+                        Invoice
+                      </button>
+                      <button
+                        className="danger"
+                        onClick={() => deleteService(service)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                    {servicePayments(c, service.id).map((payment) => (
+                      <div className="cs-payment" key={payment.id}>
+                        <span>
+                          {payment.date || "Date unknown"} ·{" "}
+                          {payment.note || "Payment"} · {fmtUGX(payment.amount)}
+                        </span>
+                        <button
+                          onClick={() =>
+                            openEditPaymentForm(payment, service.id)
+                          }
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="danger"
+                          onClick={() => deleteClientPayment(payment)}
+                        >
+                          Delete
+                        </button>
+                        <button
+                          onClick={() => printReceipt({ ...c, date }, payment)}
+                        >
+                          Receipt
+                        </button>
+                      </div>
+                    ))}
+                  </article>
+                );
+              })}
+            </section>
+          )}
+        </div>
+      </div>
+      <section className="cs-danger">
+        {!isLead && <button onClick={moveBack}>Move back to lead</button>}
+        <button className="danger" onClick={deleteThisClient}>
+          Delete client
+        </button>
+      </section>
+      {infoOpen && (
+        <ClientInfoEditor
+          client={c}
+          onUpdate={(_id, fields) => saveInfo(fields)}
+          onClose={() => setInfoOpen(false)}
+        />
+      )}
+      {svcEditor && (
+        <ServiceEditor
+          service={svcEditor.service}
+          fallbackTotal={
+            svcEditor.service ? serviceTotal(c, svcEditor.service) : 0
+          }
+          onSave={saveService}
+          onDelete={
+            svcEditor.service
+              ? () => deleteService(svcEditor.service)
+              : undefined
+          }
+          onClose={() => setSvcEditor(null)}
+        />
+      )}
+      {isWinForm && (
+        <div
+          className="ce-overlay"
+          onMouseDown={(event) =>
+            event.target === event.currentTarget && setIsWinForm(false)
+          }
+        >
+          <form
+            className="ce-dialog"
+            onSubmit={(event) => {
+              event.preventDefault();
+              convert();
+            }}
+          >
+            <header>
+              <h2>Convert to ongoing client</h2>
+              <button type="button" onClick={() => setIsWinForm(false)}>
+                ×
+              </button>
+            </header>
+            <label className="ce-field">
+              Agreed price (UGX)
+              <input
+                type="number"
+                min="1"
+                required
+                value={dealPrice}
+                onChange={(event) => setDealPrice(event.target.value)}
+              />
+            </label>
+            <label className="ce-field">
+              Initial deposit (UGX)
+              <input
+                type="number"
+                min="0"
+                value={deposit}
+                onChange={(event) => setDeposit(event.target.value)}
+              />
+            </label>
+            <footer>
+              <button type="button" onClick={() => setIsWinForm(false)}>
+                Cancel
+              </button>
+              <button className="primary">Confirm conversion</button>
+            </footer>
+          </form>
+        </div>
+      )}
+      {isRescheduleForm && (
+        <div
+          className="ce-overlay"
+          onMouseDown={(event) =>
+            event.target === event.currentTarget && setIsRescheduleForm(false)
+          }
+        >
+          <form
+            className="ce-dialog"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveReschedule();
+            }}
+          >
+            <header>
+              <h2>Set follow-up timeline</h2>
+              <button type="button" onClick={() => setIsRescheduleForm(false)}>
+                ×
+              </button>
+            </header>
+            <div className="cs-actions">
+              {[3, 7, 14, 30].map((days) => (
+                <button
+                  type="button"
+                  key={days}
+                  onClick={() => reschedule(days)}
+                >
+                  +{days} days
+                </button>
+              ))}
+            </div>
+            <label className="ce-field">
+              Date
+              <input
+                type="date"
+                value={newFollowDate}
+                onChange={(event) => setNewFollowDate(event.target.value)}
+              />
+            </label>
+            <footer>
+              <button type="button" onClick={() => setIsRescheduleForm(false)}>
+                Cancel
+              </button>
+              <button className="primary">Save timeline</button>
+            </footer>
+          </form>
+        </div>
+      )}
+      {isPaymentForm && (
+        <div
+          className="ce-overlay"
+          onMouseDown={(event) =>
+            event.target === event.currentTarget && setIsPaymentForm(false)
+          }
+        >
+          <form
+            className="ce-dialog"
+            onSubmit={(event) => {
+              event.preventDefault();
+              savePayment();
+            }}
+          >
+            <header>
+              <h2>{editingPaymentId ? "Edit payment" : "Record payment"}</h2>
+              <button type="button" onClick={() => setIsPaymentForm(false)}>
+                ×
+              </button>
+            </header>
+            <label className="ce-field">
+              Amount (UGX)
+              <input
+                type="number"
+                min="1"
+                required
+                value={paymentAmt}
+                onChange={(event) => setPaymentAmt(event.target.value)}
+              />
+            </label>
+            <label className="ce-field">
+              Note
+              <input
+                value={paymentNote}
+                onChange={(event) => setPaymentNote(event.target.value)}
+              />
+            </label>
+            <label className="ce-field">
+              Service
+              <select
+                required
+                value={paymentServiceId}
+                onChange={(event) => setPaymentServiceId(event.target.value)}
+              >
+                {services.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.title} · {fmtUGX(serviceTotal(c, service))}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <footer>
+              <button type="button" onClick={() => setIsPaymentForm(false)}>
+                Cancel
+              </button>
+              <button className="primary">Save payment</button>
+            </footer>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClientForm({ onAdd, onClose, initialValues }) {
   const [f, setF] = useState(() => ({
     name: "", business: "", businessType: "", phone: "",
@@ -1799,7 +2511,7 @@ function SystemFlowView() {
 }
 
 // ── Ongoing View
-function OngoingView({ clients, onUpdate }) {
+function OngoingView({ clients }) {
   const [showCleared, setShowCleared] = useState(true);
   const ongoing = Object.entries(clients).flatMap(([date, arr]) =>
     arr.filter(c => c.status === "ongoing").map(c => ({ ...c, date }))
@@ -1825,7 +2537,7 @@ function OngoingView({ clients, onUpdate }) {
         )}
       </div>
       {visible.length === 0 ? <Empty text="No active projects with balances due." /> : visible.map(c => (
-        <ClientCard key={c.id + c.date} client={c} date={c.date} onUpdate={(id, u) => onUpdate(c.date, id, u)} />
+        <ClientRow key={c.id + c.date} client={c} date={c.date} />
       ))}
     </div>
   );

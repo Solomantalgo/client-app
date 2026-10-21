@@ -1,2 +1,393 @@
-.cc{--accent:#aaff00;background:#111;border:1px solid #1f1f1f;border-left:3px solid var(--accent);border-radius:9px;margin:0 0 10px;overflow:hidden;color:#eee;font-family:Inter,ui-sans-serif,system-ui,sans-serif}.cc.cc-hot{border-color:#aaff0066;box-shadow:0 0 16px #aaff0019}.cc button{min-height:40px;cursor:pointer}.cc-head{width:100%;min-height:66px;border:0;background:transparent;color:#fff;padding:12px;display:flex;align-items:center;gap:10px;text-align:left}.cc-id{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}.cc-name{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cc-id small,.cc-meta small{font-size:11px;color:#777;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cc-meta{display:flex;flex:none;flex-direction:column;text-align:right;gap:4px}.cc-meta b{font-size:12px}.cc .warm,.cc .overdue{color:#ff7a3d}.cc .cold{color:#4da6ff}.cc .lime{color:#aaff00}.cc-due{color:#ff7a3d;font:700 9px 'DM Mono',monospace}.cc-chev{color:#777}.cc-quick{display:flex;gap:8px;padding:0 12px 10px}.cc-quick a,.cc-actions button,.cc-sec header button,.cc-svc-actions button,.cc-payment button,.cc-danger button{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:7px 11px;border:1px solid #292929;border-radius:6px;background:#171717;color:#bbb;text-decoration:none;font-size:11px}.cc-quick .cc-whatsapp{color:#25d366}.cc-quick .cc-call{color:#4da6ff}.cc-body{padding:12px;border-top:1px solid #1f1f1f}.cc-chips,.cc-actions,.cc-tags,.cc-svc-actions{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}.cc-actions button.primary,.cc-form .primary{background:#aaff00;color:#080808;border-color:#aaff00}.cc-sec{border-top:1px solid #1f1f1f;padding:12px 0}.cc-sec>header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}.cc-sec h4,.cc-form h4{margin:0;color:#ddd;font-size:12px}.cc-sec dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0}.cc-sec dl div{min-width:0}.cc-sec dt,.cc-totals small{font:9px 'DM Mono',monospace;color:#666;text-transform:uppercase}.cc-sec dd{margin:3px 0 0;font-size:12px;overflow-wrap:anywhere}.cc-tags span{font-size:10px;padding:5px 8px;border:1px solid #292929;border-radius:5px;color:#aaff00;background:#aaff000b}.cc-notes{font-size:12px;line-height:1.55;color:#bbb;white-space:pre-wrap}.cc-svc{margin:8px 0;border:1px solid #252525;border-radius:7px;background:#151515;overflow:hidden}.cc-svc-head{width:100%;min-height:58px;padding:9px 11px;display:flex;align-items:center;justify-content:space-between;gap:10px;border:0;background:transparent;color:#eee;text-align:left}.cc-svc-head span{display:flex;min-width:0;flex-direction:column;gap:4px}.cc-svc-head small{color:#777}.cc-svc-details{padding:10px;border-top:1px solid #252525}.cc-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:10px}.cc-totals div{display:flex;flex-direction:column;gap:5px;padding:8px;background:#080808;border-radius:5px;min-width:0}.cc-totals b{font-size:11px;overflow-wrap:anywhere}.cc-item,.cc-payment{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid #242424;font-size:11px}.cc-item span:first-child,.cc-payment span{flex:1;min-width:0;overflow-wrap:anywhere}.cc-svc-actions{margin:10px 0}.cc-payment{flex-wrap:wrap}.cc-payment button,.cc-svc-actions button,.cc-danger button{min-height:40px}.cc button.danger,.cc .danger{color:#ff8063}.cc-danger{border-top:1px solid #1f1f1f;padding-top:10px}.cc-danger summary{color:#888;cursor:pointer;min-height:40px;display:flex;align-items:center;font-size:11px}.cc-empty{color:#888;padding:15px 0;font-size:12px}.cc-form{display:flex;flex-direction:column;gap:9px;padding:13px;border-top:1px solid #252525;background:#151515}.cc-form label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:#999}.cc-form input,.cc-form select{min-height:44px;width:100%;padding:8px;background:#080808;border:1px solid #333;border-radius:5px;color:#fff}.cc-form button{min-height:44px;padding:8px;border:1px solid #292929;border-radius:5px;background:#111;color:#ddd}@media(max-width:500px){.cc-head{gap:6px;padding:10px}.cc-due{font-size:8px}.cc-payment{display:grid;grid-template-columns:minmax(0,1fr) auto auto}.cc-payment span{grid-column:1/-1}.cc-sec dl{grid-template-columns:1fr 1fr}.cc-svc-actions button{flex:1}}
-.cc button,.cc-quick a{min-height:44px}.cc-chip{display:inline-flex;align-items:center;min-height:26px;padding:4px 8px;border-radius:4px;background:#1a1a1a;color:#777;font:9px 'DM Mono','Courier New',monospace;letter-spacing:.3px}.cc-chip.warm{background:#ff7a3d20;color:#ff7a3d}.cc-chip.cold{background:#4da6ff20;color:#4da6ff}.cc-chip.lime{background:#aaff0018;color:#aaff00}
+.cr,
+.cs-card,
+.cs-service {
+  background: #111;
+  border: 1px solid #1f1f1f;
+  border-radius: 9px;
+  color: #eee;
+}
+
+.cr {
+  min-height: 64px;
+  margin-bottom: 9px;
+  overflow: hidden;
+}
+
+.cr.hot {
+  border-color: #ff7a3d66;
+}
+
+.cr.selected {
+  border-color: #aaff0066;
+  background: #aaff000d;
+}
+
+.cr-main {
+  display: flex;
+  width: 100%;
+  min-height: 64px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cr-id,
+.cr-meta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cr-id {
+  flex: 1;
+}
+
+.cr-id b {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-id small,
+.cr-meta small {
+  overflow: hidden;
+  color: #777;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-meta {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.cr-meta b {
+  font-size: 11px;
+}
+
+.cr-meta .warm,
+.cs .warm {
+  color: #ff7a3d;
+}
+
+.cr-meta .cold,
+.cs .cold {
+  color: #4da6ff;
+}
+
+.cr-meta .lime,
+.cs .lime {
+  color: #aaff00;
+}
+
+.cr-due {
+  color: #ff7a3d;
+  font:
+    700 9px "DM Mono",
+    "Courier New",
+    monospace;
+  white-space: nowrap;
+}
+
+.cr-chev {
+  color: #777;
+  font-size: 22px;
+}
+
+.cr-quick,
+.cs-contact,
+.cs-actions,
+.cs-service-actions,
+.cs-payment {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.cr-quick {
+  padding: 0 12px 8px;
+}
+
+.cr-quick a,
+.cs button,
+.cs-contact a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 11px;
+  border: 1px solid #292929;
+  border-radius: 6px;
+  background: #171717;
+  color: #bbb;
+  font-size: 11px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.cr-quick a:first-child,
+.cs-contact a:first-child {
+  color: #25d366;
+}
+
+.cs {
+  padding-bottom: calc(84px + env(safe-area-inset-bottom));
+}
+
+.cs-bar {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #1f1f1f;
+  background: #080808;
+}
+
+.cs-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.cs-title h2 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cs-title p {
+  overflow: hidden;
+  margin: 4px 0 0;
+  color: #888;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cs-grid,
+.cs-col {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.cs-grid {
+  margin-top: 14px;
+}
+
+.cs-chips,
+.cs-tags,
+.cs-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.cs-chips span,
+.cs-tags span {
+  padding: 6px 8px;
+  border: 1px solid #292929;
+  border-radius: 5px;
+  background: #1a1a1a;
+  color: #aaa;
+  font:
+    9px "DM Mono",
+    "Courier New",
+    monospace;
+}
+
+.cs-chips span:first-child {
+  color: #aaff00;
+}
+
+.cs-contact,
+.cs-actions {
+  margin-top: 10px;
+}
+
+.cs-actions .primary,
+.cs button.primary {
+  border-color: #aaff00;
+  background: #aaff00;
+  color: #080808;
+}
+
+.cs-card {
+  min-width: 0;
+  padding: 13px;
+}
+
+.cs-card > header,
+.cs-service-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cs-card > header h3,
+.cs-card > h3 {
+  margin: 0;
+  color: #ddd;
+  font-size: 12px;
+}
+
+.cs-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+.cs-card dt,
+.cs-totals small {
+  color: #777;
+  font:
+    9px "DM Mono",
+    "Courier New",
+    monospace;
+  text-transform: uppercase;
+}
+
+.cs-card dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.cs-tags {
+  margin-top: 10px;
+}
+
+.cs-tags span {
+  color: #aaff00;
+}
+
+.cs-notes {
+  color: #bbb;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.cs-totals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 11px;
+}
+
+.cs-totals div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border-radius: 5px;
+  background: #080808;
+}
+
+.cs-totals b {
+  overflow-wrap: anywhere;
+  font-size: 10px;
+}
+
+.cs-service {
+  margin-top: 10px;
+  padding: 11px;
+  background: #151515;
+}
+
+.cs-service-head {
+  margin-bottom: 8px;
+}
+
+.cs-service-head h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+
+.cs-service-head small {
+  color: #777;
+  font-size: 10px;
+}
+
+.cs-item,
+.cs-payment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid #242424;
+  font-size: 10px;
+}
+
+.cs-item span:first-child,
+.cs-payment span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cs-service-actions,
+.cs-payment {
+  margin-top: 8px;
+}
+
+.cs button.danger,
+.cs .danger {
+  border-color: #ff7a3d;
+  color: #ff7a3d;
+}
+
+.cs-danger {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #1f1f1f;
+}
+
+.cs-empty {
+  padding: 10px 0;
+  color: #888;
+  font-size: 12px;
+}
+
+@container (min-width: 720px) {
+  .cs-grid {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+@media (max-width: 500px) {
+  .cs-bar {
+    gap: 6px;
+  }
+
+  .cs-card dl {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cs-payment {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .cs-payment span {
+    grid-column: 1 / -1;
+  }
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { upsertService, removeService, paymentsForService, removeClientFromData } from '../src/clients.js';
+import { upsertService, removeService, paymentsForService, removeClientFromData, findClient } from '../src/clients.js';
 import { normalizeData } from '../src/data.js';
 
 test('deleting the last service stays empty after normalizeData', () => {
@@ -48,4 +48,11 @@ test('removing a client clears snapshots and an empty date key', () => {
   const result = removeClientFromData(data, '2026-01-01', 'c');
   assert.equal('2026-01-01' in result.clients, false);
   assert.deepEqual(result.finance.paymentSnapshots, { other: {} });
+});
+
+test('findClient returns the matching date and client or null', () => {
+  const client = { id: 'found', name: 'Ada' };
+  const data = { clients: { '2026-01-01': [client] } };
+  assert.deepEqual(findClient(data, 'found'), { date: '2026-01-01', client });
+  assert.equal(findClient(data, 'missing'), null);
 });
