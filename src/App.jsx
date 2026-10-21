@@ -12,11 +12,12 @@ import {
   serviceTotal,
   unmergeService,
 } from "./clients.js";
-import { normalizeData, touchData, makeServiceFromClient, splitServiceItems } from "./data.js";
+import { normalizeData, touchData, makeServiceFromClient } from "./data.js";
 import { upsertService, removeService, paymentsForService } from "./clients.js";
 import { ClientInfoEditor, ServiceEditor } from "./ClientEditors.jsx";
 import "./ClientCard.css";
 import { ConfirmProvider, useConfirm } from "./Confirm.jsx";
+import { buildInvoiceHtml, buildReceiptHtml } from "./documents.js";
 
 const ClientActions = createContext(null);
 
@@ -583,6 +584,46 @@ function AppBody() {
     void save(removeClientFromData(data, date, id));
   };
 
+  const assignDocumentNumber = (date, clientId, kind, itemId) => {
+    const client = data.clients[date]?.find((item) => item.id === clientId);
+    if (!client) return "";
+    const collection = kind === "invoice" ? client.services || [] : client.payments || [];
+    const item = collection.find((entry) => entry.id === itemId);
+    if (!item) return "";
+    const field = kind === "invoice" ? "invoiceNo" : "receiptNo";
+    if (item[field]) return item[field];
+    const legacy = kind === "invoice"
+      ? getInvoiceNum(client, item)
+      : getReceiptNum(item);
+    const allClients = Object.values(data.clients).flat();
+    const used = new Set(allClients.flatMap((record) => [
+      ...(record.services || []).map((service) => service.invoiceNo),
+      ...(record.payments || []).map((payment) => payment.receiptNo),
+      ...(record.receiptGroups || []).map((group) => group.receiptNo),
+    ]).filter(Boolean));
+    let number = legacy;
+    let counters = { invoice: 0, receipt: 0, ...(data.meta?.counters || {}) };
+    if (used.has(number)) {
+      const counterKey = kind;
+      do {
+        counters[counterKey] += 1;
+        number = `${kind === "invoice" ? "SWD" : "RCP"}-${todayStr().slice(0, 4)}-${String(counters[counterKey]).padStart(4, "0")}`;
+      } while (used.has(number));
+    }
+    const updated = {
+      ...client,
+      [kind === "invoice" ? "services" : "payments"]: collection.map((entry) =>
+        entry.id === itemId ? { ...entry, [field]: number } : entry,
+      ),
+    };
+    void save({
+      ...data,
+      clients: { ...data.clients, [date]: data.clients[date].map((record) => record.id === clientId ? updated : record) },
+      meta: { ...data.meta, counters },
+    });
+    return number;
+  };
+
   const addExpense = (exp) => {
     const next = { ...data, expenses: [...(data.expenses || []), { id: Date.now().toString(), date: todayStr(), ...exp }] };
     void save(next);
@@ -760,7 +801,7 @@ function AppBody() {
     ? data.clients[openClient.date]?.find((client) => client.id === openClient.id)
     : null;
   return (
-    <ClientActions.Provider value={{ deleteClient, openClientScreen, closeClientScreen, openId: current?.id || null }}>
+    <ClientActions.Provider value={{ deleteClient, openClientScreen, closeClientScreen, assignDocumentNumber, openId: current?.id || null }}>
       <AppShell tab={tab} setTab={selectTab} pendingCount={pending.length} cloudStatus={cloudStatus}
         banner={banner} onDismissBanner={() => setBanner(null)} onSync={syncNow}
         onOpenCloud={() => setShowCloudSetup(true)} onReset={resetDatabase}
@@ -1262,234 +1303,87 @@ function clientTotals(client) {
   const paid = (client.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   return { total, paid, balance: total - paid };
 }
-function dueDateStr(issueDate) {
-  const d = issueDate ? new Date(issueDate + "T00:00:00") : new Date();
-  d.setDate(d.getDate() + 14);
-  return d.toISOString().split("T")[0];
+function choosePrintFormat() {
+  let last = "a4";
+  try {
+    last = localStorage.getItem("solo-print-format") || "a4";
+  } catch {
+    // Printing remains available when browser storage is disabled.
+  }
+  const choice = prompt("Print format: type a4 for A4 / PDF or thermal58 for 58mm", last);
+  if (!choice) return null;
+  const format = choice.trim().toLowerCase() === "thermal58" ? "thermal58" : "a4";
+  try {
+    localStorage.setItem("solo-print-format", format);
+  } catch {
+    // Remembering the format is optional.
+  }
+  return format;
 }
 
-function printInvoice(client, service = null) {
+function openPrintDocument(html, width = 720) {
+  const win = window.open("", "_blank", `width=${width},height=900`);
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+}
+
+function printInvoice(client, service = null, assignNumber = null) {
   const activeService = service || getClientServices(client)[0];
   if (!activeService) {
     alert("Add a service before creating an invoice.");
     return;
   }
-  const invoiceNum = getInvoiceNum(client, activeService);
-  const issueDate = activeService?.createdAt || client.date || todayStr();
-  const dueDate = dueDateStr(issueDate);
-  const invoiceItems = Array.isArray(activeService?.items) && activeService.items.length
-    ? activeService.items
-    : splitServiceItems(activeService?.categories || client.servicesToOffer || activeService?.title).map(title => ({ title, price: 0 }));
+  const format = choosePrintFormat();
+  if (!format) return;
+  const number = activeService.invoiceNo ||
+    assignNumber?.(client.date, client.id, "invoice", activeService.id) ||
+    getInvoiceNum(client, activeService);
   const total = serviceTotal(activeService, client);
-  const paid = servicePaid(client, activeService?.id);
-  const balance = total - paid;
-  const stamp = paid === 0 ? "AWAITING PAYMENT" : paid >= total ? "PAID IN FULL" : "PARTIAL PAYMENT RECEIVED";
-  const stampColor = paid >= total ? "#aaff00" : paid > 0 ? "#ff7a3d" : "#ff4444";
-
-  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
-<title>Invoice ${invoiceNum} — ${client.name}</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:#fff;color:#111;font-family:'DM Mono',monospace;padding:40px;max-width:700px;margin:0 auto;font-size:12px}
-  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:36px;padding-bottom:20px;border-bottom:2px solid #111}
-  .brand{font-size:20px;font-weight:700;letter-spacing:-0.5px}
-  .brand-sub{font-size:10px;color:#555;margin-top:4px;line-height:1.6}
-  .doc-meta{text-align:right}
-  .doc-type{font-size:22px;font-weight:700;letter-spacing:2px;color:#111}
-  .doc-num{font-size:11px;color:#555;margin-top:4px}
-  .billed-section{display:flex;justify-content:space-between;margin-bottom:30px}
-  .label{font-size:9px;letter-spacing:2px;color:#888;margin-bottom:4px}
-  .value{font-size:12px;font-weight:500;color:#111;line-height:1.6}
-  table{width:100%;border-collapse:collapse;margin-bottom:24px}
-  th{text-align:left;font-size:9px;letter-spacing:2px;color:#888;padding:8px 10px;border-bottom:1px solid #ddd}
-  td{padding:10px;border-bottom:1px solid #f0f0f0;font-size:11px;color:#222}
-  .totals{margin-left:auto;width:280px}
-  .total-row{display:flex;justify-content:space-between;padding:6px 0;font-size:11px}
-  .total-row.grand{font-size:13px;font-weight:700;padding:10px 0;border-top:2px solid #111;margin-top:4px}
-  .total-row.balance{color:${balance > 0 ? "#ff7a3d" : "#aaff00"};font-weight:700}
-  .stamp{display:inline-block;border:3px solid ${stampColor};color:${stampColor};padding:8px 20px;font-size:14px;font-weight:700;letter-spacing:3px;transform:rotate(-5deg);opacity:0.9;margin-top:20px}
-  .stamp-wrap{text-align:center;margin:20px 0}
-  .footer{display:flex;justify-content:space-between;margin-top:40px;padding-top:20px;border-top:1px solid #ddd}
-  .sig-block{font-size:10px;color:#555}
-  .sig-line{border-top:1px solid #111;width:160px;margin-bottom:6px;margin-top:40px}
-  .terms{font-size:9px;color:#888;max-width:260px;line-height:1.6}
-  @media print{body{padding:20px}button{display:none!important}}
-</style></head><body>
-<div class="header">
-  <div>
-    <div class="brand">Solomantalgo Web Design</div>
-    <div class="brand-sub">Kampala, Uganda<br/>solomantalgo.com<br/>Owner: Solomon Kisense</div>
-  </div>
-  <div class="doc-meta">
-    <div class="doc-type">INVOICE</div>
-    <div class="doc-num">${invoiceNum}</div>
-    <div class="doc-num" style="margin-top:8px">Issued: ${issueDate}</div>
-    <div class="doc-num">Due: ${dueDate}</div>
-  </div>
-</div>
-
-<div class="billed-section">
-  <div>
-    <div class="label">BILLED TO</div>
-    <div class="value">${client.name}<br/>${client.business || "—"}</div>
-    ${client.phone ? `<div class="value" style="margin-top:4px;font-size:10px;color:#555">${client.phone}</div>` : ""}
-  </div>
-</div>
-
-<table>
-  <thead><tr><th>#</th><th>SERVICE / DESCRIPTION</th><th style="text-align:right">AMOUNT</th></tr></thead>
-  <tbody>
-    ${invoiceItems.length > 1 || invoiceItems.some(item => Number(item.price) > 0)
-      ? invoiceItems.map((item, i) => `<tr><td>${i + 1}</td><td>${item.title}</td><td style="text-align:right">${Number(item.price) > 0 ? fmtUGX(item.price) : "Included"}</td></tr>`).join("")
-      : `<tr><td>1</td><td>${activeService?.title || client.servicesToOffer || "Web Design Services"}</td><td style="text-align:right">${fmtUGX(total)}</td></tr>`
-    }
-  </tbody>
-</table>
-
-<div class="totals">
-  <div class="total-row"><span>Subtotal</span><span>${fmtUGX(total)}</span></div>
-  <div class="total-row grand"><span>TOTAL</span><span>${fmtUGX(total)}</span></div>
-  <div class="total-row" style="color:#555"><span>Amount Paid</span><span>${fmtUGX(paid)}</span></div>
-  <div class="total-row balance"><span>BALANCE DUE</span><span>${fmtUGX(balance)}</span></div>
-</div>
-
-<div class="stamp-wrap"><div class="stamp">${stamp}</div></div>
-
-<div class="footer">
-  <div class="terms">
-    <b>Payment Terms</b><br/>
-    50% deposit required. 50% on delivery.<br/><br/>
-    <b>Payment Details</b><br/>
-    <b>Bank Transfer</b><br/>
-    Account Name: Kisense Solomon<br/>
-    Account No: 7327559001<br/><br/>
-    <b>Mobile Money (MTN)</b><br/>
-    Number: 0775 224 728<br/>
-    Name: Kisense Solomon
-  </div>
-  <div class="sig-block">
-    <div class="sig-line"></div>
-    <div><b>Solomon Kisense</b></div>
-    <div>Owner, Solomantalgo Web Design</div>
-  </div>
-</div>
-
-<div style="text-align:center;margin-top:24px;font-size:9px;color:#aaa">Thank you for choosing Solomantalgo Web Design.</div>
-<script>window.onload=()=>{window.print();}</script>
-</body></html>`;
-
-  const win = window.open("", "_blank", "width=780,height=900");
-  if (win) { win.document.write(html); win.document.close(); }
+  const paid = servicePaid(client, activeService.id);
+  const sourceItems = (activeService.items || []).length
+    ? activeService.items
+    : [{ title: activeService.title || client.servicesToOffer || "Services", price: total }];
+  const items = sourceItems.map((item) => ({
+    title: item.title,
+    amount: Number(item.price) > 0 ? Number(item.price) : sourceItems.length === 1 ? total : 0,
+  }));
+  const html = buildInvoiceHtml({
+    number,
+    date: activeService.createdAt || client.date || todayStr(),
+    clientName: client.name,
+    business: client.business || "",
+    items,
+    total,
+    paid,
+    balance: total - paid,
+    stamp: paid <= 0 ? "AWAITING PAYMENT" : paid >= total ? "PAID IN FULL" : "PARTIAL PAYMENT",
+  }, format);
+  openPrintDocument(html, format === "thermal58" ? 360 : 720);
 }
 
-function printReceipt(client, payment) {
-  const service = getClientServices(client).find(s => s.id === payment.serviceId) || getClientServices(client)[0];
+function printReceipt(client, payment, assignNumber = null) {
+  const service = getClientServices(client).find((item) => item.id === payment.serviceId) || getClientServices(client)[0];
   if (!service) {
     alert("This payment has no service to include on a receipt.");
     return;
   }
-  const invoiceNum = getInvoiceNum(client, service);
-  const receiptNum = getReceiptNum(payment);
-  const total = serviceTotal(service, client);
-  // Calculate running balance AFTER this payment
-  const paymentsUpTo = servicePayments(client, service?.id);
-  const paidBeforeThis = paymentsUpTo
-    .filter(p => p.id !== payment.id && p.date <= payment.date)
-    .reduce((s, p) => s + Number(p.amount), 0);
-  const runningBalance = total - (paidBeforeThis + Number(payment.amount));
-  const isPaidFull = runningBalance <= 0;
-  const stamp = isPaidFull ? "PAID IN FULL" : `PARTIAL PAYMENT\nBALANCE DUE: ${fmtUGX(runningBalance)}`;
-  const stampColor = isPaidFull ? "#aaff00" : "#ff7a3d";
-
-  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
-<title>Receipt ${receiptNum}</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap');
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:#fff;color:#111;font-family:'DM Mono',monospace;padding:40px;max-width:560px;margin:0 auto;font-size:12px}
-  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:36px;padding-bottom:20px;border-bottom:2px solid #111}
-  .brand{font-size:18px;font-weight:700;letter-spacing:-0.5px}
-  .brand-sub{font-size:9px;color:#555;margin-top:4px;line-height:1.6}
-  .doc-meta{text-align:right}
-  .doc-type{font-size:20px;font-weight:700;letter-spacing:2px}
-  .doc-num{font-size:10px;color:#555;margin-top:4px}
-  .section{margin-bottom:20px}
-  .label{font-size:9px;letter-spacing:2px;color:#888;margin-bottom:3px}
-  .value{font-size:12px;font-weight:500;line-height:1.6}
-  .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:11px}
-  .row.highlight{font-size:14px;font-weight:700;border-bottom:2px solid #111;padding:12px 0}
-  .stamp{display:inline-block;border:3px solid ${stampColor};color:${stampColor};padding:10px 24px;font-size:13px;font-weight:700;letter-spacing:2px;transform:rotate(-4deg);opacity:0.85;white-space:pre-line;text-align:center;line-height:1.4}
-  .stamp-wrap{text-align:center;margin:28px 0}
-  .footer{display:flex;justify-content:space-between;margin-top:36px;padding-top:16px;border-top:1px solid #ddd;font-size:10px}
-  .sig-line{border-top:1px solid #111;width:140px;margin-bottom:5px;margin-top:36px}
-  .thanks{text-align:center;font-size:11px;color:#555;margin-top:20px;font-style:italic}
-  @media print{body{padding:20px}}
-</style></head><body>
-<div class="header">
-  <div>
-    <div class="brand">Solomantalgo Web Design</div>
-    <div class="brand-sub">Kampala, Uganda<br/>solomantalgo.com</div>
-  </div>
-  <div class="doc-meta">
-    <div class="doc-type">RECEIPT</div>
-    <div class="doc-num">${receiptNum}</div>
-    <div class="doc-num" style="margin-top:6px">Ref Invoice: ${invoiceNum}</div>
-    <div class="doc-num">Date: ${payment.date}</div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="label">RECEIVED FROM</div>
-  <div class="value">${client.name}</div>
-  <div class="value" style="font-size:10px;color:#555">${client.business || ""}</div>
-</div>
-
-<div class="row"><span>Invoice Total</span><span>${fmtUGX(total)}</span></div>
-<div class="row"><span>Previously Paid</span><span>${fmtUGX(paidBeforeThis)}</span></div>
-<div class="row highlight"><span>AMOUNT RECEIVED</span><span>${fmtUGX(payment.amount)}</span></div>
-<div class="row" style="font-weight:600;color:${isPaidFull ? "#aaff00" : "#ff7a3d"}"><span>REMAINING BALANCE</span><span>${fmtUGX(Math.max(0, runningBalance))}</span></div>
-
-<div class="section" style="margin-top:16px">
-  <div class="label">PAYMENT METHOD</div>
-  <div class="value">${payment.note || "—"}</div>
-</div>
-
-<div class="section" style="margin-top:16px;border-top:1px solid #eee;padding-top:16px">
-  <div class="label">PAYMENT DETAILS</div>
-  <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:6px">
-    <div style="font-size:10px;line-height:1.8">
-      <b>Bank Transfer</b><br/>
-      Account Name: Kisense Solomon<br/>
-      Account No: 7327559001
-    </div>
-    <div style="font-size:10px;line-height:1.8">
-      <b>Mobile Money (MTN)</b><br/>
-      Number: 0775 224 728<br/>
-      Name: Kisense Solomon
-    </div>
-  </div>
-</div>
-
-<div class="stamp-wrap"><div class="stamp">${stamp}</div></div>
-
-<div class="footer">
-  <div></div>
-  <div>
-    <div class="sig-line"></div>
-    <div><b>Solomon Kisense</b></div>
-    <div style="color:#555">Owner, Solomantalgo Web Design</div>
-  </div>
-</div>
-
-<div class="thanks">Thank you for your business.</div>
-<script>window.onload=()=>{window.print();}</script>
-</body></html>`;
-
-  const win = window.open("", "_blank", "width=640,height=800");
-  if (win) { win.document.write(html); win.document.close(); }
+  const format = choosePrintFormat();
+  if (!format) return;
+  const number = payment.receiptNo ||
+    assignNumber?.(client.date, client.id, "receipt", payment.id) ||
+    getReceiptNum(payment);
+  const html = buildReceiptHtml({
+    number,
+    date: payment.date || client.date || todayStr(),
+    clientName: client.name,
+    business: client.business || "",
+    lines: [{ title: payment.note || service.title || "Payment", amount: payment.amount }],
+    total: payment.amount,
+    stamp: "PAYMENT RECEIVED",
+  }, format);
+  openPrintDocument(html, format === "thermal58" ? 360 : 640);
 }
-
 // ── Client Card
 function ClientRow({ client: c, date, highlight }) {
   const actions = useContext(ClientActions);
@@ -2061,7 +1955,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                         Edit
                       </button>
                       <button
-                        onClick={() => printInvoice({ ...c, date }, service)}
+                        onClick={() => printInvoice({ ...c, date }, service, actions?.assignDocumentNumber)}
                       >
                         Invoice
                       </button>
@@ -2095,7 +1989,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                           Delete
                         </button>
                         <button
-                          onClick={() => printReceipt({ ...c, date }, payment)}
+                          onClick={() => printReceipt({ ...c, date }, payment, actions?.assignDocumentNumber)}
                         >
                           Receipt
                         </button>
