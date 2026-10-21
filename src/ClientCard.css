@@ -124,6 +124,44 @@
   gap: 8px;
 }
 
+.cs-receipt-groups,
+.cs-receipt-select {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.cs-receipt-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #303030;
+  border-radius: 8px;
+  background: #151515;
+}
+
+.cs-receipt-group strong {
+  flex: 1 1 100%;
+  font-size: 11px;
+}
+
+.cs-receipt-select label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: #aaa;
+  font-size: 11px;
+}
+
+.cs-group-payment {
+  width: 100%;
+  color: #aaa;
+  font-size: 11px;
+}
+
 .cs-select-service {
   display: flex;
   align-items: center;

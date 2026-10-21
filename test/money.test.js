@@ -115,3 +115,13 @@ test("bucket reset opening balance is added while undo restores the previous cou
   const undone = getBalances(baseTransactions, { ...finance, bucketResets: [] });
   assert.equal(undone.buckets.living.allocated - undone.buckets.living.spent, 70);
 });
+
+test("receipt group metadata never changes Money ledger transactions", () => {
+  const payment = { id: "p1", amount: 100, date: "2026-10-21", serviceId: "s1" };
+  const base = { clients: { day: [{ id: "c1", payments: [payment] }] }, expenses: [], finance: DEFAULT_FINANCE };
+  const grouped = {
+    ...base,
+    clients: { day: [{ ...base.clients.day[0], receiptGroups: [{ id: "g1", paymentIds: ["p1", "p2"] }] }] },
+  };
+  assert.deepEqual(getTransactions(grouped), getTransactions(base));
+});

@@ -44,6 +44,9 @@ export default function AppShell({
   banner,
   onDismissBanner,
   detail,
+  onSearch,
+  onExportBackup,
+  searchPanel,
 }) {
   const [more, setMore] = useState(false);
   const [lastPipeline, setLastPipeline] = useState("followups");
@@ -96,6 +99,7 @@ export default function AppShell({
           ))}
         </nav>
         <footer>
+          <button onClick={onExportBackup}>Export backup</button>
           <button onClick={onSync}>↻ Sync now</button>
           <button onClick={onOpenCloud}>Cloud settings</button>
           <button className="danger" onClick={onReset}>
@@ -115,6 +119,9 @@ export default function AppShell({
             {cloudStatus}
           </button>
           {tab === "today" && topExtra}
+          <button className="os-search-button" onClick={onSearch} aria-label="Search">
+            Search <kbd>/</kbd>
+          </button>
         </header>
         {banner && (
           <div className="os-banner" role="status">
@@ -148,6 +155,7 @@ export default function AppShell({
           <div className="os-list">{children}</div>
           {detail && <section className="os-detail">{detail}</section>}
         </main>
+        {searchPanel}
       </div>
       <nav className="os-mobile-nav" aria-label="Main navigation">
         {navItems.map(([key, label]) => (
@@ -208,6 +216,9 @@ export default function AppShell({
               }}
             >
               Cloud settings
+            </button>
+            <button onClick={() => { setMore(false); onExportBackup(); }}>
+              Export backup
             </button>
             <button
               className="danger"

@@ -19,13 +19,16 @@ export default function MoneyView({
   onAddExpense,
   onUpdateExpense,
   onDeleteExpense,
+  query = "",
+  initialTab = "Income",
 }) {
   const ask = useConfirm();
   const finance = data.finance || DEFAULT_FINANCE;
-  const [tab, setTab] = useState("Overview");
+  const [tab, setTab] = useState(initialTab);
   const [form, setForm] = useState("");
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState("All");
+  const [searchText, setSearchText] = useState(query);
   const [message, setMessage] = useState("");
   const [paymentEdit, setPaymentEdit] = useState(null);
   const [paymentEditError, setPaymentEditError] = useState("");
@@ -414,7 +417,13 @@ export default function MoneyView({
     (t) =>
       filter === "All" ||
       (filter === "Income" ? t.type === "income" : t.type === "expense"),
-  );
+  ).filter((transaction) => !searchText || [
+    transaction.description,
+    transaction.note,
+    transaction.sourceType,
+    transaction.amount,
+    transaction.date,
+  ].join(" ").toLocaleLowerCase().includes(searchText.toLocaleLowerCase()));
   const createManualIncome = () => startForm("income");
 
   return (
@@ -621,6 +630,9 @@ export default function MoneyView({
               </div>
             </div>
             <FilterBar filter={filter} setFilter={setFilter} />
+            <label className="m-search-filter">Search transactions
+              <input value={searchText} onChange={(event) => setSearchText(event.target.value)} />
+            </label>
             <TransactionList
               rows={visible.filter((t) => t.type === "income")}
               finance={finance}
@@ -645,8 +657,11 @@ export default function MoneyView({
               </button>
             </div>
             <FilterBar filter={filter} setFilter={setFilter} />
+            <label className="m-search-filter">Search transactions
+              <input value={searchText} onChange={(event) => setSearchText(event.target.value)} />
+            </label>
             <TransactionList
-              rows={transactions.filter((t) => t.type === "expense")}
+              rows={visible.filter((t) => t.type === "expense")}
               finance={finance}
               onEdit={(t) => editTransaction(t, startForm)}
               onDelete={archiveTransaction}

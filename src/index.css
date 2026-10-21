@@ -46,3 +46,5 @@ button { touch-action: manipulation; }
 @media (max-width:370px) { .m-bucket-grid { grid-template-columns:1fr; }.m-stats { grid-template-columns:1fr 1fr; }.money-header p { max-width:180px; } }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; animation:none!important; } }
 .ce-line.lump { grid-template-columns: minmax(0, 1fr) 44px; }
+.m-search-filter { display:flex; flex-direction:column; gap:6px; color:#92958d; font-size:11px; margin:10px 0; }
+.m-search-filter input { min-height:42px; padding:8px 10px; border:1px solid #34372e; border-radius:6px; background:#0c0e0b; color:#f6f7f2; }

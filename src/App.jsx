@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, createContext, useContext, useRef } from "react";
+import { useState, useEffect, useCallback, createContext, useContext, useRef, useMemo } from "react";
 import { createClient } from "@supabase/supabase-js";
 import MoneyView from "./MoneyView.jsx";
 import AppShell from "./AppShell.jsx";
@@ -18,6 +18,7 @@ import { ClientInfoEditor, ServiceEditor } from "./ClientEditors.jsx";
 import "./ClientCard.css";
 import { ConfirmProvider, useConfirm } from "./Confirm.jsx";
 import { buildInvoiceHtml, buildReceiptHtml } from "./documents.js";
+import { buildIndex, runSearch } from "./search.js";
 
 const ClientActions = createContext(null);
 
@@ -384,6 +385,18 @@ async function persistBackup(data) {
   try { await window.storage.set(BACKUP_KEY, JSON.stringify(normalizeData(data))); } catch { /* local storage may be unavailable */ }
 }
 
+function exportBackup(data) {
+  const normalized = normalizeData(data);
+  const date = todayStr();
+  const blob = new Blob([JSON.stringify(normalized, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `solo-sales-os-backup-${date}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 // ══════════════════════════════════════════════════════════
 function AppBody() {
   const ask = useConfirm();
@@ -395,10 +408,29 @@ function AppBody() {
   const [formDefaults, setFormDefaults] = useState(null);
   const [histSel, setHistSel] = useState(null);
   const [banner, setBanner] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchType, setSearchType] = useState("All");
+  const [moneyRoute, setMoneyRoute] = useState({ tab: "Income", query: "" });
   const [showCloudSetup, setShowCloudSetup] = useState(false);
   const [cloudConfig, setCloudConfig] = useState(getStoredCloudConfig() || { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY });
   const [cloudStatus, setCloudStatus] = useState("Local only");
   const today = todayStr();
+  const searchIndex = useMemo(() => data ? buildIndex(data) : [], [data]);
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setSearchOpen(true);
+      } else if (event.key === "/" && !["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) {
+        event.preventDefault();
+        setSearchOpen(true);
+      } else if (event.key === "Escape") setSearchOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     const onPop = () => {
@@ -587,7 +619,8 @@ function AppBody() {
   const assignDocumentNumber = (date, clientId, kind, itemId) => {
     const client = data.clients[date]?.find((item) => item.id === clientId);
     if (!client) return "";
-    const collection = kind === "invoice" ? client.services || [] : client.payments || [];
+    const collectionKey = kind === "invoice" ? "services" : kind === "receiptGroup" ? "receiptGroups" : "payments";
+    const collection = client[collectionKey] || [];
     const item = collection.find((entry) => entry.id === itemId);
     if (!item) return "";
     const field = kind === "invoice" ? "invoiceNo" : "receiptNo";
@@ -612,7 +645,7 @@ function AppBody() {
     }
     const updated = {
       ...client,
-      [kind === "invoice" ? "services" : "payments"]: collection.map((entry) =>
+      [collectionKey]: collection.map((entry) =>
         entry.id === itemId ? { ...entry, [field]: number } : entry,
       ),
     };
@@ -800,10 +833,49 @@ function AppBody() {
   const current = openClient
     ? data.clients[openClient.date]?.find((client) => client.id === openClient.id)
     : null;
+  const results = runSearch(searchIndex, searchQuery, {
+    types: searchType === "All" ? undefined : [searchType],
+    limit: 20,
+  });
+  const chooseSearchResult = (item) => {
+    setSearchOpen(false);
+    if (item.clientId && item.date) {
+      openClientScreen(item.date, item.clientId);
+      return;
+    }
+    if (item.type === "Buckets") setMoneyRoute({ tab: "Allocations", query: item.title });
+    else if (item.type === "Accounts") setMoneyRoute({ tab: "Accounts", query: item.title });
+    else setMoneyRoute({ tab: item.subtype === "expense" ? "Expenses" : "Income", query: searchQuery });
+    selectTab("payments");
+  };
+  const searchPanel = searchOpen ? (
+    <div className="os-search-overlay" onMouseDown={(event) => event.target === event.currentTarget && setSearchOpen(false)}>
+      <section className="os-search-dialog">
+        <input autoFocus inputMode="search" placeholder="Search clients, services, payments…"
+          value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
+        <nav className="os-search-types">
+          {["All", "Clients", "Services", "Payments", "Money"].map((type) => (
+            <button className={searchType === type ? "active" : ""} key={type} onClick={() => setSearchType(type)}>{type}</button>
+          ))}
+        </nav>
+        <div className="os-search-results">
+          {searchQuery && results.map((item) => (
+            <button key={`${item.type}-${item.id}-${item.clientId || ""}`} onClick={() => chooseSearchResult(item)}>
+              <small>{item.type}</small><b>{item.title}</b><span>{item.subtitle}</span>
+            </button>
+          ))}
+          {searchQuery && !results.length && <p>No results found.</p>}
+          {!searchQuery && <p>Search by client, service, amount, note, or number.</p>}
+        </div>
+      </section>
+    </div>
+  ) : null;
   return (
     <ClientActions.Provider value={{ deleteClient, openClientScreen, closeClientScreen, assignDocumentNumber, openId: current?.id || null }}>
       <AppShell tab={tab} setTab={selectTab} pendingCount={pending.length} cloudStatus={cloudStatus}
         banner={banner} onDismissBanner={() => setBanner(null)} onSync={syncNow}
+        onSearch={() => setSearchOpen(true)} searchPanel={searchPanel}
+        onExportBackup={() => exportBackup(data)}
         onOpenCloud={() => setShowCloudSetup(true)} onReset={resetDatabase}
         topExtra={tab === "today" ? <TargetCtrl target={data.target} onChange={setTarget} /> : null}
         detail={current ? <ClientScreen key={current.id} client={current} date={openClient.date}
@@ -813,7 +885,7 @@ function AppBody() {
         {tab === "history" && <HistoryView clients={data.clients} sortedDates={sortedDates} today={today} selected={histSel} onSelect={setHistSel} />}
         {tab === "followups" && <FollowupsView pending={pending} />}
         {tab === "ongoing" && <OngoingView clients={data.clients} />}
-        {tab === "payments" && <MoneyView data={data} onSave={save} onUpdateClient={updateClient} onAddExpense={addExpense} onUpdateExpense={updateExpense} onDeleteExpense={deleteExpense} />}
+        {tab === "payments" && <MoneyView key={`${moneyRoute.tab}-${moneyRoute.query}`} data={data} query={moneyRoute.query} initialTab={moneyRoute.tab} onSave={save} onUpdateClient={updateClient} onAddExpense={addExpense} onUpdateExpense={updateExpense} onDeleteExpense={deleteExpense} />}
         {tab === "stats" && <StatsView clients={data.clients} target={data.target} />}
         {tab === "flow" && <SystemFlowView />}
       </AppShell>
@@ -1384,6 +1456,46 @@ function printReceipt(client, payment, assignNumber = null) {
   }, format);
   openPrintDocument(html, format === "thermal58" ? 360 : 640);
 }
+
+function printReceiptGroup(client, group, assignNumber) {
+  const payments = (client.payments || []).filter((payment) => group.paymentIds.includes(payment.id));
+  const format = choosePrintFormat();
+  if (!format || payments.length < 2) return;
+  const number = group.receiptNo || assignNumber?.(client.date, client.id, "receiptGroup", group.id) || getReceiptNum(group);
+  const total = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+  const html = buildReceiptHtml({
+    number,
+    date: group.createdAt?.slice(0, 10) || todayStr(),
+    clientName: client.name,
+    business: client.business || "",
+    lines: payments.map((payment) => ({ title: payment.note || "Payment", amount: payment.amount })),
+    total,
+  }, format);
+  openPrintDocument(html, format === "thermal58" ? 360 : 640);
+}
+
+function printCombinedInvoice(client, services, assignNumber) {
+  if (services.length < 2) return;
+  const format = choosePrintFormat();
+  if (!format) return;
+  const number = services[0].invoiceNo ||
+    assignNumber?.(client.date, client.id, "invoice", services[0].id) ||
+    getInvoiceNum(client, services[0]);
+  const total = services.reduce((sum, service) => sum + serviceTotal(service, client), 0);
+  const paid = services.reduce((sum, service) => sum + servicePaid(client, service.id), 0);
+  const html = buildInvoiceHtml({
+    number,
+    date: todayStr(),
+    clientName: client.name,
+    business: client.business || "",
+    items: services.map((service) => ({ title: service.title, amount: serviceTotal(service, client) })),
+    total,
+    paid,
+    balance: total - paid,
+    stamp: paid >= total ? "PAID IN FULL" : paid > 0 ? "PARTIAL PAYMENT" : "AWAITING PAYMENT",
+  }, format);
+  openPrintDocument(html, format === "thermal58" ? 360 : 720);
+}
 // ── Client Card
 function ClientRow({ client: c, date, highlight }) {
   const actions = useContext(ClientActions);
@@ -1486,6 +1598,8 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
   const [selectedServices, setSelectedServices] = useState([]);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTitle, setMergeTitle] = useState("");
+  const [selectedPayments, setSelectedPayments] = useState([]);
+  const [expandedReceiptGroups, setExpandedReceiptGroups] = useState([]);
   const today = todayStr();
   const isLead = c.status !== "ongoing";
   const services = getClientServices(c);
@@ -1521,6 +1635,26 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
       confirmLabel: "Unmerge",
     }))) return;
     onUpdate(c.id, unmergeService(c, service.id));
+  };
+  const mergeReceiptGroup = () => {
+    if (selectedPayments.length < 2) return;
+    const id = `receipt-group-${Date.now()}`;
+    const group = {
+      id,
+      paymentIds: selectedPayments,
+      createdAt: new Date().toISOString(),
+      receiptNo: "",
+    };
+    onUpdate(c.id, { receiptGroups: [...(c.receiptGroups || []), group] });
+    setSelectedPayments([]);
+  };
+  const unmergeReceiptGroup = async (group) => {
+    if (!(await ask({
+      title: "Unmerge this receipt group?",
+      body: "The original payment entries remain unchanged in Money.",
+      confirmLabel: "Unmerge receipts",
+    }))) return;
+    onUpdate(c.id, { receiptGroups: (c.receiptGroups || []).filter((item) => item.id !== group.id) });
   };
   const deleteService = async (service) => {
     const linked = paymentsForService(c, service.id);
@@ -1601,6 +1735,10 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
     );
     onUpdate(c.id, {
       payments,
+      receiptGroups: (c.receiptGroups || []).map((group) => ({
+        ...group,
+        paymentIds: group.paymentIds.filter((id) => id !== payment.id),
+      })),
       amountPaid: payments.reduce(
         (sum, item) => sum + (Number(item.amount) || 0),
         0,
@@ -1887,8 +2025,50 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                   <button disabled={selectedServices.length < 2} onClick={() => setMergeOpen(true)}>
                     Merge ({selectedServices.length})
                   </button>
+                  <button disabled={selectedServices.length < 2} onClick={() => printCombinedInvoice(
+                    { ...c, date },
+                    services.filter((service) => selectedServices.includes(service.id)),
+                    actions?.assignDocumentNumber,
+                  )}>
+                    Print combined invoice
+                  </button>
                 </div>
               )}
+              <div className="cs-receipt-groups">
+                {(c.receiptGroups || []).map((group) => {
+                  const grouped = (c.payments || []).filter((payment) => group.paymentIds.includes(payment.id));
+                  const total = grouped.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+                  const expanded = expandedReceiptGroups.includes(group.id);
+                  return (
+                    <article className="cs-receipt-group" key={group.id}>
+                      <strong>Receipt {group.receiptNo || getReceiptNum(group)} · {grouped.length} payments · {fmtUGX(total)}</strong>
+                      <button onClick={() => printReceiptGroup({ ...c, date }, group, actions?.assignDocumentNumber)}>Print</button>
+                      <button onClick={() => setExpandedReceiptGroups((ids) => expanded ? ids.filter((id) => id !== group.id) : [...ids, group.id])}>
+                        {expanded ? "Collapse" : "Expand"}
+                      </button>
+                      <button onClick={() => unmergeReceiptGroup(group)}>Unmerge</button>
+                      {expanded && grouped.map((payment) => (
+                        <div className="cs-group-payment" key={payment.id}>{payment.note || "Payment"} · {fmtUGX(payment.amount)}</div>
+                      ))}
+                    </article>
+                  );
+                })}
+              </div>
+              <div className="cs-receipt-select">
+                {(c.payments || []).map((payment) => {
+                  const grouped = (c.receiptGroups || []).some((group) => group.paymentIds.includes(payment.id));
+                  return (
+                    <label key={payment.id}>
+                      <input type="checkbox" disabled={grouped} checked={selectedPayments.includes(payment.id)}
+                        onChange={(event) => setSelectedPayments((ids) => event.target.checked ? [...ids, payment.id] : ids.filter((id) => id !== payment.id))} />
+                      {payment.note || "Payment"} · {fmtUGX(payment.amount)}
+                    </label>
+                  );
+                })}
+                <button disabled={selectedPayments.length < 2} onClick={mergeReceiptGroup}>
+                  Merge receipts ({selectedPayments.length})
+                </button>
+              </div>
               {services.length === 0 && (
                 <p className="cs-empty">No services yet. Add service.</p>
               )}
@@ -1969,7 +2149,10 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                         <button onClick={() => unmerge(service)}>Unmerge</button>
                       )}
                     </div>
-                    {servicePayments(c, service.id).map((payment) => (
+                    {servicePayments(c, service.id).filter((payment) => {
+                      const group = (c.receiptGroups || []).find((item) => item.paymentIds.includes(payment.id));
+                      return !group || expandedReceiptGroups.includes(group.id);
+                    }).map((payment) => (
                       <div className="cs-payment" key={payment.id}>
                         <span>
                           {payment.date || "Date unknown"} ·{" "}
