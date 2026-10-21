@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyServicePricing,
   upsertService,
   removeService,
   paymentsForService,
@@ -205,4 +206,33 @@ test("shared serviceTotal prefers priced items and supports single-service legac
     ),
     0,
   );
+});
+
+test("service pricing edits converted lump services and preserves itemized prices", () => {
+  const converted = {
+    services: [
+      {
+        id: "converted",
+        agreedPrice: 100,
+        items: [{ id: "i1", title: "Design", price: 0 }],
+      },
+    ],
+  };
+  const lumpDraft = applyServicePricing(
+    "lump",
+    150,
+    converted.services[0].items,
+  );
+  assert.equal(
+    serviceTotal({ ...converted.services[0], ...lumpDraft }, converted),
+    150,
+  );
+  assert.equal(lumpDraft.items[0].title, "Design");
+
+  const itemized = {
+    id: "priced",
+    items: [{ id: "i2", title: "Copy", price: 60 }],
+  };
+  const itemDraft = applyServicePricing("items", "999", itemized.items);
+  assert.equal(serviceTotal({ ...itemized, ...itemDraft }), 60);
 });

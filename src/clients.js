@@ -19,6 +19,23 @@ export function serviceTotal(service, client) {
   );
 }
 
+export function applyServicePricing(mode, lump, items) {
+  if (mode === "lump") {
+    return {
+      items: items.map((item) => ({ ...item, price: 0 })),
+      agreedPrice: Number(lump) || 0,
+    };
+  }
+  const pricedItems = items.map((item) => ({
+    ...item,
+    price: Number(item.price) || 0,
+  }));
+  return {
+    items: pricedItems,
+    agreedPrice: itemsTotal({ items: pricedItems }),
+  };
+}
+
 export function outstandingBalances(clients) {
   return Object.entries(clients || {}).flatMap(([date, group]) =>
     group

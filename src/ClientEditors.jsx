@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { applyServicePricing, itemsTotal } from "./clients.js";
 
 function Seg({ value, options, onChange }) {
   return (
@@ -138,6 +139,7 @@ export function ClientInfoEditor({ client, onClose, onUpdate }) {
 export function ServiceEditor({
   service,
   fallbackTotal = 0,
+  paid = 0,
   onClose,
   onSave,
   onDelete,
@@ -155,6 +157,11 @@ export function ServiceEditor({
           },
         ],
   );
+  const startsItemized = itemsTotal(service) > 0;
+  const [mode, setMode] = useState(startsItemized ? "items" : "lump");
+  const [lump, setLump] = useState(service?.agreedPrice || fallbackTotal || "");
+  const previewTotal =
+    mode === "lump" ? Number(lump) || 0 : itemsTotal({ items });
   const updateItem = (id, values) => {
     setItems((current) =>
       current.map((item) => (item.id === id ? { ...item, ...values } : item)),
@@ -178,7 +185,8 @@ export function ServiceEditor({
       title: item.title.trim(),
       price: Number(item.price),
     }));
-    const total = clean.reduce((sum, item) => sum + item.price, 0);
+    const pricing = applyServicePricing(mode, lump, clean);
+    const total = pricing.agreedPrice;
     if (
       !title.trim() ||
       clean.some((item) => !item.title || item.price < 0) ||
@@ -190,9 +198,9 @@ export function ServiceEditor({
       id: service?.id,
       title: title.trim(),
       dueDate,
-      items: clean,
+      items: pricing.items,
       categories: clean.map((item) => item.title).join(", "),
-      agreedPrice: total,
+      agreedPrice: pricing.agreedPrice,
       status: service?.status || "active",
       createdAt: service?.createdAt || new Date().toISOString().slice(0, 10),
     });
@@ -227,9 +235,34 @@ export function ServiceEditor({
             onChange={(event) => setDueDate(event.target.value)}
           />
         </label>
+        <label className="ce-field">
+          Pricing
+          <Seg
+            value={mode === "lump" ? "One price" : "Price per item"}
+            options={["One price", "Price per item"]}
+            onChange={(value) =>
+              setMode(value === "One price" ? "lump" : "items")
+            }
+          />
+        </label>
+        {mode === "lump" && (
+          <label className="ce-field">
+            One price (UGX)
+            <input
+              type="number"
+              min="1"
+              required
+              value={lump}
+              onChange={(event) => setLump(event.target.value)}
+            />
+          </label>
+        )}
         <h3>Line items</h3>
         {items.map((item) => (
-          <div className="ce-line" key={item.id}>
+          <div
+            className={`ce-line${mode === "lump" ? " lump" : ""}`}
+            key={item.id}
+          >
             <input
               required
               aria-label="Item name"
@@ -239,18 +272,20 @@ export function ServiceEditor({
                 updateItem(item.id, { title: event.target.value })
               }
             />
-            <input
-              required
-              aria-label="Price"
-              type="number"
-              min="0"
-              step="1"
-              placeholder="UGX"
-              value={item.price}
-              onChange={(event) =>
-                updateItem(item.id, { price: event.target.value })
-              }
-            />
+            {mode === "items" && (
+              <input
+                required
+                aria-label="Price"
+                type="number"
+                min="0"
+                step="1"
+                placeholder="UGX"
+                value={item.price}
+                onChange={(event) =>
+                  updateItem(item.id, { price: event.target.value })
+                }
+              />
+            )}
             <button
               type="button"
               aria-label="Remove item"
@@ -260,6 +295,22 @@ export function ServiceEditor({
             </button>
           </div>
         ))}
+        {mode === "items" && (
+          <p className="ce-pricing-total">
+            Total: UGX {itemsTotal({ items }).toLocaleString()}
+          </p>
+        )}
+        <p className="ce-pricing-total">
+          Currently paid: UGX {Number(paid || 0).toLocaleString()} · Balance
+          after change: UGX{" "}
+          {(previewTotal - Number(paid || 0)).toLocaleString()}
+        </p>
+        {previewTotal < Number(paid || 0) && (
+          <p className="ce-warning">
+            Already paid UGX {Number(paid).toLocaleString()}, this will show as
+            overpaid.
+          </p>
+        )}
         <button type="button" onClick={addItem}>
           + Add line item
         </button>

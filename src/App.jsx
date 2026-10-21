@@ -2031,6 +2031,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
           fallbackTotal={
             svcEditor.service ? serviceTotal(svcEditor.service, c) : 0
           }
+          paid={
+            svcEditor.service ? servicePaid(c, svcEditor.service.id) : 0
+          }
           onSave={saveService}
           onDelete={
             svcEditor.service
