@@ -1,5 +1,5 @@
 import { createContext, useContext, useState } from "react";
-import { Close } from "./icons.jsx";
+import { Close } from "./components/Icon.jsx";
 import { renderPrintHtml } from "./print.js";
 import "./PrintDialog.css";
 import font400 from "@fontsource/dm-mono/files/dm-mono-latin-400-normal.woff2?url";

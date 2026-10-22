@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Icon } from "./icons.jsx";
+import { Icon } from "./components/Icon.jsx";
 
 const views = [
   {
