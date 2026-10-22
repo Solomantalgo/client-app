@@ -30,6 +30,7 @@ import { buildIndex, resolveSearchTarget, runSearch } from "./search.js";
 import { PrintDialogProvider, usePrintDialog } from "./PrintDialog.jsx";
 import { Back, Close, Icon } from "./icons.jsx";
 import BusinessProfile from "./BusinessProfile.jsx";
+import { addDays, fmtDate, fmtUGX, todayStr, toWaNumber } from "./lib/format.js";
 
 const ClientActions = createContext(null);
 let logoDataUriRequest;
@@ -440,15 +441,9 @@ function getAreaBySequence(seq) {
 }
 
 // ── Helpers
-const todayStr = () => new Date().toISOString().split("T")[0];
 const newPaymentId = () =>
   globalThis.crypto?.randomUUID?.() ||
   `payment-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-const addDays = (days) => {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
-};
 const KEY = "solo-sales-os-v1";
 const CLOUD_CONFIG_KEY = "solo-sales-cloud-config";
 const CLOUD_URL_KEY = `${CLOUD_CONFIG_KEY}:url`;
@@ -470,24 +465,6 @@ const BACKUP_KEY = `${KEY}:backup`;
 const DEFAULT_SUPABASE_URL = "https://ihjvvnnpyvdljzyfzclq.supabase.co";
 const DEFAULT_SUPABASE_KEY = "sb_publishable_3CTKaylVnQl3sQefNN5eZg_QmUVPcpt";
 let supabaseClient = null;
-
-function fmtDate(d) {
-  const dt = new Date(d + "T00:00:00");
-  const isToday = d === todayStr();
-  if (isToday) return "Today";
-  return dt.toLocaleDateString("en-UG", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
-}
-
-function toWaNumber(phone) {
-  const c = phone.replace(/\D/g, "");
-  if (c.startsWith("256")) return c;
-  if (c.startsWith("0")) return "256" + c.slice(1);
-  return "256" + c;
-}
 
 function getPending(clients) {
   const today = todayStr();
@@ -3021,9 +2998,6 @@ function getReceiptNum(payment) {
     : new Date().getFullYear();
   const seq = String(payment.id).slice(-3).replace(/\D/g, "0").padStart(3, "0");
   return `RCP-${year}-${seq}`;
-}
-function fmtUGX(n) {
-  return `UGX ${Number(n || 0).toLocaleString()}`;
 }
 function getClientServices(client) {
   return Array.isArray(client.services)
