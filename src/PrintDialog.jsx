@@ -1,5 +1,6 @@
 import { createContext, useContext, useState } from "react";
 import { Close } from "./icons.jsx";
+import { renderPrintHtml } from "./print.js";
 import "./PrintDialog.css";
 import font400 from "@fontsource/dm-mono/files/dm-mono-latin-400-normal.woff2?url";
 import font500 from "@fontsource/dm-mono/files/dm-mono-latin-500-normal.woff2?url";
@@ -21,6 +22,10 @@ export function PrintDialogProvider({ children }) {
     }
   });
   const print = (next) => {
+    if (!next || typeof next.build !== "function") {
+      console.error("Print request must include a document builder.");
+      return;
+    }
     const profile = {
       ...(next.profile || {}),
       font400Url: new URL(font400, location.origin).href,
@@ -29,8 +34,7 @@ export function PrintDialogProvider({ children }) {
     setRequest({ ...next, profile });
   };
   const close = () => setRequest(null);
-  const build = request ? request.build(format, request.profile) : () => "";
-  const html = request ? build() : "";
+  const html = renderPrintHtml(request, format);
   const hasPaymentDetails =
     request &&
     ![

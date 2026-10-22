@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildInvoiceHtml, buildReceiptHtml } from "../src/documents.js";
+import { renderPrintHtml } from "../src/print.js";
 
 const model = {
   number: "SWD-2026-002",
@@ -11,6 +12,21 @@ const model = {
   total: 500_000,
   paid: 100_000,
 };
+
+test("print provider helper calls a valid builder once and handles no request", () => {
+  let calls = 0;
+  const request = {
+    profile: { brandName: "Solo" },
+    build: (format, profile) => {
+      calls += 1;
+      return `${format}:${profile.brandName}`;
+    },
+  };
+  assert.equal(renderPrintHtml(null, "a4"), "");
+  assert.equal(renderPrintHtml({ build: "not a function" }, "a4"), "");
+  assert.equal(renderPrintHtml(request, "thermal58"), "thermal58:Solo");
+  assert.equal(calls, 1);
+});
 
 test("A4 and thermal invoice templates have separate page structures", () => {
   const a4 = buildInvoiceHtml(model, "a4");
