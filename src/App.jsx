@@ -1,11 +1,25 @@
-import { useState, useEffect, useCallback, createContext, useContext, useRef, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  createContext,
+  useContext,
+  useRef,
+  useMemo,
+} from "react";
 import { createClient } from "@supabase/supabase-js";
 import MoneyView from "./MoneyView.jsx";
 import AppShell from "./AppShell.jsx";
 import "./AppShell.css";
 import { DEFAULT_FINANCE, allocateAmount } from "./money.js";
 import { chooseSnapshot, hasSavedContent } from "./sync.js";
-import { mergeServices, outstandingBalances, removeClientFromData, serviceTotal, unmergeService } from "./clients.js";
+import {
+  mergeServices,
+  outstandingBalances,
+  removeClientFromData,
+  serviceTotal,
+  unmergeService,
+} from "./clients.js";
 import { normalizeData, touchData, makeServiceFromClient } from "./data.js";
 import { upsertService, removeService, paymentsForService } from "./clients.js";
 import { ClientInfoEditor, ServiceEditor } from "./ClientEditors.jsx";
@@ -14,10 +28,29 @@ import { ConfirmProvider, useConfirm } from "./Confirm.jsx";
 import { buildInvoiceHtml, buildReceiptHtml } from "./documents.js";
 import { buildIndex, resolveSearchTarget, runSearch } from "./search.js";
 import { PrintDialogProvider, usePrintDialog } from "./PrintDialog.jsx";
-import { Back, Close } from "./icons.jsx";
+import { Back, Close, Icon } from "./icons.jsx";
 import BusinessProfile from "./BusinessProfile.jsx";
 
 const ClientActions = createContext(null);
+let logoDataUriRequest;
+
+function loadLogoDataUri() {
+  if (!logoDataUriRequest) {
+    logoDataUriRequest = fetch("/assets/images/logo.png")
+      .then((response) => response.blob())
+      .then(
+        (blob) =>
+          new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          }),
+      )
+      .catch(() => "");
+  }
+  return logoDataUriRequest;
+}
 
 // ── Storage Polyfill
 if (typeof window !== "undefined" && !window.storage) {
@@ -41,79 +74,87 @@ const BORDER = "var(--line)";
 const DIM = "var(--text-3)";
 const WARM_C = "var(--warn)";
 const COLD_C = "var(--blue)";
-const GREEN_WA = "#25D366";
+const GREEN_WA = "var(--lime)";
 const FONT = "var(--font-mono)";
 
 const PACKAGE_TEMPLATES = [
   {
     match: /rest(?:aurant)?|cafe|eatery|food|bar|diner/i,
     name: "🍔 Restaurant Setup",
-    services: "Website Menu, QR Ordering, WhatsApp Ordering, Promo Flyer, Hosting Setup",
+    services:
+      "Website Menu, QR Ordering, WhatsApp Ordering, Promo Flyer, Hosting Setup",
     price: "250k - 450k UGX",
-    color: "#FFB74D",
+    color: "var(--warn)",
   },
   {
     match: /saloon|salon|spa|beauty|hair|nails/i,
     name: "💇 Salon / Spa Setup",
-    services: "Service Showcase, Gallery, WhatsApp Booking, Contact/Location, Social Links",
+    services:
+      "Service Showcase, Gallery, WhatsApp Booking, Contact/Location, Social Links",
     price: "200k - 400k UGX",
-    color: "#F48FB1",
+    color: "var(--blue)",
   },
   {
     match: /hotel|apart|motel|lodge|bnb|guest/i,
     name: "🏨 Hotel / Apartment Setup",
-    services: "Rooms Showcase, Inquiry Form, Google Maps, WhatsApp Chat, Photo Gallery",
+    services:
+      "Rooms Showcase, Inquiry Form, Google Maps, WhatsApp Chat, Photo Gallery",
     price: "350k - 700k UGX",
-    color: "#64B5F6",
+    color: "var(--blue)",
   },
   {
     match: /laundry|wash|dry|clean/i,
     name: "🧺 Laundry Setup",
     services: "Service Menu, Pickup Request, WhatsApp Contact, Pricing Guide",
     price: "180k - 350k UGX",
-    color: "#4DD0E1",
+    color: "var(--blue)",
   },
   {
     match: /clinic|pharmacy|hospital|medical|dental/i,
     name: "🏥 Clinic / Pharmacy Setup",
     services: "Services List, Appointment Booking, Google Maps, WhatsApp Chat",
     price: "250k - 500k UGX",
-    color: "#E57373",
+    color: "var(--danger)",
   },
   {
     match: /shop|store|retail|supermarket|boutique|sell|ecommerce|market/i,
     name: "🛍️ E-commerce / Retail Shop",
-    services: "WhatsApp Catalog, Online Store, Mobile Money Payment, Inventory Setup, Promo Flyers",
+    services:
+      "WhatsApp Catalog, Online Store, Mobile Money Payment, Inventory Setup, Promo Flyers",
     price: "400k - 800k UGX",
-    color: "#81C784",
+    color: "var(--lime)",
   },
   {
     match: /school|college|uni|academy|educat|class|teach/i,
     name: "🏫 School / Institution Setup",
-    services: "School Website, Online Admission Form, Contact/Map, Term Calendar, Gallery",
+    services:
+      "School Website, Online Admission Form, Contact/Map, Term Calendar, Gallery",
     price: "500k - 1M UGX",
-    color: "#BA68C8",
+    color: "var(--blue)",
   },
   {
     match: /real|estate|broker|house|land|plot|rent|agent/i,
     name: "🏢 Real Estate / Brokerage",
-    services: "Property Showcase, WhatsApp Inquiries, Agent Bio, Filter Search, Map Listings",
+    services:
+      "Property Showcase, WhatsApp Inquiries, Agent Bio, Filter Search, Map Listings",
     price: "450k - 900k UGX",
-    color: "#4DB6AC",
+    color: "var(--blue)",
   },
   {
     match: /tour|travel|safari|trip|guide|agency|agencies/i,
     name: "🦁 Tourism & Travel Setup",
-    services: "Safari Packages, Itinerary Builder, Booking Form, Google Maps, Reviews",
+    services:
+      "Safari Packages, Itinerary Builder, Booking Form, Google Maps, Reviews",
     price: "500k - 950k UGX",
-    color: "#AED581",
+    color: "var(--lime)",
   },
   {
     match: /gym|fitness|crossfit|workout|train|health/i,
     name: "💪 Gym & Fitness Center",
-    services: "Workout Schedule, Membership Packages, Trainer Profiles, WhatsApp Booking",
+    services:
+      "Workout Schedule, Membership Packages, Trainer Profiles, WhatsApp Booking",
     price: "300k - 600k UGX",
-    color: "#FF8A65",
+    color: "var(--warn)",
   },
 ];
 
@@ -123,14 +164,26 @@ const OUTREACH_AREAS = [
   { sequence: 2, division: "Nakawa", month: 1, week: 1, area: "Kyambogo" },
   { sequence: 3, division: "Nakawa", month: 1, week: 1, area: "Naguru" },
   { sequence: 4, division: "Nakawa", month: 1, week: 1, area: "Bugolobi" },
-  { sequence: 5, division: "Nakawa", month: 1, week: 1, area: "Nakawa Industrial Area" },
+  {
+    sequence: 5,
+    division: "Nakawa",
+    month: 1,
+    week: 1,
+    area: "Nakawa Industrial Area",
+  },
   { sequence: 6, division: "Nakawa", month: 1, week: 1, area: "Luzira" },
   { sequence: 7, division: "Nakawa", month: 1, week: 2, area: "Kireka" },
   { sequence: 8, division: "Nakawa", month: 1, week: 2, area: "Banda" },
   { sequence: 9, division: "Nakawa", month: 1, week: 2, area: "Butabika" },
   { sequence: 10, division: "Nakawa", month: 1, week: 2, area: "Mbuya" },
   { sequence: 11, division: "Nakawa", month: 1, week: 2, area: "Mutungo" },
-  { sequence: 12, division: "Nakawa", month: 1, week: 2, area: "Nakawa Market Area" },
+  {
+    sequence: 12,
+    division: "Nakawa",
+    month: 1,
+    week: 2,
+    area: "Nakawa Market Area",
+  },
   { sequence: 13, division: "Nakawa", month: 1, week: 3, area: "Kyaliwajjala" },
   { sequence: 14, division: "Nakawa", month: 1, week: 3, area: "Namugongo" },
   { sequence: 15, division: "Nakawa", month: 1, week: 3, area: "Kiwatule" },
@@ -139,8 +192,20 @@ const OUTREACH_AREAS = [
   { sequence: 18, division: "Nakawa", month: 1, week: 3, area: "Bweyogerere" },
   { sequence: 19, division: "Nakawa", month: 1, week: 4, area: "Kinawataka" },
   { sequence: 20, division: "Nakawa", month: 1, week: 4, area: "Portbell" },
-  { sequence: 21, division: "Nakawa", month: 1, week: 4, area: "Kampala Industrial Area (Nakawa side)" },
-  { sequence: 22, division: "Nakawa", month: 1, week: 4, area: "Ntinda Complex" },
+  {
+    sequence: 21,
+    division: "Nakawa",
+    month: 1,
+    week: 4,
+    area: "Kampala Industrial Area (Nakawa side)",
+  },
+  {
+    sequence: 22,
+    division: "Nakawa",
+    month: 1,
+    week: 4,
+    area: "Ntinda Complex",
+  },
   { sequence: 23, division: "Nakawa", month: 1, week: 4, area: "Bukoto" },
   { sequence: 24, division: "Nakawa", month: 1, week: 4, area: "Kisaasi" },
   { sequence: 25, division: "Makindye", month: 2, week: 1, area: "Muyenga" },
@@ -152,7 +217,13 @@ const OUTREACH_AREAS = [
   { sequence: 31, division: "Makindye", month: 2, week: 2, area: "Katwe" },
   { sequence: 32, division: "Makindye", month: 2, week: 2, area: "Kibuye" },
   { sequence: 33, division: "Makindye", month: 2, week: 2, area: "Makindye" },
-  { sequence: 34, division: "Makindye", month: 2, week: 2, area: "Salama Road" },
+  {
+    sequence: 34,
+    division: "Makindye",
+    month: 2,
+    week: 2,
+    area: "Salama Road",
+  },
   { sequence: 35, division: "Makindye", month: 2, week: 2, area: "Buziga" },
   { sequence: 36, division: "Makindye", month: 2, week: 2, area: "Lungujja" },
   { sequence: 37, division: "Makindye", month: 2, week: 3, area: "Zana" },
@@ -165,9 +236,21 @@ const OUTREACH_AREAS = [
   { sequence: 44, division: "Makindye", month: 2, week: 4, area: "Konge" },
   { sequence: 45, division: "Makindye", month: 2, week: 4, area: "Lukuli" },
   { sequence: 46, division: "Makindye", month: 2, week: 4, area: "Kizungu" },
-  { sequence: 47, division: "Makindye", month: 2, week: 4, area: "Wankulukuku" },
+  {
+    sequence: 47,
+    division: "Makindye",
+    month: 2,
+    week: 4,
+    area: "Wankulukuku",
+  },
   { sequence: 48, division: "Makindye", month: 2, week: 4, area: "Ndeeba" },
-  { sequence: 49, division: "Kawempe", month: 3, week: 1, area: "Kawempe Market" },
+  {
+    sequence: 49,
+    division: "Kawempe",
+    month: 3,
+    week: 1,
+    area: "Kawempe Market",
+  },
   { sequence: 50, division: "Kawempe", month: 3, week: 1, area: "Mulago" },
   { sequence: 51, division: "Kawempe", month: 3, week: 1, area: "Wandegeya" },
   { sequence: 52, division: "Kawempe", month: 3, week: 1, area: "Bwaise" },
@@ -178,7 +261,13 @@ const OUTREACH_AREAS = [
   { sequence: 57, division: "Kawempe", month: 3, week: 2, area: "Kisasi" },
   { sequence: 58, division: "Kawempe", month: 3, week: 2, area: "Kigowa" },
   { sequence: 59, division: "Kawempe", month: 3, week: 2, area: "Makerere" },
-  { sequence: 60, division: "Kawempe", month: 3, week: 2, area: "Makerere Kivulu" },
+  {
+    sequence: 60,
+    division: "Kawempe",
+    month: 3,
+    week: 2,
+    area: "Makerere Kivulu",
+  },
   { sequence: 61, division: "Kawempe", month: 3, week: 3, area: "Kikoni" },
   { sequence: 62, division: "Kawempe", month: 3, week: 3, area: "Kazo" },
   { sequence: 63, division: "Kawempe", month: 3, week: 3, area: "Nabweru" },
@@ -187,34 +276,118 @@ const OUTREACH_AREAS = [
   { sequence: 66, division: "Kawempe", month: 3, week: 3, area: "Komamboga" },
   { sequence: 67, division: "Kawempe", month: 3, week: 4, area: "Nsooba" },
   { sequence: 68, division: "Kawempe", month: 3, week: 4, area: "Busega" },
-  { sequence: 69, division: "Kawempe", month: 3, week: 4, area: "Kawempe Muslim" },
+  {
+    sequence: 69,
+    division: "Kawempe",
+    month: 3,
+    week: 4,
+    area: "Kawempe Muslim",
+  },
   { sequence: 70, division: "Kawempe", month: 3, week: 4, area: "Tula" },
   { sequence: 71, division: "Kawempe", month: 3, week: 4, area: "Mpanga" },
   { sequence: 72, division: "Kawempe", month: 3, week: 4, area: "Kanyanya" },
-  { sequence: 73, division: "Central", month: 4, week: 1, area: "Kampala Road" },
+  {
+    sequence: 73,
+    division: "Central",
+    month: 4,
+    week: 1,
+    area: "Kampala Road",
+  },
   { sequence: 74, division: "Central", month: 4, week: 1, area: "Nakasero" },
   { sequence: 75, division: "Central", month: 4, week: 1, area: "Kololo" },
   { sequence: 76, division: "Central", month: 4, week: 1, area: "Old Kampala" },
   { sequence: 77, division: "Central", month: 4, week: 1, area: "Mengo" },
   { sequence: 78, division: "Central", month: 4, week: 1, area: "Kisenyi" },
   { sequence: 79, division: "Central", month: 4, week: 2, area: "Kisementi" },
-  { sequence: 80, division: "Central", month: 4, week: 2, area: "Ntinda Road (Central side)" },
+  {
+    sequence: 80,
+    division: "Central",
+    month: 4,
+    week: 2,
+    area: "Ntinda Road (Central side)",
+  },
   { sequence: 81, division: "Central", month: 4, week: 2, area: "Bat Valley" },
   { sequence: 82, division: "Central", month: 4, week: 2, area: "Mulago Hill" },
-  { sequence: 83, division: "Central", month: 4, week: 2, area: "Makinye Road" },
-  { sequence: 84, division: "Central", month: 4, week: 2, area: "Parliamentary Avenue" },
-  { sequence: 85, division: "Central", month: 4, week: 3, area: "Owino Market Area" },
+  {
+    sequence: 83,
+    division: "Central",
+    month: 4,
+    week: 2,
+    area: "Makinye Road",
+  },
+  {
+    sequence: 84,
+    division: "Central",
+    month: 4,
+    week: 2,
+    area: "Parliamentary Avenue",
+  },
+  {
+    sequence: 85,
+    division: "Central",
+    month: 4,
+    week: 3,
+    area: "Owino Market Area",
+  },
   { sequence: 86, division: "Central", month: 4, week: 3, area: "Nasser Road" },
-  { sequence: 87, division: "Central", month: 4, week: 3, area: "Kampala Central Market" },
-  { sequence: 88, division: "Central", month: 4, week: 3, area: "Garden City Area" },
+  {
+    sequence: 87,
+    division: "Central",
+    month: 4,
+    week: 3,
+    area: "Kampala Central Market",
+  },
+  {
+    sequence: 88,
+    division: "Central",
+    month: 4,
+    week: 3,
+    area: "Garden City Area",
+  },
   { sequence: 89, division: "Central", month: 4, week: 3, area: "Lugogo" },
-  { sequence: 90, division: "Central", month: 4, week: 3, area: "Acacia Avenue" },
-  { sequence: 91, division: "Central", month: 4, week: 4, area: "Industrial Area — 6th Street" },
-  { sequence: 92, division: "Central", month: 4, week: 4, area: "Industrial Area — 7th Street" },
-  { sequence: 93, division: "Central", month: 4, week: 4, area: "Port Bell Road" },
-  { sequence: 94, division: "Central", month: 4, week: 4, area: "Shoprite Area" },
+  {
+    sequence: 90,
+    division: "Central",
+    month: 4,
+    week: 3,
+    area: "Acacia Avenue",
+  },
+  {
+    sequence: 91,
+    division: "Central",
+    month: 4,
+    week: 4,
+    area: "Industrial Area — 6th Street",
+  },
+  {
+    sequence: 92,
+    division: "Central",
+    month: 4,
+    week: 4,
+    area: "Industrial Area — 7th Street",
+  },
+  {
+    sequence: 93,
+    division: "Central",
+    month: 4,
+    week: 4,
+    area: "Port Bell Road",
+  },
+  {
+    sequence: 94,
+    division: "Central",
+    month: 4,
+    week: 4,
+    area: "Shoprite Area",
+  },
   { sequence: 95, division: "Central", month: 4, week: 4, area: "Cityway" },
-  { sequence: 96, division: "Central", month: 4, week: 4, area: "Entebbe Road (Central end)" },
+  {
+    sequence: 96,
+    division: "Central",
+    month: 4,
+    week: 4,
+    area: "Entebbe Road (Central end)",
+  },
   { sequence: 97, division: "Rubaga", month: 5, week: 1, area: "Rubaga Road" },
   { sequence: 98, division: "Rubaga", month: 5, week: 1, area: "Namirembe" },
   { sequence: 99, division: "Rubaga", month: 5, week: 1, area: "Lungujja" },
@@ -222,13 +395,25 @@ const OUTREACH_AREAS = [
   { sequence: 101, division: "Rubaga", month: 5, week: 1, area: "Nateete" },
   { sequence: 102, division: "Rubaga", month: 5, week: 1, area: "Kasubi" },
   { sequence: 103, division: "Rubaga", month: 5, week: 2, area: "Bulange" },
-  { sequence: 104, division: "Rubaga", month: 5, week: 2, area: "Makerere Hill Road" },
+  {
+    sequence: 104,
+    division: "Rubaga",
+    month: 5,
+    week: 2,
+    area: "Makerere Hill Road",
+  },
   { sequence: 105, division: "Rubaga", month: 5, week: 2, area: "Namungoona" },
   { sequence: 106, division: "Rubaga", month: 5, week: 2, area: "Busega" },
   { sequence: 107, division: "Rubaga", month: 5, week: 2, area: "Kintu Road" },
   { sequence: 108, division: "Rubaga", month: 5, week: 2, area: "Kagugube" },
   { sequence: 109, division: "Rubaga", month: 5, week: 3, area: "Nakulabye" },
-  { sequence: 110, division: "Rubaga", month: 5, week: 3, area: "Nansana border (Rubaga side)" },
+  {
+    sequence: 110,
+    division: "Rubaga",
+    month: 5,
+    week: 3,
+    area: "Nansana border (Rubaga side)",
+  },
   { sequence: 111, division: "Rubaga", month: 5, week: 3, area: "Ttebandeke" },
   { sequence: 112, division: "Rubaga", month: 5, week: 3, area: "Busujju" },
   { sequence: 113, division: "Rubaga", month: 5, week: 3, area: "Lubaga Road" },
@@ -237,19 +422,28 @@ const OUTREACH_AREAS = [
   { sequence: 116, division: "Rubaga", month: 5, week: 4, area: "Nsangi" },
   { sequence: 117, division: "Rubaga", month: 5, week: 4, area: "Nabbingo" },
   { sequence: 118, division: "Rubaga", month: 5, week: 4, area: "Mugalu" },
-  { sequence: 119, division: "Rubaga", month: 5, week: 4, area: "Rubaga Market" },
+  {
+    sequence: 119,
+    division: "Rubaga",
+    month: 5,
+    week: 4,
+    area: "Rubaga Market",
+  },
   { sequence: 120, division: "Rubaga", month: 5, week: 4, area: "Makukuba" },
 ];
 
 function getAreaBySequence(seq) {
   const cleanSeq = Math.min(120, Math.max(1, Number(seq) || 1));
-  return OUTREACH_AREAS.find((a) => a.sequence === cleanSeq) || OUTREACH_AREAS[0];
+  return (
+    OUTREACH_AREAS.find((a) => a.sequence === cleanSeq) || OUTREACH_AREAS[0]
+  );
 }
 
 // ── Helpers
 const todayStr = () => new Date().toISOString().split("T")[0];
 const newPaymentId = () =>
-  globalThis.crypto?.randomUUID?.() || `payment-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  globalThis.crypto?.randomUUID?.() ||
+  `payment-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 const addDays = (days) => {
   const d = new Date();
   d.setDate(d.getDate() + days);
@@ -281,7 +475,11 @@ function fmtDate(d) {
   const dt = new Date(d + "T00:00:00");
   const isToday = d === todayStr();
   if (isToday) return "Today";
-  return dt.toLocaleDateString("en-UG", { weekday: "short", day: "numeric", month: "short" });
+  return dt.toLocaleDateString("en-UG", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
 }
 
 function toWaNumber(phone) {
@@ -293,17 +491,26 @@ function toWaNumber(phone) {
 
 function getPending(clients) {
   const today = todayStr();
-  return Object.entries(clients).flatMap(([date, arr]) =>
-    arr
-      .filter((c) => {
-        const isLead = c.status !== "ongoing";
-        if (c.paused) return false;
-        const timelineReached = c.followUpDate && today >= c.followUpDate;
-        const undatedOlderLead = !c.followUpDate && c.followUp === "needed" && date < today;
-        return isLead && (timelineReached || undatedOlderLead);
-      })
-      .map((c) => ({ ...c, date })),
-  );
+  return Object.entries(clients)
+    .flatMap(([date, arr]) =>
+      arr
+        .filter((c) => {
+          const isLead = c.status !== "ongoing";
+          if (c.paused) return false;
+          const timelineReached = c.followUpDate && today >= c.followUpDate;
+          const undatedOlderLead =
+            !c.followUpDate && c.followUp === "needed" && date < today;
+          return isLead && (timelineReached || undatedOlderLead);
+        })
+        .map((c) => ({ ...c, date })),
+    )
+    .sort(
+      (a, b) =>
+        (a.temp === "warm" ? -1 : 0) - (b.temp === "warm" ? -1 : 0) ||
+        String(a.followUpDate || a.date).localeCompare(
+          String(b.followUpDate || b.date),
+        ),
+    );
 }
 
 function normalizeSupabaseUrl(rawUrl) {
@@ -353,7 +560,8 @@ async function loadRemote(config) {
     }
     if (!data?.payload) return { ok: true, data: null };
     const normalized = normalizeData(data.payload);
-    if (!data.payload.meta?.updatedAt && data.updated_at) normalized.meta.updatedAt = data.updated_at;
+    if (!data.payload.meta?.updatedAt && data.updated_at)
+      normalized.meta.updatedAt = data.updated_at;
     return { ok: true, data: normalized };
   } catch (err) {
     return { ok: false, reason: err.message || "Cloud load failed" };
@@ -373,7 +581,8 @@ async function persistRemote(config, data) {
       },
       { onConflict: "id" },
     );
-    if (error) return { ok: false, reason: error.message || "Cloud sync failed" };
+    if (error)
+      return { ok: false, reason: error.message || "Cloud sync failed" };
     return { ok: true };
   } catch (err) {
     return { ok: false, reason: err.message || "Cloud sync failed" };
@@ -407,7 +616,9 @@ async function persistBackup(data) {
 function exportBackup(data) {
   const normalized = normalizeData(data);
   const date = todayStr();
-  const blob = new Blob([JSON.stringify(normalized, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(normalized, null, 2)], {
+    type: "application/json",
+  });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -420,10 +631,13 @@ function exportBackup(data) {
 function AppBody() {
   const ask = useConfirm();
   const [data, setData] = useState(null);
+  const [logoDataUri, setLogoDataUri] = useState("");
   const [openClient, setOpenClient] = useState(null);
   const listScroll = useRef(0);
   const [tab, setTab] = useState(() =>
-    new URLSearchParams(window.location.search).get("view") === "money" ? "payments" : "today",
+    new URLSearchParams(window.location.search).get("view") === "money"
+      ? "payments"
+      : "today",
   );
   const [showForm, setShowForm] = useState(false);
   const [formDefaults, setFormDefaults] = useState(null);
@@ -436,8 +650,11 @@ function AppBody() {
   const [searchType, setSearchType] = useState("All");
   const [searchHighlight, setSearchHighlight] = useState(0);
   const [recentSearches, setRecentSearches] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("solo-recent-searches") || "[]"); }
-    catch { return []; }
+    try {
+      return JSON.parse(localStorage.getItem("solo-recent-searches") || "[]");
+    } catch {
+      return [];
+    }
   });
   const searchFocus = useRef(null);
   const searchTargetRef = useRef(null);
@@ -445,15 +662,32 @@ function AppBody() {
   const [showCloudSetup, setShowCloudSetup] = useState(false);
   const [showBusinessProfile, setShowBusinessProfile] = useState(false);
   const [cloudConfig, setCloudConfig] = useState(
-    getStoredCloudConfig() || { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY },
+    getStoredCloudConfig() || {
+      url: DEFAULT_SUPABASE_URL,
+      key: DEFAULT_SUPABASE_KEY,
+    },
   );
   const [cloudStatus, setCloudStatus] = useState("Local only");
   const today = todayStr();
   const searchIndex = useMemo(() => (data ? buildIndex(data) : []), [data]);
 
+  useEffect(() => {
+    let active = true;
+    loadLogoDataUri().then((value) => {
+      if (active) setLogoDataUri(value);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const openSearch = useCallback(() => {
     if (searchOpen) return;
-    window.history.pushState({ ...(window.history.state || {}), search: true }, "", window.location.href);
+    window.history.pushState(
+      { ...(window.history.state || {}), search: true },
+      "",
+      window.location.href,
+    );
     setSearchOpen(true);
   }, [searchOpen]);
   const closeSearch = useCallback(() => {
@@ -465,7 +699,9 @@ function AppBody() {
     if (!searchOpen) return undefined;
     const oldOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = oldOverflow; };
+    return () => {
+      document.body.style.overflow = oldOverflow;
+    };
   }, [searchOpen]);
 
   useEffect(() => {
@@ -473,7 +709,10 @@ function AppBody() {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         openSearch();
-      } else if (event.key === "/" && !["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) {
+      } else if (
+        event.key === "/" &&
+        !["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)
+      ) {
         event.preventDefault();
         openSearch();
       } else if (event.key === "Escape" && searchOpen) closeSearch();
@@ -517,7 +756,10 @@ function AppBody() {
   }, [openClient]);
 
   useEffect(() => {
-    if (!localStorage.getItem(CLOUD_URL_KEY) && !localStorage.getItem(CLOUD_KEY_KEY)) {
+    if (
+      !localStorage.getItem(CLOUD_URL_KEY) &&
+      !localStorage.getItem(CLOUD_KEY_KEY)
+    ) {
       localStorage.setItem(CLOUD_URL_KEY, DEFAULT_SUPABASE_URL);
       localStorage.setItem(CLOUD_KEY_KEY, DEFAULT_SUPABASE_KEY);
     }
@@ -529,7 +771,10 @@ function AppBody() {
       if (!alive) return;
       setData(base);
       const p = getPending(base.clients);
-      if (p.length) setBanner(`⚡ ${p.length} client${p.length !== 1 ? "s" : ""} still need follow-up`);
+      if (p.length)
+        setBanner(
+          `⚡ ${p.length} client${p.length !== 1 ? "s" : ""} still need follow-up`,
+        );
 
       if (!cloudConfig) {
         setCloudStatus("Cloud not configured");
@@ -540,20 +785,39 @@ function AppBody() {
       if (!alive) return;
       if (remoteResult.ok && remoteResult.data) {
         const remote = remoteResult.data;
-        const winner = chooseSnapshot(base, remote, local !== null) === "remote" ? remote : base;
-        if (winner === remote && hasSavedContent(base)) await persistBackup(base);
+        const winner =
+          chooseSnapshot(base, remote, local !== null) === "remote"
+            ? remote
+            : base;
+        if (winner === remote && hasSavedContent(base))
+          await persistBackup(base);
         setData(winner);
         await persist(winner);
         setCloudStatus("Cloud connected");
         if (winner === remote && hasSavedContent(base))
-          setBanner("Loaded the latest cloud data. This device’s local data was backed up.");
-        else if (winner === base && hasSavedContent(base) && !hasSavedContent(remote))
-          setBanner("Kept this device’s saved data. Use Sync now to upload it to the empty cloud backup.");
-        else if (winner === base && hasSavedContent(base) && remote.meta?.updatedAt > base.meta?.updatedAt)
-          setBanner("Kept this device’s newer changes. Use Sync now to upload them.");
+          setBanner(
+            "Loaded the latest cloud data. This device’s local data was backed up.",
+          );
+        else if (
+          winner === base &&
+          hasSavedContent(base) &&
+          !hasSavedContent(remote)
+        )
+          setBanner(
+            "Kept this device’s saved data. Use Sync now to upload it to the empty cloud backup.",
+          );
+        else if (
+          winner === base &&
+          hasSavedContent(base) &&
+          remote.meta?.updatedAt > base.meta?.updatedAt
+        )
+          setBanner(
+            "Kept this device’s newer changes. Use Sync now to upload them.",
+          );
       } else {
         setCloudStatus(remoteResult.reason || "Cloud ready");
-        if (remoteResult.reason) setBanner(`Cloud setup issue: ${remoteResult.reason}`);
+        if (remoteResult.reason)
+          setBanner(`Cloud setup issue: ${remoteResult.reason}`);
       }
     };
 
@@ -580,7 +844,10 @@ function AppBody() {
               ? "Loaded newer cloud data. This device’s previous data was backed up."
               : "Loaded the latest cloud data.",
           );
-        } else if (cloudStatus === "Cloud sync pending" && hasSavedContent(data)) {
+        } else if (
+          cloudStatus === "Cloud sync pending" &&
+          hasSavedContent(data)
+        ) {
           const pushResult = await persistRemote(cloudConfig, data);
           if (pushResult.ok) setCloudStatus("Cloud synced");
         } else {
@@ -674,9 +941,18 @@ function AppBody() {
     const client = {
       id: Date.now().toString(),
       ...fields,
-      time: new Date().toLocaleTimeString("en-UG", { hour: "2-digit", minute: "2-digit" }),
+      time: new Date().toLocaleTimeString("en-UG", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
     };
-    const next = { ...data, clients: { ...data.clients, [today]: [...(data.clients[today] || []), client] } };
+    const next = {
+      ...data,
+      clients: {
+        ...data.clients,
+        [today]: [...(data.clients[today] || []), client],
+      },
+    };
     void save(next);
     setShowForm(false);
     setFormDefaults(null);
@@ -691,7 +967,8 @@ function AppBody() {
     };
     const currentIds = new Set((updated.payments || []).map((p) => p.id));
     const previousIds = new Set((previous?.payments || []).map((p) => p.id));
-    for (const p of previous?.payments || []) if (!currentIds.has(p.id)) delete finance.paymentSnapshots[p.id];
+    for (const p of previous?.payments || [])
+      if (!currentIds.has(p.id)) delete finance.paymentSnapshots[p.id];
     for (const p of updated.payments || []) {
       const oldSnapshot = finance.paymentSnapshots[p.id];
       if (!oldSnapshot) {
@@ -721,11 +998,17 @@ function AppBody() {
           }
         }
       } else {
-        const rule = (oldSnapshot.allocations || []).map((a) => ({ id: a.bucketId, percentage: a.percentage }));
+        const rule = (oldSnapshot.allocations || []).map((a) => ({
+          id: a.bucketId,
+          percentage: a.percentage,
+        }));
         try {
           finance.paymentSnapshots[p.id] = {
             ...allocateAmount(p.amount, finance.buckets, rule),
-            accountId: p.accountId !== undefined ? p.accountId : oldSnapshot.accountId || "",
+            accountId:
+              p.accountId !== undefined
+                ? p.accountId
+                : oldSnapshot.accountId || "",
             origin: oldSnapshot.origin || "legacy",
           };
         } catch {
@@ -741,7 +1024,10 @@ function AppBody() {
     const next = {
       ...data,
       finance,
-      clients: { ...data.clients, [date]: data.clients[date].map((c) => (c.id === id ? updated : c)) },
+      clients: {
+        ...data.clients,
+        [date]: data.clients[date].map((c) => (c.id === id ? updated : c)),
+      },
     };
     if (undoLabel) void saveUndoable(undoLabel, next);
     else void save(next);
@@ -751,7 +1037,10 @@ function AppBody() {
     const client = data.clients[date]?.find((item) => item.id === id);
     if (!client) return;
     const payments = client.payments || [];
-    const paid = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+    const paid = payments.reduce(
+      (sum, payment) => sum + (Number(payment.amount) || 0),
+      0,
+    );
     const ok = await ask({
       title: `Delete ${client.name}?`,
       body: `This also deletes ${payments.length} payment(s) (${fmtUGX(paid)}) from the Money ledger. This cannot be undone.`,
@@ -761,25 +1050,39 @@ function AppBody() {
         client.status === "ongoing" && clientTotals(client).balance > 0
           ? {
               label: "Pause instead",
-              run: () => updateClient(date, id, { paused: true, pausedAt: todayStr(), pauseReason: "No payment" }),
+              run: () =>
+                updateClient(date, id, {
+                  paused: true,
+                  pausedAt: todayStr(),
+                  pauseReason: "No payment",
+                }),
             }
           : undefined,
     });
     if (!ok) return;
     setOpenClient(null);
-    void saveUndoable(`Deleted ${client.name}`, removeClientFromData(data, date, id));
+    void saveUndoable(
+      `Deleted ${client.name}`,
+      removeClientFromData(data, date, id),
+    );
   };
 
   const assignDocumentNumber = (date, clientId, kind, itemId) => {
     const client = data.clients[date]?.find((item) => item.id === clientId);
     if (!client) return "";
-    const collectionKey = kind === "invoice" ? "services" : kind === "receiptGroup" ? "receiptGroups" : "payments";
+    const collectionKey =
+      kind === "invoice"
+        ? "services"
+        : kind === "receiptGroup"
+          ? "receiptGroups"
+          : "payments";
     const collection = client[collectionKey] || [];
     const item = collection.find((entry) => entry.id === itemId);
     if (!item) return "";
     const field = kind === "invoice" ? "invoiceNo" : "receiptNo";
     if (item[field]) return item[field];
-    const legacy = kind === "invoice" ? getInvoiceNum(client, item) : getReceiptNum(item);
+    const legacy =
+      kind === "invoice" ? getInvoiceNum(client, item) : getReceiptNum(item);
     const allClients = Object.values(data.clients).flat();
     const used = new Set(
       allClients
@@ -801,13 +1104,17 @@ function AppBody() {
     }
     const updated = {
       ...client,
-      [collectionKey]: collection.map((entry) => (entry.id === itemId ? { ...entry, [field]: number } : entry)),
+      [collectionKey]: collection.map((entry) =>
+        entry.id === itemId ? { ...entry, [field]: number } : entry,
+      ),
     };
     void save({
       ...data,
       clients: {
         ...data.clients,
-        [date]: data.clients[date].map((record) => (record.id === clientId ? updated : record)),
+        [date]: data.clients[date].map((record) =>
+          record.id === clientId ? updated : record,
+        ),
       },
       meta: { ...data.meta, counters },
     });
@@ -817,12 +1124,20 @@ function AppBody() {
   const addExpense = (exp) => {
     const next = {
       ...data,
-      expenses: [...(data.expenses || []), { id: Date.now().toString(), date: todayStr(), ...exp }],
+      expenses: [
+        ...(data.expenses || []),
+        { id: Date.now().toString(), date: todayStr(), ...exp },
+      ],
     };
     void save(next);
   };
   const updateExpense = (id, updates) => {
-    const next = { ...data, expenses: (data.expenses || []).map((e) => (e.id === id ? { ...e, ...updates } : e)) };
+    const next = {
+      ...data,
+      expenses: (data.expenses || []).map((e) =>
+        e.id === id ? { ...e, ...updates } : e,
+      ),
+    };
     void save(next);
   };
   const deleteExpense = async (id) => {
@@ -838,7 +1153,9 @@ function AppBody() {
     });
   };
   const deleteIncome = async (id) => {
-    const income = (data.finance?.manualIncome || []).find((item) => item.id === id);
+    const income = (data.finance?.manualIncome || []).find(
+      (item) => item.id === id,
+    );
     if (!income) return;
     if (
       !(await ask({
@@ -851,7 +1168,9 @@ function AppBody() {
       ...data,
       finance: {
         ...data.finance,
-        manualIncome: data.finance.manualIncome.filter((item) => item.id !== id),
+        manualIncome: data.finance.manualIncome.filter(
+          (item) => item.id !== id,
+        ),
       },
     });
   };
@@ -860,9 +1179,16 @@ function AppBody() {
 
   const markOutreachDone = (track) => {
     if (!data) return;
-    const outreach = data.outreach || { remotePointer: 1, physicalPointer: 120, logs: [], laps: 0 };
+    const outreach = data.outreach || {
+      remotePointer: 1,
+      physicalPointer: 120,
+      logs: [],
+      laps: 0,
+    };
     const isRemote = track === "remote";
-    const currentSeq = isRemote ? outreach.remotePointer : outreach.physicalPointer;
+    const currentSeq = isRemote
+      ? outreach.remotePointer
+      : outreach.physicalPointer;
     const currentArea = getAreaBySequence(currentSeq);
 
     const newLog = {
@@ -907,7 +1233,11 @@ function AppBody() {
       nextPhysical = 120;
     }
 
-    const updatedLogs = [newLog, ...(lapLog ? [lapLog] : []), ...(outreach.logs || [])];
+    const updatedLogs = [
+      newLog,
+      ...(lapLog ? [lapLog] : []),
+      ...(outreach.logs || []),
+    ];
 
     const nextData = {
       ...data,
@@ -922,9 +1252,13 @@ function AppBody() {
     void save(nextData);
 
     if (lapOccurred) {
-      setBanner(`🎉 Outreach Lap ${nextLaps} Completed! Both tracks have wrapped back to their starting positions.`);
+      setBanner(
+        `🎉 Outreach Lap ${nextLaps} Completed! Both tracks have wrapped back to their starting positions.`,
+      );
     } else {
-      setBanner(`✓ Marked ${isRemote ? "Remote" : "Physical"} Outreach at ${currentArea.area} as Done!`);
+      setBanner(
+        `✓ Marked ${isRemote ? "Remote" : "Physical"} Outreach at ${currentArea.area} as Done!`,
+      );
     }
   };
 
@@ -996,7 +1330,10 @@ function AppBody() {
       }))
     )
       return;
-    const emptyData = touchData({ ...DEFAULT_DATA, meta: { emptyStateResetAt: new Date().toISOString() } });
+    const emptyData = touchData({
+      ...DEFAULT_DATA,
+      meta: { emptyStateResetAt: new Date().toISOString() },
+    });
     setData(emptyData);
     await persist(emptyData);
     if (cloudConfig) {
@@ -1027,12 +1364,24 @@ function AppBody() {
           letterSpacing: 4,
         }}
       >
+        <span className="loading-brand">
+          <img
+            src="/assets/images/logo.png"
+            alt="Solomantalgo"
+            onError={(event) => {
+              event.currentTarget.hidden = true;
+            }}
+          />
+          <b>SOLO SALES OS</b>
+        </span>
         LOADING...
       </div>
     );
 
   const pending = getPending(data.clients);
-  const sortedDates = Object.keys(data.clients).sort((a, b) => b.localeCompare(a));
+  const sortedDates = Object.keys(data.clients).sort((a, b) =>
+    b.localeCompare(a),
+  );
 
   const selectTab = (next) => {
     setOpenClient(null);
@@ -1052,7 +1401,11 @@ function AppBody() {
     if (window.history.state?.client) window.history.back();
     else setOpenClient(null);
   };
-  const current = openClient ? data.clients[openClient.date]?.find((client) => client.id === openClient.id) : null;
+  const current = openClient
+    ? data.clients[openClient.date]?.find(
+        (client) => client.id === openClient.id,
+      )
+    : null;
   const results = runSearch(searchIndex, searchQuery, {
     types: searchType === "All" ? undefined : [searchType],
     limit: 20,
@@ -1060,12 +1413,23 @@ function AppBody() {
   const chooseSearchResult = (item) => {
     const query = searchQuery.trim();
     if (query) {
-      const nextRecent = [query, ...recentSearches.filter((value) => value !== query)].slice(0, 5);
+      const nextRecent = [
+        query,
+        ...recentSearches.filter((value) => value !== query),
+      ].slice(0, 5);
       setRecentSearches(nextRecent);
-      try { localStorage.setItem("solo-recent-searches", JSON.stringify(nextRecent)); } catch { /* optional */ }
+      try {
+        localStorage.setItem(
+          "solo-recent-searches",
+          JSON.stringify(nextRecent),
+        );
+      } catch {
+        /* optional */
+      }
     }
     const target = resolveSearchTarget(item);
-    if (window.history.state?.search) window.history.replaceState({}, "", window.location.href);
+    if (window.history.state?.search)
+      window.history.replaceState({}, "", window.location.href);
     setSearchOpen(false);
     if (target.kind === "client") {
       searchTargetRef.current = target.focus;
@@ -1078,50 +1442,100 @@ function AppBody() {
   const highlightResult = (value) => {
     const text = String(value || "");
     const tokens = searchQuery.trim().split(/\s+/).filter(Boolean);
-    const normalizedText = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-    const match = tokens.map((token) => {
-      const normalizedToken = token.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-      return { token, at: normalizedText.indexOf(normalizedToken) };
-    }).filter((entry) => entry.at >= 0).sort((a, b) => a.at - b.at)[0];
+    const normalizedText = text
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+    const match = tokens
+      .map((token) => {
+        const normalizedToken = token
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+        return { token, at: normalizedText.indexOf(normalizedToken) };
+      })
+      .filter((entry) => entry.at >= 0)
+      .sort((a, b) => a.at - b.at)[0];
     if (!match) return text;
-    return <>{text.slice(0, match.at)}<mark>{text.slice(match.at, match.at + match.token.length)}</mark>
-      {text.slice(match.at + match.token.length)}</>;
+    return (
+      <>
+        {text.slice(0, match.at)}
+        <mark>{text.slice(match.at, match.at + match.token.length)}</mark>
+        {text.slice(match.at + match.token.length)}
+      </>
+    );
   };
   const searchPanel = searchOpen ? (
     <div
       className="os-search-overlay"
-      onMouseDown={(event) => event.target === event.currentTarget && closeSearch()}
+      onMouseDown={(event) =>
+        event.target === event.currentTarget && closeSearch()
+      }
     >
-      <section className="os-search-dialog" role="dialog" aria-modal="true" aria-label="Search">
+      <section
+        className="os-search-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search"
+      >
         <header className="search-panel-head">
-          <button className="iconbtn" onClick={closeSearch} aria-label="Back"><Back /></button>
+          <button className="iconbtn" onClick={closeSearch} aria-label="Back">
+            <Back />
+          </button>
           <input
-          ref={searchFocus}
-          autoFocus
-          inputMode="search"
-          placeholder="Search clients, services, payments…"
-          value={searchQuery}
-          onChange={(event) => { setSearchQuery(event.target.value); setSearchHighlight(0); }}
-          aria-activedescendant={results[searchHighlight] ? `search-result-${searchHighlight}` : undefined}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              setSearchHighlight((index) => Math.min(results.length - 1, index + 1));
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              setSearchHighlight((index) => Math.max(0, index - 1));
-            } else if (event.key === "Enter" && results[searchHighlight]) {
-              event.preventDefault();
-              chooseSearchResult(results[searchHighlight]);
+            ref={searchFocus}
+            autoFocus
+            inputMode="search"
+            placeholder="Search clients, services, payments…"
+            value={searchQuery}
+            onChange={(event) => {
+              setSearchQuery(event.target.value);
+              setSearchHighlight(0);
+            }}
+            aria-activedescendant={
+              results[searchHighlight]
+                ? `search-result-${searchHighlight}`
+                : undefined
             }
-          }}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setSearchHighlight((index) =>
+                  Math.min(results.length - 1, index + 1),
+                );
+              } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setSearchHighlight((index) => Math.max(0, index - 1));
+              } else if (event.key === "Enter" && results[searchHighlight]) {
+                event.preventDefault();
+                chooseSearchResult(results[searchHighlight]);
+              }
+            }}
           />
-          {searchQuery && <button className="iconbtn" onClick={() => setSearchQuery("")} aria-label="Clear"><Close /></button>}
-          <button className="iconbtn search-desktop-close" onClick={closeSearch} aria-label="Close"><Close /></button>
+          {searchQuery && (
+            <button
+              className="iconbtn"
+              onClick={() => setSearchQuery("")}
+              aria-label="Clear"
+            >
+              <Close />
+            </button>
+          )}
+          <button
+            className="iconbtn search-desktop-close"
+            onClick={closeSearch}
+            aria-label="Close"
+          >
+            <Close />
+          </button>
         </header>
         <nav className="os-search-types">
           {["All", "Clients", "Services", "Payments", "Money"].map((type) => (
-            <button className={searchType === type ? "active" : ""} key={type} onClick={() => setSearchType(type)}>
+            <button
+              className={searchType === type ? "active" : ""}
+              key={type}
+              onClick={() => setSearchType(type)}
+            >
               {type}
             </button>
           ))}
@@ -1129,23 +1543,46 @@ function AppBody() {
         <div className="os-search-results">
           {searchQuery &&
             results.map((item, index) => (
-              <button id={`search-result-${index}`} aria-selected={searchHighlight === index}
+              <button
+                id={`search-result-${index}`}
+                aria-selected={searchHighlight === index}
                 className={searchHighlight === index ? "selected" : ""}
-                key={`${item.type}-${item.id}-${item.clientId || ""}`} onClick={() => chooseSearchResult(item)}>
+                key={`${item.type}-${item.id}-${item.clientId || ""}`}
+                onClick={() => chooseSearchResult(item)}
+              >
                 <small>{item.type}</small>
                 <b>{highlightResult(item.title)}</b>
                 <span>{highlightResult(item.subtitle)}</span>
               </button>
             ))}
           {searchQuery && !results.length && <p>No results found.</p>}
-          {!searchQuery && recentSearches.length > 0 && <div className="search-recents">
-            <header><b>Recent searches</b><button onClick={() => {
-              setRecentSearches([]);
-              try { localStorage.removeItem("solo-recent-searches"); } catch { /* optional */ }
-            }}>Clear</button></header>
-            {recentSearches.map((query) => <button key={query} onClick={() => setSearchQuery(query)}>{query}</button>)}
-          </div>}
-          {!searchQuery && !recentSearches.length && <p>Search by client, service, amount, note, or number.</p>}
+          {!searchQuery && recentSearches.length > 0 && (
+            <div className="search-recents">
+              <header>
+                <b>Recent searches</b>
+                <button
+                  onClick={() => {
+                    setRecentSearches([]);
+                    try {
+                      localStorage.removeItem("solo-recent-searches");
+                    } catch {
+                      /* optional */
+                    }
+                  }}
+                >
+                  Clear
+                </button>
+              </header>
+              {recentSearches.map((query) => (
+                <button key={query} onClick={() => setSearchQuery(query)}>
+                  {query}
+                </button>
+              ))}
+            </div>
+          )}
+          {!searchQuery && !recentSearches.length && (
+            <p>Search by client, service, amount, note, or number.</p>
+          )}
         </div>
       </section>
     </div>
@@ -1157,8 +1594,13 @@ function AppBody() {
         openClientScreen,
         closeClientScreen,
         assignDocumentNumber,
-        profile: { ...(data.settings?.business || {}), accounts: data.finance?.accounts || [] },
+        profile: {
+          ...(data.settings?.business || {}),
+          logoDataUri,
+          accounts: data.finance?.accounts || [],
+        },
         accounts: data.finance?.accounts || [],
+        showBanner: setBanner,
         openId: current?.id || null,
       }}
     >
@@ -1182,7 +1624,9 @@ function AppBody() {
               key={current.id}
               client={current}
               date={openClient.date}
-              onUpdate={(id, updates, undoLabel) => updateClient(openClient.date, id, updates, undoLabel)}
+              onUpdate={(id, updates, undoLabel) =>
+                updateClient(openClient.date, id, updates, undoLabel)
+              }
               onBack={closeClientScreen}
             />
           ) : null
@@ -1238,7 +1682,9 @@ function AppBody() {
             onDeleteIncome={deleteIncome}
           />
         )}
-        {tab === "stats" && <StatsView clients={data.clients} target={data.target} />}
+        {tab === "stats" && (
+          <StatsView clients={data.clients} target={data.target} />
+        )}
         {tab === "flow" && <SystemFlowView />}
       </AppShell>
       {undoEntry && (
@@ -1266,9 +1712,15 @@ function AppBody() {
           }}
         />
       )}
-      {showBusinessProfile && <BusinessProfile profile={data.settings?.business}
-        onSave={(business) => save({ ...data, settings: { ...data.settings, business } })}
-        onClose={() => setShowBusinessProfile(false)} />}
+      {showBusinessProfile && (
+        <BusinessProfile
+          profile={data.settings?.business}
+          onSave={(business) =>
+            save({ ...data, settings: { ...data.settings, business } })
+          }
+          onClose={() => setShowBusinessProfile(false)}
+        />
+      )}
     </ClientActions.Provider>
   );
 }
@@ -1287,10 +1739,29 @@ export default function App() {
 function TargetCtrl({ target, onChange }) {
   return (
     <div style={{ textAlign: "right" }}>
-      <div style={{ color: DIM, fontSize: 9, letterSpacing: 2, marginBottom: 4 }}>DAILY TARGET</div>
-      <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end" }}>
+      <div
+        style={{ color: DIM, fontSize: 9, letterSpacing: 2, marginBottom: 4 }}
+      >
+        DAILY TARGET
+      </div>
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          alignItems: "center",
+          justifyContent: "flex-end",
+        }}
+      >
         <SmBtn onClick={() => onChange(target - 1)}>−</SmBtn>
-        <span style={{ color: LIME, fontWeight: "bold", fontSize: 22, minWidth: 26, textAlign: "center" }}>
+        <span
+          style={{
+            color: LIME,
+            fontWeight: "bold",
+            fontSize: 22,
+            minWidth: 26,
+            textAlign: "center",
+          }}
+        >
           {target}
         </span>
         <SmBtn onClick={() => onChange(target + 1)}>+</SmBtn>
@@ -1300,7 +1771,15 @@ function TargetCtrl({ target, onChange }) {
 }
 
 // ── Today View
-function TodayView({ outreach, clients, target, today, onMarkDone, onAddLead, onTargetChange }) {
+function TodayView({
+  outreach,
+  clients,
+  target,
+  today,
+  onMarkDone,
+  onAddLead,
+  onTargetChange,
+}) {
   const [activeTrack, setActiveTrack] = useState("physical");
 
   const remoteSeq = outreach?.remotePointer || 1;
@@ -1312,268 +1791,450 @@ function TodayView({ outreach, clients, target, today, onMarkDone, onAddLead, on
   const todayClients = clients[today] || [];
   const pct = Math.min(1, todayClients.length / target);
   const hit = todayClients.length >= target;
-  const allClients = Object.entries(clients).flatMap(([date, entries]) => entries.map((client) => ({ ...client, date })));
-  const overdueLeads = allClients.filter((client) => client.status !== "ongoing" && client.followUpDate &&
-    client.followUpDate < today && client.followUp !== "done")
-    .map((client) => ({ ...client, overdueDays: Math.floor((Date.parse(`${today}T00:00:00Z`) -
-      Date.parse(`${client.followUpDate}T00:00:00Z`)) / 86400000) }))
-    .sort((a, b) => b.overdueDays - a.overdueDays).slice(0, 5);
-  const biggestBalances = outstandingBalances(clients).sort((a, b) => b.balance - a.balance).slice(0, 3);
+  const allClients = Object.entries(clients).flatMap(([date, entries]) =>
+    entries.map((client) => ({ ...client, date })),
+  );
+  const overdueLeads = allClients
+    .filter(
+      (client) =>
+        client.status !== "ongoing" &&
+        client.followUpDate &&
+        client.followUpDate < today &&
+        client.followUp !== "done" &&
+        !client.paused,
+    )
+    .map((client) => ({
+      ...client,
+      overdueDays: Math.floor(
+        (Date.parse(`${today}T00:00:00Z`) -
+          Date.parse(`${client.followUpDate}T00:00:00Z`)) /
+          86400000,
+      ),
+    }))
+    .sort((a, b) => b.overdueDays - a.overdueDays)
+    .slice(0, 5);
+  const biggestBalances = outstandingBalances(clients)
+    .sort((a, b) => b.balance - a.balance)
+    .slice(0, 3);
 
   return (
     <div className="today-layout">
-      <div className="today-main" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Today's Pitches & Leads Summary Card */}
-      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "14px 16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <span style={{ fontSize: 10, color: LIME, letterSpacing: 1, fontWeight: "bold" }}>
-            TODAY'S PITCHES & LEADS
-          </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {todayClients.length} / {target} {hit ? "✓ HIT" : ""}
-            <TargetCtrl target={target} onChange={onTargetChange} />
-          </div>
-        </div>
-        <div style={{ background: BORDER, borderRadius: 4, height: 5, overflow: "hidden", marginBottom: 12 }}>
+      <div
+        className="today-main"
+        style={{ display: "flex", flexDirection: "column", gap: 16 }}
+      >
+        {/* Today's Pitches & Leads Summary Card */}
+        <div
+          style={{
+            background: SURF,
+            border: `1px solid ${BORDER}`,
+            borderRadius: 12,
+            padding: "14px 16px",
+          }}
+        >
           <div
             style={{
-              height: "100%",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 8,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 10,
+                color: LIME,
+                letterSpacing: 1,
+                fontWeight: "bold",
+              }}
+            >
+              TODAY'S PITCHES & LEADS
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {todayClients.length} / {target} {hit ? "✓ HIT" : ""}
+              <TargetCtrl target={target} onChange={onTargetChange} />
+            </div>
+          </div>
+          <div
+            style={{
+              background: BORDER,
               borderRadius: 4,
-              background: LIME,
-              width: `${pct * 100}%`,
-              transition: "width 0.4s ease",
-            }}
-          />
-        </div>
-        <div style={{ display: "flex", gap: 16 }}>
-          <Pill label="Warm" count={todayClients.filter((c) => c.temp === "warm").length} color={WARM_C} />
-          <Pill label="Cold" count={todayClients.filter((c) => c.temp === "cold").length} color={COLD_C} />
-          <Pill label="Pending" count={todayClients.filter((c) => c.followUp === "needed").length} color={LIME} />
-          <Pill label="Done" count={todayClients.filter((c) => c.followUp === "done").length} color={DIM} />
-        </div>
-      </div>
-
-      {/* Track Navigation Sub-Tabs */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: 10, color: DIM, letterSpacing: 1, fontWeight: "bold" }}>OUTREACH TRACK TARGETS</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <button
-            onClick={() => setActiveTrack("physical")}
-            style={{
-              padding: "10px 8px",
-              borderRadius: 8,
-              cursor: "pointer",
-              fontFamily: FONT,
-              fontSize: 11,
-              fontWeight: "bold",
-              background: activeTrack === "physical" ? COLD_C + "22" : SURF2,
-              border: activeTrack === "physical" ? `1px solid ${COLD_C}` : `1px solid ${BORDER}`,
-              color: activeTrack === "physical" ? COLD_C : DIM,
-              transition: "all 0.15s",
+              height: 5,
+              overflow: "hidden",
+              marginBottom: 12,
             }}
           >
-            🚶 PHYSICAL (Seq #{physicalSeq})
-          </button>
-          <button
-            onClick={() => setActiveTrack("remote")}
+            <div
+              style={{
+                height: "100%",
+                borderRadius: 4,
+                background: LIME,
+                width: `${pct * 100}%`,
+                transition: "width 0.4s ease",
+              }}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 16 }}>
+            <Pill
+              label="Warm"
+              count={todayClients.filter((c) => c.temp === "warm").length}
+              color={WARM_C}
+            />
+            <Pill
+              label="Cold"
+              count={todayClients.filter((c) => c.temp === "cold").length}
+              color={COLD_C}
+            />
+            <Pill
+              label="Pending"
+              count={todayClients.filter((c) => c.followUp === "needed").length}
+              color={LIME}
+            />
+            <Pill
+              label="Done"
+              count={todayClients.filter((c) => c.followUp === "done").length}
+              color={DIM}
+            />
+          </div>
+        </div>
+
+        {/* Track Navigation Sub-Tabs */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div
             style={{
-              padding: "10px 8px",
-              borderRadius: 8,
-              cursor: "pointer",
-              fontFamily: FONT,
-              fontSize: 11,
+              fontSize: 10,
+              color: DIM,
+              letterSpacing: 1,
               fontWeight: "bold",
-              background: activeTrack === "remote" ? WARM_C + "22" : SURF2,
-              border: activeTrack === "remote" ? `1px solid ${WARM_C}` : `1px solid ${BORDER}`,
-              color: activeTrack === "remote" ? WARM_C : DIM,
-              transition: "all 0.15s",
             }}
           >
-            📞 REMOTE (Seq #{remoteSeq})
-          </button>
-        </div>
-      </div>
-
-      {/* Single Active Card View */}
-      {activeTrack === "physical" && (
-        <div
-          style={{
-            background: SURF,
-            border: `1px solid ${COLD_C}44`,
-            borderTop: `3px solid ${COLD_C}`,
-            borderRadius: 12,
-            padding: "16px",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span
-              style={{ fontSize: 9, color: COLD_C, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase" }}
-            >
-              🚶 Physical Outreach — Today
-            </span>
-            <span
-              style={{
-                fontSize: 9,
-                color: DIM,
-                fontFamily: FONT,
-                background: SURF2,
-                padding: "2px 6px",
-                borderRadius: 4,
-              }}
-            >
-              Seq #{physicalSeq}
-            </span>
+            OUTREACH TRACK TARGETS
           </div>
-
-          <div style={{ fontSize: 22, fontWeight: "bold", color: "#fff", marginBottom: 4 }}>{physicalArea.area}</div>
-
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-            <Bdg color={COLD_C}>{physicalArea.division} Division</Bdg>
-            <Chip style={{ background: SURF2, color: "#ccc" }}>
-              Month {physicalArea.month} · Week {physicalArea.week}
-            </Chip>
-          </div>
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
+          >
             <button
-              onClick={() => onMarkDone("physical")}
+              onClick={() => setActiveTrack("physical")}
               style={{
-                flex: 1,
-                background: COLD_C,
-                color: "#000",
-                border: "none",
+                padding: "10px 8px",
                 borderRadius: 8,
-                padding: "11px 14px",
+                cursor: "pointer",
+                fontFamily: FONT,
                 fontSize: 11,
                 fontWeight: "bold",
-                cursor: "pointer",
-                fontFamily: FONT,
-                letterSpacing: 0.5,
+                background: activeTrack === "physical" ? COLD_C + "22" : SURF2,
+                border:
+                  activeTrack === "physical"
+                    ? `1px solid ${COLD_C}`
+                    : `1px solid ${BORDER}`,
+                color: activeTrack === "physical" ? COLD_C : DIM,
+                transition: "all 0.15s",
               }}
             >
-              ✓ MARK DONE
+              🚶 PHYSICAL (Seq #{physicalSeq})
             </button>
             <button
-              onClick={() => onAddLead(physicalArea, "physical")}
+              onClick={() => setActiveTrack("remote")}
               style={{
-                background: SURF2,
-                border: `1px solid ${BORDER}`,
-                color: "#fff",
+                padding: "10px 8px",
                 borderRadius: 8,
-                padding: "11px 12px",
-                fontSize: 10,
                 cursor: "pointer",
                 fontFamily: FONT,
-              }}
-            >
-              + Add Lead
-            </button>
-          </div>
-        </div>
-      )}
-
-      {activeTrack === "remote" && (
-        <div
-          style={{
-            background: SURF,
-            border: `1px solid ${WARM_C}44`,
-            borderTop: `3px solid ${WARM_C}`,
-            borderRadius: 12,
-            padding: "16px",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span
-              style={{ fontSize: 9, color: WARM_C, fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase" }}
-            >
-              📞 Remote Outreach — Today
-            </span>
-            <span
-              style={{
-                fontSize: 9,
-                color: DIM,
-                fontFamily: FONT,
-                background: SURF2,
-                padding: "2px 6px",
-                borderRadius: 4,
-              }}
-            >
-              Seq #{remoteSeq}
-            </span>
-          </div>
-
-          <div style={{ fontSize: 22, fontWeight: "bold", color: "#fff", marginBottom: 4 }}>{remoteArea.area}</div>
-
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-            <Bdg color={WARM_C}>{remoteArea.division} Division</Bdg>
-            <Chip style={{ background: SURF2, color: "#ccc" }}>
-              Month {remoteArea.month} · Week {remoteArea.week}
-            </Chip>
-          </div>
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button
-              onClick={() => onMarkDone("remote")}
-              style={{
-                flex: 1,
-                background: WARM_C,
-                color: "#000",
-                border: "none",
-                borderRadius: 8,
-                padding: "11px 14px",
                 fontSize: 11,
                 fontWeight: "bold",
-                cursor: "pointer",
-                fontFamily: FONT,
-                letterSpacing: 0.5,
+                background: activeTrack === "remote" ? WARM_C + "22" : SURF2,
+                border:
+                  activeTrack === "remote"
+                    ? `1px solid ${WARM_C}`
+                    : `1px solid ${BORDER}`,
+                color: activeTrack === "remote" ? WARM_C : DIM,
+                transition: "all 0.15s",
               }}
             >
-              ✓ MARK DONE
-            </button>
-            <button
-              onClick={() => onAddLead(remoteArea, "remote")}
-              style={{
-                background: SURF2,
-                border: `1px solid ${BORDER}`,
-                color: "#fff",
-                borderRadius: 8,
-                padding: "11px 12px",
-                fontSize: 10,
-                cursor: "pointer",
-                fontFamily: FONT,
-              }}
-            >
-              + Add Lead
+              📞 REMOTE (Seq #{remoteSeq})
             </button>
           </div>
         </div>
-      )}
+
+        {/* Single Active Card View */}
+        {activeTrack === "physical" && (
+          <div
+            style={{
+              background: SURF,
+              border: `1px solid ${COLD_C}44`,
+              borderTop: `3px solid ${COLD_C}`,
+              borderRadius: 12,
+              padding: "16px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 9,
+                  color: COLD_C,
+                  fontWeight: "bold",
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                }}
+              >
+                🚶 Physical Outreach — Today
+              </span>
+              <span
+                style={{
+                  fontSize: 9,
+                  color: DIM,
+                  fontFamily: FONT,
+                  background: SURF2,
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                }}
+              >
+                Seq #{physicalSeq}
+              </span>
+            </div>
+
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: "bold",
+                color: "var(--text)",
+                marginBottom: 4,
+              }}
+            >
+              {physicalArea.area}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                flexWrap: "wrap",
+                marginBottom: 14,
+              }}
+            >
+              <Bdg color={COLD_C}>{physicalArea.division} Division</Bdg>
+              <Chip style={{ background: SURF2, color: "var(--text-2)" }}>
+                Month {physicalArea.month} · Week {physicalArea.week}
+              </Chip>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                onClick={() => onMarkDone("physical")}
+                style={{
+                  flex: 1,
+                  background: COLD_C,
+                  color: "var(--on-lime)",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "11px 14px",
+                  fontSize: 11,
+                  fontWeight: "bold",
+                  cursor: "pointer",
+                  fontFamily: FONT,
+                  letterSpacing: 0.5,
+                }}
+              >
+                ✓ MARK DONE
+              </button>
+              <button
+                onClick={() => onAddLead(physicalArea, "physical")}
+                style={{
+                  background: SURF2,
+                  border: `1px solid ${BORDER}`,
+                  color: "var(--text)",
+                  borderRadius: 8,
+                  padding: "11px 12px",
+                  fontSize: 10,
+                  cursor: "pointer",
+                  fontFamily: FONT,
+                }}
+              >
+                + Add Lead
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeTrack === "remote" && (
+          <div
+            style={{
+              background: SURF,
+              border: `1px solid ${WARM_C}44`,
+              borderTop: `3px solid ${WARM_C}`,
+              borderRadius: 12,
+              padding: "16px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 9,
+                  color: WARM_C,
+                  fontWeight: "bold",
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                }}
+              >
+                📞 Remote Outreach — Today
+              </span>
+              <span
+                style={{
+                  fontSize: 9,
+                  color: DIM,
+                  fontFamily: FONT,
+                  background: SURF2,
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                }}
+              >
+                Seq #{remoteSeq}
+              </span>
+            </div>
+
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: "bold",
+                color: "var(--text)",
+                marginBottom: 4,
+              }}
+            >
+              {remoteArea.area}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                flexWrap: "wrap",
+                marginBottom: 14,
+              }}
+            >
+              <Bdg color={WARM_C}>{remoteArea.division} Division</Bdg>
+              <Chip style={{ background: SURF2, color: "var(--text-2)" }}>
+                Month {remoteArea.month} · Week {remoteArea.week}
+              </Chip>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                onClick={() => onMarkDone("remote")}
+                style={{
+                  flex: 1,
+                  background: WARM_C,
+                  color: "var(--on-lime)",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "11px 14px",
+                  fontSize: 11,
+                  fontWeight: "bold",
+                  cursor: "pointer",
+                  fontFamily: FONT,
+                  letterSpacing: 0.5,
+                }}
+              >
+                ✓ MARK DONE
+              </button>
+              <button
+                onClick={() => onAddLead(remoteArea, "remote")}
+                style={{
+                  background: SURF2,
+                  border: `1px solid ${BORDER}`,
+                  color: "var(--text)",
+                  borderRadius: 8,
+                  padding: "11px 12px",
+                  fontSize: 10,
+                  cursor: "pointer",
+                  fontFamily: FONT,
+                }}
+              >
+                + Add Lead
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <aside className="today-attention card">
         <h2>Needs attention</h2>
         <h3>Overdue follow-ups</h3>
-        {overdueLeads.length ? overdueLeads.map((client) => (
-          <div className="attention-row" key={client.id}>
-            <div><b>{client.name}</b><span className="chip chip-warn">{client.temp || "warm"}</span>
-              <small>{client.overdueDays} days overdue</small></div>
-            <div className="attention-links">{client.phone && <>
-              {client.hasWhatsApp !== "no" && <a aria-label={`WhatsApp ${client.name}`} href={`https://wa.me/${toWaNumber(client.phone)}`}>WA</a>}
-              <a aria-label={`Call ${client.name}`} href={`tel:${client.phone}`}>Call</a></>}
+        {overdueLeads.length ? (
+          overdueLeads.map((client) => (
+            <div className="attention-row" key={client.id}>
+              <div>
+                <b>{client.name}</b>
+                <span className="chip chip-warn">{client.temp || "warm"}</span>
+                <small>{client.overdueDays} days overdue</small>
+              </div>
+              <div className="attention-links">
+                {client.phone && (
+                  <>
+                    {client.hasWhatsApp !== "no" && (
+                      <a
+                        aria-label={`WhatsApp ${client.name}`}
+                        href={`https://wa.me/${toWaNumber(client.phone)}`}
+                      >
+                        WA
+                      </a>
+                    )}
+                    <a
+                      aria-label={`Call ${client.name}`}
+                      href={`tel:${client.phone}`}
+                    >
+                      Call
+                    </a>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        )) : <p>No overdue follow-ups.</p>}
+          ))
+        ) : (
+          <p>No overdue follow-ups.</p>
+        )}
         <h3>Largest balances</h3>
-        {biggestBalances.length ? biggestBalances.map((balance) => <div className="attention-balance" key={balance.id}>
-          <span>{balance.name}<small>{balance.service}</small></span><b>{fmtUGX(balance.balance)}</b>
-        </div>) : <p>No outstanding balances.</p>}
+        {biggestBalances.length ? (
+          biggestBalances.map((balance) => (
+            <div className="attention-balance" key={balance.id}>
+              <span>
+                {balance.name}
+                <small>{balance.service}</small>
+              </span>
+              <b>{fmtUGX(balance.balance)}</b>
+            </div>
+          ))
+        ) : (
+          <p>No outstanding balances.</p>
+        )}
       </aside>
     </div>
   );
 }
 
 // ── Outreach View
-// eslint-disable-next-line no-unused-vars
-function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, onOpenAddClient }) {
+function OutreachView({
+  outreach,
+  clients,
+  target,
+  today,
+  onUpdate,
+  onUndoLog,
+  onOpenAddClient,
+}) {
+  void onUpdate;
   const [filterTrack, setFilterTrack] = useState("all");
   const [showMap, setShowMap] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
@@ -1601,16 +2262,51 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* Pitch & Clients Today Section */}
-      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "14px 16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <span style={{ fontSize: 10, color: LIME, letterSpacing: 1, fontWeight: "bold" }}>
+      <div
+        style={{
+          background: SURF,
+          border: `1px solid ${BORDER}`,
+          borderRadius: 12,
+          padding: "14px 16px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 8,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 10,
+              color: LIME,
+              letterSpacing: 1,
+              fontWeight: "bold",
+            }}
+          >
             TODAY'S PITCHES & LEADS
           </span>
-          <span style={{ fontSize: 12, color: hit ? LIME : "#fff", fontWeight: "bold" }}>
+          <span
+            style={{
+              fontSize: 12,
+              color: hit ? LIME : "var(--text)",
+              fontWeight: "bold",
+            }}
+          >
             {todayClients.length} / {target} {hit ? "✓ TARGET HIT" : ""}
           </span>
         </div>
-        <div style={{ background: BORDER, borderRadius: 4, height: 5, overflow: "hidden", marginBottom: 12 }}>
+        <div
+          style={{
+            background: BORDER,
+            borderRadius: 4,
+            height: 5,
+            overflow: "hidden",
+            marginBottom: 12,
+          }}
+        >
           <div
             style={{
               height: "100%",
@@ -1621,17 +2317,35 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
             }}
           />
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
           <div style={{ display: "flex", gap: 12 }}>
-            <Pill label="Warm" count={todayClients.filter((c) => c.temp === "warm").length} color={WARM_C} />
-            <Pill label="Cold" count={todayClients.filter((c) => c.temp === "cold").length} color={COLD_C} />
-            <Pill label="Pending" count={todayClients.filter((c) => c.followUp === "needed").length} color={LIME} />
+            <Pill
+              label="Warm"
+              count={todayClients.filter((c) => c.temp === "warm").length}
+              color={WARM_C}
+            />
+            <Pill
+              label="Cold"
+              count={todayClients.filter((c) => c.temp === "cold").length}
+              color={COLD_C}
+            />
+            <Pill
+              label="Pending"
+              count={todayClients.filter((c) => c.followUp === "needed").length}
+              color={LIME}
+            />
           </div>
           <button
             onClick={onOpenAddClient}
             style={{
               background: LIME,
-              color: "#000",
+              color: "var(--on-lime)",
               border: "none",
               borderRadius: 6,
               padding: "6px 12px",
@@ -1651,16 +2365,48 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
         {todayClients.length === 0 ? (
           <Empty text="No clients recorded yet today. Use + Add Client above or + Add Lead on Today's cards." />
         ) : (
-          todayClients.map((c) => <ClientRow key={c.id} client={c} date={today} />)
+          todayClients.map((c) => (
+            <ClientRow key={c.id} client={c} date={today} />
+          ))
         )}
       </div>
 
       {/* Rotation Tracker Progress Overview */}
-      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "14px 16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+      <div
+        style={{
+          background: SURF,
+          border: `1px solid ${BORDER}`,
+          borderRadius: 12,
+          padding: "14px 16px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 10,
+          }}
+        >
           <div>
-            <div style={{ fontSize: 9, color: LIME, letterSpacing: 2, fontWeight: "bold" }}>ROTATION PLAN TRACKING</div>
-            <div style={{ fontSize: 13, fontWeight: "bold", color: "#fff", marginTop: 2 }}>
+            <div
+              style={{
+                fontSize: 9,
+                color: LIME,
+                letterSpacing: 2,
+                fontWeight: "bold",
+              }}
+            >
+              ROTATION PLAN TRACKING
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: "bold",
+                color: "var(--text)",
+                marginTop: 2,
+              }}
+            >
               120-Area Master Sequence Progress
             </div>
           </div>
@@ -1681,13 +2427,29 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
 
         {/* Remote Progress Bar */}
         <div style={{ marginBottom: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
-            <span style={{ color: WARM_C, fontWeight: "bold" }}>📞 Remote Track (Forward)</span>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontSize: 10,
+              marginBottom: 4,
+            }}
+          >
+            <span style={{ color: WARM_C, fontWeight: "bold" }}>
+              📞 Remote Track (Forward)
+            </span>
             <span style={{ color: DIM, fontFamily: FONT }}>
               {remoteSeq} / 120 ({remoteArea.area})
             </span>
           </div>
-          <div style={{ background: BORDER, height: 6, borderRadius: 3, overflow: "hidden" }}>
+          <div
+            style={{
+              background: BORDER,
+              height: 6,
+              borderRadius: 3,
+              overflow: "hidden",
+            }}
+          >
             <div
               style={{
                 background: WARM_C,
@@ -1701,13 +2463,29 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
 
         {/* Physical Progress Bar */}
         <div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
-            <span style={{ color: COLD_C, fontWeight: "bold" }}>🚶 Physical Track (Backward)</span>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontSize: 10,
+              marginBottom: 4,
+            }}
+          >
+            <span style={{ color: COLD_C, fontWeight: "bold" }}>
+              🚶 Physical Track (Backward)
+            </span>
             <span style={{ color: DIM, fontFamily: FONT }}>
               {121 - physicalSeq} / 120 ({physicalArea.area})
             </span>
           </div>
-          <div style={{ background: BORDER, height: 6, borderRadius: 3, overflow: "hidden" }}>
+          <div
+            style={{
+              background: BORDER,
+              height: 6,
+              borderRadius: 3,
+              overflow: "hidden",
+            }}
+          >
             <div
               style={{
                 background: COLD_C,
@@ -1721,7 +2499,14 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
       </div>
 
       {/* 120-Area Rotation Plan Explorer Accordion */}
-      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden" }}>
+      <div
+        style={{
+          background: SURF,
+          border: `1px solid ${BORDER}`,
+          borderRadius: 10,
+          overflow: "hidden",
+        }}
+      >
         <div
           onClick={() => setShowMap((v) => !v)}
           style={{
@@ -1732,13 +2517,24 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
             cursor: "pointer",
           }}
         >
-          <span style={{ fontSize: 11, fontWeight: "bold", color: "#fff" }}>🗺️ View Full 120-Area Rotation Plan</span>
-          <span style={{ color: LIME, fontSize: 11, fontFamily: FONT }}>{showMap ? "Hide ▲" : "Show ▼"}</span>
+          <span
+            style={{ fontSize: 11, fontWeight: "bold", color: "var(--text)" }}
+          >
+            🗺️ View Full 120-Area Rotation Plan
+          </span>
+          <span style={{ color: LIME, fontSize: 11, fontFamily: FONT }}>
+            {showMap ? "Hide ▲" : "Show ▼"}
+          </span>
         </div>
 
         {showMap && (
           <div
-            style={{ padding: "12px 16px 16px", borderTop: `1px solid ${BORDER}`, maxHeight: 340, overflowY: "auto" }}
+            style={{
+              padding: "12px 16px 16px",
+              borderTop: `1px solid ${BORDER}`,
+              maxHeight: 340,
+              overflowY: "auto",
+            }}
           >
             <div style={{ fontSize: 9, color: DIM, marginBottom: 10 }}>
               Master sequence 1–120. Active track positions are highlighted.
@@ -1755,7 +2551,8 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
                       gridTemplateColumns: "36px 1fr auto",
                       alignItems: "center",
                       gap: 8,
-                      background: isRemoteHere || isPhysicalHere ? SURF2 : "transparent",
+                      background:
+                        isRemoteHere || isPhysicalHere ? SURF2 : "transparent",
                       border:
                         isRemoteHere && isPhysicalHere
                           ? `1px solid ${LIME}`
@@ -1769,19 +2566,29 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
                       fontSize: 10,
                     }}
                   >
-                    <span style={{ color: DIM, fontFamily: FONT }}>#{a.sequence}</span>
+                    <span style={{ color: DIM, fontFamily: FONT }}>
+                      #{a.sequence}
+                    </span>
                     <div>
-                      <span style={{ color: "#fff", fontWeight: isRemoteHere || isPhysicalHere ? "bold" : "normal" }}>
+                      <span
+                        style={{
+                          color: "var(--text)",
+                          fontWeight:
+                            isRemoteHere || isPhysicalHere ? "bold" : "normal",
+                        }}
+                      >
                         {a.area}
                       </span>
-                      <span style={{ color: DIM, fontSize: 9, marginLeft: 6 }}>({a.division})</span>
+                      <span style={{ color: DIM, fontSize: 9, marginLeft: 6 }}>
+                        ({a.division})
+                      </span>
                     </div>
                     <div style={{ display: "flex", gap: 4 }}>
                       {isRemoteHere && (
                         <span
                           style={{
                             background: WARM_C,
-                            color: "#000",
+                            color: "var(--on-lime)",
                             fontSize: 8,
                             padding: "1px 5px",
                             borderRadius: 4,
@@ -1795,7 +2602,7 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
                         <span
                           style={{
                             background: COLD_C,
-                            color: "#000",
+                            color: "var(--on-lime)",
                             fontSize: 8,
                             padding: "1px 5px",
                             borderRadius: 4,
@@ -1815,7 +2622,14 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
       </div>
 
       {/* History Log Section with Easy Hide / Show Button */}
-      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, overflow: "hidden" }}>
+      <div
+        style={{
+          background: SURF,
+          border: `1px solid ${BORDER}`,
+          borderRadius: 10,
+          overflow: "hidden",
+        }}
+      >
         <div
           onClick={() => setShowLogs((v) => !v)}
           style={{
@@ -1827,7 +2641,11 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: "bold", color: "#fff" }}>📜 Outreach History Logs</span>
+            <span
+              style={{ fontSize: 11, fontWeight: "bold", color: "var(--text)" }}
+            >
+              📜 Outreach History Logs
+            </span>
             <span
               style={{
                 fontSize: 9,
@@ -1848,7 +2666,12 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
         </div>
 
         {showLogs && (
-          <div style={{ padding: "12px 16px 16px", borderTop: `1px solid ${BORDER}` }}>
+          <div
+            style={{
+              padding: "12px 16px 16px",
+              borderTop: `1px solid ${BORDER}`,
+            }}
+          >
             <div
               style={{
                 display: "flex",
@@ -1859,7 +2682,9 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
                 gap: 8,
               }}
             >
-              <div style={{ fontSize: 9, color: DIM, letterSpacing: 1 }}>FILTER LOG TRACK:</div>
+              <div style={{ fontSize: 9, color: DIM, letterSpacing: 1 }}>
+                FILTER LOG TRACK:
+              </div>
               <div style={{ display: "flex", gap: 4 }}>
                 {[
                   { k: "all", l: "All" },
@@ -1880,7 +2705,10 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
                       borderRadius: 4,
                       cursor: "pointer",
                       background: filterTrack === k ? LIME + "22" : SURF2,
-                      border: filterTrack === k ? `1px solid ${LIME}` : `1px solid ${BORDER}`,
+                      border:
+                        filterTrack === k
+                          ? `1px solid ${LIME}`
+                          : `1px solid ${BORDER}`,
                       color: filterTrack === k ? LIME : DIM,
                     }}
                   >
@@ -1893,7 +2721,15 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
             {filteredLogs.length === 0 ? (
               <Empty text="No history logs recorded for this filter." />
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 360, overflowY: "auto" }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  maxHeight: 360,
+                  overflowY: "auto",
+                }}
+              >
                 {filteredLogs.map((log) => {
                   const isLap = log.track === "lap";
                   const isRem = log.track === "remote";
@@ -1921,7 +2757,14 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
                       }}
                     >
                       <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            marginBottom: 2,
+                          }}
+                        >
                           <span
                             style={{
                               fontSize: 8,
@@ -1933,16 +2776,34 @@ function OutreachView({ outreach, clients, target, today, onUpdate, onUndoLog, o
                               textTransform: "uppercase",
                             }}
                           >
-                            {isLap ? "🎉 LAP EVENT" : isRem ? "📞 REMOTE" : "🚶 PHYSICAL"}
+                            {isLap
+                              ? "🎉 LAP EVENT"
+                              : isRem
+                                ? "📞 REMOTE"
+                                : "🚶 PHYSICAL"}
                           </span>
-                          <span style={{ fontSize: 11, fontWeight: "bold", color: "#fff" }}>{log.area}</span>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: "bold",
+                              color: "var(--text)",
+                            }}
+                          >
+                            {log.area}
+                          </span>
                         </div>
                         <div style={{ fontSize: 9, color: DIM }}>
                           {log.division && `${log.division} Division • `}
                           {log.sequence ? `Seq #${log.sequence} • ` : ""}
                           {dateStr}
                         </div>
-                        {log.note && <div style={{ fontSize: 9, color: LIME, marginTop: 3 }}>{log.note}</div>}
+                        {log.note && (
+                          <div
+                            style={{ fontSize: 9, color: LIME, marginTop: 3 }}
+                          >
+                            {log.note}
+                          </div>
+                        )}
                       </div>
 
                       {!isLap && (
@@ -1997,7 +2858,16 @@ function HistoryView({ clients, sortedDates, today, selected, onSelect }) {
         >
           ← BACK
         </button>
-        <div style={{ fontSize: 13, fontWeight: "bold", marginBottom: 14, color: "#fff" }}>{fmtDate(selected)}</div>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: "bold",
+            marginBottom: 14,
+            color: "var(--text)",
+          }}
+        >
+          {fmtDate(selected)}
+        </div>
         {dc.length === 0 ? (
           <Empty text="No clients for this day." />
         ) : (
@@ -2029,7 +2899,11 @@ function HistoryView({ clients, sortedDates, today, selected, onSelect }) {
             }}
           >
             <div>
-              <div style={{ fontSize: 12, fontWeight: "bold", marginBottom: 3 }}>{fmtDate(date)}</div>
+              <div
+                style={{ fontSize: 12, fontWeight: "bold", marginBottom: 3 }}
+              >
+                {fmtDate(date)}
+              </div>
               <div style={{ fontSize: 10, color: DIM }}>
                 {dc.length} client{dc.length !== 1 ? "s" : ""}
               </div>
@@ -2048,11 +2922,17 @@ function HistoryView({ clients, sortedDates, today, selected, onSelect }) {
 
 // ── Follow-Ups View
 function FollowupsView({ pending }) {
-  if (pending.length === 0) return <Empty text="All caught up. No pending follow-ups 🎯" />;
+  if (pending.length === 0)
+    return <Empty text="All caught up. No pending follow-ups 🎯" />;
 
   const today = todayStr();
-  const overdue = pending.filter((c) => c.followUpDate && today >= c.followUpDate);
-  const regular = pending.filter((c) => !c.followUpDate || (c.followUp === "needed" && today < c.followUpDate));
+  const overdue = pending.filter(
+    (c) => c.followUpDate && today >= c.followUpDate,
+  );
+  const regular = pending.filter(
+    (c) =>
+      !c.followUpDate || (c.followUp === "needed" && today < c.followUpDate),
+  );
 
   return (
     <div>
@@ -2070,7 +2950,14 @@ function FollowupsView({ pending }) {
               gap: 6,
             }}
           >
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: WARM_C }} />
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: WARM_C,
+              }}
+            />
             TIMELINE EXPIRED / RE-FOLLOWUP DUE ({overdue.length})
           </div>
           {overdue.map((c) => (
@@ -2093,11 +2980,23 @@ function FollowupsView({ pending }) {
               gap: 6,
             }}
           >
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: LIME }} />
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: LIME,
+              }}
+            />
             ACTIVE LEADS ({regular.length})
           </div>
           {regular.map((c) => (
-            <ClientRow key={c.id + c.date} client={c} date={c.date} highlight={false} />
+            <ClientRow
+              key={c.id + c.date}
+              client={c}
+              date={c.date}
+              highlight={false}
+            />
           ))}
         </div>
       )}
@@ -2107,7 +3006,9 @@ function FollowupsView({ pending }) {
 
 // ── Print Helpers
 function getInvoiceNum(client, service) {
-  const year = client.date ? client.date.split("-")[0] : new Date().getFullYear();
+  const year = client.date
+    ? client.date.split("-")[0]
+    : new Date().getFullYear();
   const seq = String(service?.id || client.id)
     .slice(-3)
     .replace(/\D/g, "0")
@@ -2115,7 +3016,9 @@ function getInvoiceNum(client, service) {
   return `SWD-${year}-${seq}`;
 }
 function getReceiptNum(payment) {
-  const year = payment.date ? payment.date.split("-")[0] : new Date().getFullYear();
+  const year = payment.date
+    ? payment.date.split("-")[0]
+    : new Date().getFullYear();
   const seq = String(payment.id).slice(-3).replace(/\D/g, "0").padStart(3, "0");
   return `RCP-${year}-${seq}`;
 }
@@ -2123,23 +3026,36 @@ function fmtUGX(n) {
   return `UGX ${Number(n || 0).toLocaleString()}`;
 }
 function getClientServices(client) {
-  return Array.isArray(client.services) ? client.services : [makeServiceFromClient(client).service];
+  return Array.isArray(client.services)
+    ? client.services
+    : [makeServiceFromClient(client).service];
 }
 function servicePayments(client, serviceId) {
   const payments = client.payments || [];
   return serviceId
     ? payments.filter(
-        (p) => p.serviceId === serviceId || (!p.serviceId && serviceId === getClientServices(client)[0]?.id),
+        (p) =>
+          p.serviceId === serviceId ||
+          (!p.serviceId && serviceId === getClientServices(client)[0]?.id),
       )
     : payments;
 }
 function servicePaid(client, serviceId) {
-  return servicePayments(client, serviceId).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  return servicePayments(client, serviceId).reduce(
+    (sum, p) => sum + (Number(p.amount) || 0),
+    0,
+  );
 }
 function clientTotals(client) {
   const services = getClientServices(client);
-  const total = services.reduce((sum, service) => sum + serviceTotal(service, client), 0);
-  const paid = (client.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const total = services.reduce(
+    (sum, service) => sum + serviceTotal(service, client),
+    0,
+  );
+  const paid = (client.payments || []).reduce(
+    (sum, p) => sum + (Number(p.amount) || 0),
+    0,
+  );
   return { total, paid, balance: total - paid };
 }
 function documentDueDate(issueDate, days = 14) {
@@ -2147,7 +3063,13 @@ function documentDueDate(issueDate, days = 14) {
   date.setDate(date.getDate() + (Number(days) || 14));
   return date.toISOString().slice(0, 10);
 }
-function printInvoice(client, service = null, assignNumber = null, profile = {}, print = null) {
+function printInvoice(
+  client,
+  service = null,
+  assignNumber = null,
+  profile = {},
+  print = null,
+) {
   const activeService = service || getClientServices(client)[0];
   if (!activeService) {
     alert("Add a service before creating an invoice.");
@@ -2162,106 +3084,216 @@ function printInvoice(client, service = null, assignNumber = null, profile = {},
   const paid = servicePaid(client, activeService.id);
   const sourceItems = (activeService.items || []).length
     ? activeService.items
-    : [{ title: activeService.title || client.servicesToOffer || "Services", price: total }];
+    : [
+        {
+          title: activeService.title || client.servicesToOffer || "Services",
+          price: total,
+        },
+      ];
   const itemized = sourceItems.some((item) => Number(item.price) > 0);
   const items = itemized
-    ? sourceItems.map((item) => ({ title: item.title, amount: Number(item.price) || 0 }))
-    : [{ title: sourceItems.map((item) => item.title).filter(Boolean).join(", ") || activeService.title, amount: total }];
+    ? sourceItems.map((item) => ({
+        title: item.title,
+        amount: Number(item.price) || 0,
+      }))
+    : [
+        {
+          title:
+            sourceItems
+              .map((item) => item.title)
+              .filter(Boolean)
+              .join(", ") || activeService.title,
+          amount: total,
+        },
+      ];
   const model = {
-      number,
-      date: activeService.createdAt || client.date || todayStr(),
-      dueDate: documentDueDate(activeService.createdAt || client.date || todayStr(), profile.invoiceDueDays),
-      clientName: client.name,
-      business: client.business || "",
-      items,
-      total,
-      paid,
-      balance: total - paid,
-      stamp: paid <= 0 ? "AWAITING PAYMENT" : paid >= total ? "PAID IN FULL" : "PARTIAL PAYMENT",
+    number,
+    date: activeService.createdAt || client.date || todayStr(),
+    dueDate: documentDueDate(
+      activeService.createdAt || client.date || todayStr(),
+      profile.invoiceDueDays,
+    ),
+    clientName: client.name,
+    business: client.business || "",
+    items,
+    total,
+    paid,
+    balance: total - paid,
+    stamp:
+      paid <= 0
+        ? "AWAITING PAYMENT"
+        : paid >= total
+          ? "PAID IN FULL"
+          : "PARTIAL PAYMENT",
   };
-  print({ docType: "Invoice", profile, build: (format, business) => buildInvoiceHtml(model, format, business) });
+  print({
+    docType: "Invoice",
+    profile,
+    build: (format, business) => buildInvoiceHtml(model, format, business),
+  });
 }
 
-function printReceipt(client, payment, assignNumber = null, profile = {}, print = null) {
+function printReceipt(
+  client,
+  payment,
+  assignNumber = null,
+  profile = {},
+  print = null,
+) {
   const service =
-    getClientServices(client).find((item) => item.id === payment.serviceId) || getClientServices(client)[0];
+    getClientServices(client).find((item) => item.id === payment.serviceId) ||
+    getClientServices(client)[0];
   if (!service) {
     alert("This payment has no service to include on a receipt.");
     return;
   }
   if (!print) return;
   const number =
-    payment.receiptNo || assignNumber?.(client.date, client.id, "receipt", payment.id) || getReceiptNum(payment);
+    payment.receiptNo ||
+    assignNumber?.(client.date, client.id, "receipt", payment.id) ||
+    getReceiptNum(payment);
   const model = {
-      number,
-      date: payment.date || client.date || todayStr(),
-      invoiceNo: service.invoiceNo || getInvoiceNum(client, service),
-      clientName: client.name,
-      business: client.business || "",
-      lines: [{ title: payment.note || service.title || "Payment", amount: payment.amount }],
-      total: payment.amount,
-      received: payment.amount,
-      invoiceTotal: serviceTotal(service, client),
-      previouslyPaid: Math.max(0, servicePaid(client, service.id) - Number(payment.amount || 0)),
-      stamp: "PAYMENT RECEIVED",
-      method: payment.accountName || profile.accounts?.find((account) => account.id === payment.accountId)?.name || payment.accountId,
-    };
-  print({ docType: "Receipt", profile, build: (format, business) => buildReceiptHtml(model, format, business) });
+    number,
+    date: payment.date || client.date || todayStr(),
+    invoiceNo: service.invoiceNo || getInvoiceNum(client, service),
+    clientName: client.name,
+    business: client.business || "",
+    lines: [
+      {
+        title: payment.note || service.title || "Payment",
+        amount: payment.amount,
+      },
+    ],
+    total: payment.amount,
+    received: payment.amount,
+    invoiceTotal: serviceTotal(service, client),
+    previouslyPaid: Math.max(
+      0,
+      servicePaid(client, service.id) - Number(payment.amount || 0),
+    ),
+    stamp: "PAYMENT RECEIVED",
+    method:
+      payment.accountName ||
+      profile.accounts?.find((account) => account.id === payment.accountId)
+        ?.name ||
+      payment.accountId,
+  };
+  print({
+    docType: "Receipt",
+    profile,
+    build: (format, business) => buildReceiptHtml(model, format, business),
+  });
 }
 
-function printReceiptGroup(client, group, assignNumber, profile = {}, print = null) {
-  const payments = (client.payments || []).filter((payment) => group.paymentIds.includes(payment.id));
+function printReceiptGroup(
+  client,
+  group,
+  assignNumber,
+  profile = {},
+  print = null,
+) {
+  const payments = (client.payments || []).filter((payment) =>
+    group.paymentIds.includes(payment.id),
+  );
   if (!print || payments.length < 2) return;
   const number =
-    group.receiptNo || assignNumber?.(client.date, client.id, "receiptGroup", group.id) || getReceiptNum(group);
-  const total = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+    group.receiptNo ||
+    assignNumber?.(client.date, client.id, "receiptGroup", group.id) ||
+    getReceiptNum(group);
+  const total = payments.reduce(
+    (sum, payment) => sum + (Number(payment.amount) || 0),
+    0,
+  );
   const services = [...new Set(payments.map((payment) => payment.serviceId))]
-    .map((serviceId) => getClientServices(client).find((item) => item.id === serviceId))
+    .map((serviceId) =>
+      getClientServices(client).find((item) => item.id === serviceId),
+    )
     .filter(Boolean);
-  const invoiceTotal = services.reduce((sum, service) => sum + serviceTotal(service, client), 0);
-  const totalPaid = services.reduce((sum, service) => sum + servicePaid(client, service.id), 0);
+  const invoiceTotal = services.reduce(
+    (sum, service) => sum + serviceTotal(service, client),
+    0,
+  );
+  const totalPaid = services.reduce(
+    (sum, service) => sum + servicePaid(client, service.id),
+    0,
+  );
   const model = {
-      number,
-      date: group.createdAt?.slice(0, 10) || todayStr(),
-      clientName: client.name,
-      business: client.business || "",
-      lines: payments.map((payment) => ({ title: payment.note || "Payment", amount: payment.amount })),
-      total,
-      received: total,
-      invoiceTotal,
-      previouslyPaid: Math.max(0, totalPaid - total),
-      invoiceNo: services[0]?.invoiceNo || "",
-      payments: payments.map((payment) => ({
-        date: payment.date || "",
-        method: payment.accountName || profile.accounts?.find((account) => account.id === payment.accountId)?.name || payment.accountId,
-        amount: payment.amount,
-      })),
-    };
-  print({ docType: "Receipt", profile, build: (format, business) => buildReceiptHtml(model, format, business) });
+    number,
+    date: group.createdAt?.slice(0, 10) || todayStr(),
+    clientName: client.name,
+    business: client.business || "",
+    lines: payments.map((payment) => ({
+      title: payment.note || "Payment",
+      amount: payment.amount,
+    })),
+    total,
+    received: total,
+    invoiceTotal,
+    previouslyPaid: Math.max(0, totalPaid - total),
+    invoiceNo: services[0]?.invoiceNo || "",
+    payments: payments.map((payment) => ({
+      date: payment.date || "",
+      method:
+        payment.accountName ||
+        profile.accounts?.find((account) => account.id === payment.accountId)
+          ?.name ||
+        payment.accountId,
+      amount: payment.amount,
+    })),
+  };
+  print({
+    docType: "Receipt",
+    profile,
+    build: (format, business) => buildReceiptHtml(model, format, business),
+  });
 }
 
-function printCombinedInvoice(client, services, assignNumber, profile = {}, print = null) {
+function printCombinedInvoice(
+  client,
+  services,
+  assignNumber,
+  profile = {},
+  print = null,
+) {
   if (services.length < 2) return;
   if (!print) return;
   const number =
     services[0].invoiceNo ||
     assignNumber?.(client.date, client.id, "invoice", services[0].id) ||
     getInvoiceNum(client, services[0]);
-  const total = services.reduce((sum, service) => sum + serviceTotal(service, client), 0);
-  const paid = services.reduce((sum, service) => sum + servicePaid(client, service.id), 0);
+  const total = services.reduce(
+    (sum, service) => sum + serviceTotal(service, client),
+    0,
+  );
+  const paid = services.reduce(
+    (sum, service) => sum + servicePaid(client, service.id),
+    0,
+  );
   const model = {
-      number,
-      date: todayStr(),
-      dueDate: documentDueDate(todayStr(), profile.invoiceDueDays),
-      clientName: client.name,
-      business: client.business || "",
-      items: services.map((service) => ({ title: service.title, amount: serviceTotal(service, client) })),
-      total,
-      paid,
-      balance: total - paid,
-      stamp: paid >= total ? "PAID IN FULL" : paid > 0 ? "PARTIAL PAYMENT" : "AWAITING PAYMENT",
+    number,
+    date: todayStr(),
+    dueDate: documentDueDate(todayStr(), profile.invoiceDueDays),
+    clientName: client.name,
+    business: client.business || "",
+    items: services.map((service) => ({
+      title: service.title,
+      amount: serviceTotal(service, client),
+    })),
+    total,
+    paid,
+    balance: total - paid,
+    stamp:
+      paid >= total
+        ? "PAID IN FULL"
+        : paid > 0
+          ? "PARTIAL PAYMENT"
+          : "AWAITING PAYMENT",
   };
-  print({ docType: "Invoice", profile, build: (format, business) => buildInvoiceHtml(model, format, business) });
+  print({
+    docType: "Invoice",
+    profile,
+    build: (format, business) => buildInvoiceHtml(model, format, business),
+  });
 }
 // ── Client Card
 function ClientRow({ client: c, date, highlight }) {
@@ -2271,7 +3303,8 @@ function ClientRow({ client: c, date, highlight }) {
   const hot =
     highlight &&
     isLead &&
-    (c.followUp === "needed" || (c.followUp === "done" && c.followUpDate && today >= c.followUpDate));
+    (c.followUp === "needed" ||
+      (c.followUp === "done" && c.followUpDate && today >= c.followUpDate));
   const balance = isLead ? 0 : clientTotals(c).balance;
   const excludedBalance = c.paused && !isLead ? balance : 0;
   const services = getClientServices(c);
@@ -2279,9 +3312,33 @@ function ClientRow({ client: c, date, highlight }) {
     .map((service) => service.dueDate)
     .filter(Boolean)
     .sort()[0];
+  const overdueDays =
+    c.followUpDate && c.followUpDate < today
+      ? Math.floor(
+          (Date.parse(`${today}T00:00:00Z`) -
+            Date.parse(`${c.followUpDate}T00:00:00Z`)) /
+            86400000,
+        )
+      : 0;
   return (
-    <article className={`cr${actions?.openId === c.id ? " selected" : ""}${hot ? " hot" : ""}`}>
-      <button type="button" className="cr-main" onClick={() => actions?.openClientScreen(date, c.id)}>
+    <article className={`cr${actions?.openId === c.id ? " selected" : ""}`}>
+      <button
+        type="button"
+        className="cr-main"
+        onClick={() => actions?.openClientScreen(date, c.id)}
+      >
+        <span
+          className={`cr-avatar${c.paused ? " paused" : ""}`}
+          aria-hidden="true"
+        >
+          {String(c.name || "?")
+            .trim()
+            .split(/\s+/)
+            .slice(0, 2)
+            .map((part) => part[0])
+            .join("")
+            .toUpperCase()}
+        </span>
         <span className="cr-id">
           <b>{c.name}</b>
           <small>
@@ -2293,18 +3350,34 @@ function ClientRow({ client: c, date, highlight }) {
           {c.paused && <em className="cr-paused">PAUSED</em>}
           {isLead ? (
             <>
-              <b className={c.temp === "warm" ? "warm" : "cold"}>{c.temp || "warm"}</b>
-              <small>{c.followUpDate ? fmtDate(c.followUpDate) : "No timeline"}</small>
+              <b className={c.temp === "warm" ? "warm" : "cold"}>
+                {c.temp || "warm"}
+              </b>
+              <small>
+                {overdueDays > 0
+                  ? `${overdueDays} days overdue`
+                  : c.followUpDate
+                    ? fmtDate(c.followUpDate)
+                    : "No timeline"}
+              </small>
             </>
           ) : (
             <>
-              <b className={c.paused ? "paused-balance" : balance > 0 ? "warm" : "lime"}>
-                {c.paused ? `${fmtUGX(excludedBalance)} excluded` : balance > 0 ? fmtUGX(balance) : "Paid"}
+              <b
+                className={
+                  c.paused ? "paused-balance" : balance > 0 ? "warm" : "lime"
+                }
+              >
+                {c.paused
+                  ? `${fmtUGX(excludedBalance)} excluded`
+                  : balance > 0
+                    ? fmtUGX(balance)
+                    : "Paid"}
               </b>
               <small>{due ? fmtDate(due) : "No due date"}</small>
             </>
           )}
-          {hot && <em className="cr-due">FOLLOW-UP DUE</em>}
+          {hot && !highlight && <em className="cr-due">FOLLOW-UP DUE</em>}
         </span>
         <span className="cr-chev" aria-hidden>
           ›
@@ -2313,11 +3386,19 @@ function ClientRow({ client: c, date, highlight }) {
       {c.phone && (
         <div className="cr-quick">
           {c.hasWhatsApp !== "no" && (
-            <a href={`https://wa.me/${toWaNumber(c.phone)}`} target="_blank" rel="noreferrer">
-              WhatsApp
+            <a
+              href={`https://wa.me/${toWaNumber(c.phone)}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Icon name="Message" size={18} />
+              <span>WhatsApp</span>
             </a>
           )}
-          <a href={`tel:${c.phone}`}>Call</a>
+          <a href={`tel:${c.phone}`} aria-label={`Call ${c.name}`}>
+            <Icon name="Phone" size={18} />
+            <span>Call</span>
+          </a>
         </div>
       )}
     </article>
@@ -2331,10 +3412,14 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
   const [infoOpen, setInfoOpen] = useState(false);
   const [svcEditor, setSvcEditor] = useState(null);
   const [isWinForm, setIsWinForm] = useState(false);
-  const [dealPrice, setDealPrice] = useState(c.quotedPrice ? c.quotedPrice.replace(/\D/g, "") : "");
+  const [dealPrice, setDealPrice] = useState(
+    c.quotedPrice ? c.quotedPrice.replace(/\D/g, "") : "",
+  );
   const [deposit, setDeposit] = useState("0");
   const [isRescheduleForm, setIsRescheduleForm] = useState(false);
-  const [newFollowDate, setNewFollowDate] = useState(c.followUpDate || todayStr());
+  const [newFollowDate, setNewFollowDate] = useState(
+    c.followUpDate || todayStr(),
+  );
   const [isPaymentForm, setIsPaymentForm] = useState(false);
   const [paymentAmt, setPaymentAmt] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
@@ -2348,13 +3433,16 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTitle, setMergeTitle] = useState("");
   const [selectedPayments, setSelectedPayments] = useState([]);
+  const [receiptMergeMode, setReceiptMergeMode] = useState(false);
   const [expandedReceiptGroups, setExpandedReceiptGroups] = useState([]);
   const today = todayStr();
   const isLead = c.status !== "ongoing";
   const services = getClientServices(c);
   const totals = clientTotals(c);
   const textToMatch = c.businessType || c.business || "";
-  const packageMatch = PACKAGE_TEMPLATES.find((item) => item.match.test(textToMatch));
+  const packageMatch = PACKAGE_TEMPLATES.find((item) =>
+    item.match.test(textToMatch),
+  );
   const saveInfo = (fields) => {
     onUpdate(c.id, fields);
     setInfoOpen(false);
@@ -2375,7 +3463,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
     }
   };
   const unmerge = async (service) => {
-    const titles = (service.mergedFrom || []).map((item) => item.title).join(", ");
+    const titles = (service.mergedFrom || [])
+      .map((item) => item.title)
+      .join(", ");
     if (
       !(await ask({
         title: "Unmerge this service?",
@@ -2407,11 +3497,18 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
       }))
     )
       return;
-    onUpdate(c.id, { receiptGroups: (c.receiptGroups || []).filter((item) => item.id !== group.id) });
+    onUpdate(c.id, {
+      receiptGroups: (c.receiptGroups || []).filter(
+        (item) => item.id !== group.id,
+      ),
+    });
   };
   const deleteService = async (service) => {
     const linked = paymentsForService(c, service.id);
-    const amount = linked.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+    const amount = linked.reduce(
+      (sum, payment) => sum + (Number(payment.amount) || 0),
+      0,
+    );
     const message = linked.length
       ? `Delete "${service.title}"? This also deletes ${linked.length} payment(s) totalling ` +
         `${fmtUGX(amount)} from this client and the Money ledger. This cannot be undone.`
@@ -2425,13 +3522,18 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
       }))
     )
       return;
-    onUpdate(c.id, removeService(c, service.id), `Deleted service ${service.title}`);
+    onUpdate(
+      c.id,
+      removeService(c, service.id),
+      `Deleted service ${service.title}`,
+    );
     setSvcEditor(null);
   };
   const deleteThisClient = () => {
     actions?.deleteClient(date, c.id);
   };
   const openPaymentForm = (serviceId = "") => {
+    if (c.paused) actions?.showBanner?.("Client is paused");
     setEditingPaymentId("");
     setPaymentAmt("");
     setPaymentNote("");
@@ -2442,7 +3544,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
     setEditingPaymentId(payment.id);
     setPaymentAmt(String(payment.amount || ""));
     setPaymentNote(payment.note || "");
-    setPaymentServiceId(serviceId || payment.serviceId || services[0]?.id || "");
+    setPaymentServiceId(
+      serviceId || payment.serviceId || services[0]?.id || "",
+    );
     setIsPaymentForm(true);
   };
   const savePayment = () => {
@@ -2472,13 +3576,24 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
         ];
     onUpdate(c.id, {
       payments,
-      amountPaid: payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0),
+      amountPaid: payments.reduce(
+        (sum, payment) => sum + (Number(payment.amount) || 0),
+        0,
+      ),
     });
     setIsPaymentForm(false);
   };
   const deleteClientPayment = async (payment) => {
-    if (!(await ask({ title: "Delete this payment?", body: "Its Money ledger entry will also be removed." }))) return;
-    const payments = (c.payments || []).filter((item) => item.id !== payment.id);
+    if (
+      !(await ask({
+        title: "Delete this payment?",
+        body: "Its Money ledger entry will also be removed.",
+      }))
+    )
+      return;
+    const payments = (c.payments || []).filter(
+      (item) => item.id !== payment.id,
+    );
     onUpdate(
       c.id,
       {
@@ -2487,7 +3602,10 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
           ...group,
           paymentIds: group.paymentIds.filter((id) => id !== payment.id),
         })),
-        amountPaid: payments.reduce((sum, item) => sum + (Number(item.amount) || 0), 0),
+        amountPaid: payments.reduce(
+          (sum, item) => sum + (Number(item.amount) || 0),
+          0,
+        ),
       },
       `Deleted payment ${payment.note || "entry"}`,
     );
@@ -2510,7 +3628,8 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
     const serviceId = newPaymentId();
     const service = {
       id: serviceId,
-      title: c.package && c.package !== "Undecided" ? c.package : "Client Service",
+      title:
+        c.package && c.package !== "Undecided" ? c.package : "Client Service",
       categories: c.servicesToOffer || "",
       agreedPrice: price,
       dueDate: "",
@@ -2550,7 +3669,10 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
     setIsRescheduleForm(false);
   };
   const moveBack = async () => {
-    const paid = (c.payments || []).reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+    const paid = (c.payments || []).reduce(
+      (sum, payment) => sum + (Number(payment.amount) || 0),
+      0,
+    );
     if (
       await ask({
         title: "Move back to lead?",
@@ -2574,7 +3696,10 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
     }
   };
   const suggest = () => {
-    if (!textToMatch) return alert("This client needs a business name or type to auto-suggest.");
+    if (!textToMatch)
+      return alert(
+        "This client needs a business name or type to auto-suggest.",
+      );
     if (packageMatch)
       onUpdate(c.id, {
         servicesToOffer: packageMatch.services,
@@ -2588,6 +3713,18 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
         <button type="button" className="cs-back" onClick={onBack}>
           ← Back
         </button>
+        <div
+          className={`cs-avatar${c.paused ? " paused" : ""}`}
+          aria-hidden="true"
+        >
+          {String(c.name || "?")
+            .trim()
+            .split(/\s+/)
+            .slice(0, 2)
+            .map((part) => part[0])
+            .join("")
+            .toUpperCase()}
+        </div>
         <div className="cs-title">
           <h2>{c.name}</h2>
           <p>
@@ -2599,31 +3736,80 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
           Edit
         </button>
       </header>
+      {!isLead && (
+        <section className="cs-card cs-summary">
+          <div className="cs-totals">
+            {[
+              ["Agreed", totals.total],
+              ["Paid", totals.paid],
+              ["Balance", totals.balance],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <small>{label}</small>
+                <b
+                  className={
+                    c.paused && label === "Balance" ? "paused-balance" : ""
+                  }
+                >
+                  {c.paused && label === "Balance"
+                    ? `${fmtUGX(value)} excluded from Money`
+                    : fmtUGX(value)}
+                </b>
+              </div>
+            ))}
+          </div>
+          <div className="cs-progress">
+            <i
+              style={{
+                width: `${totals.total > 0 ? Math.min(100, (totals.paid / totals.total) * 100) : 0}%`,
+              }}
+            />
+          </div>
+        </section>
+      )}
       <div className="cs-grid">
         <div className="cs-col">
           <div className="cs-chips">
-            <span className={isLead ? (c.temp === "cold" ? "cold" : "warm") : "lime"}>
+            <span
+              className={
+                isLead ? (c.temp === "cold" ? "cold" : "warm") : "lime"
+              }
+            >
               {isLead ? "LEAD" : "ONGOING"}
             </span>
-            <span>{isLead ? (c.followUp === "needed" ? "FOLLOW-UP NEEDED" : "FOLLOW-UP DONE") : "CLIENT"}</span>
+            <span>
+              {isLead
+                ? c.followUp === "needed"
+                  ? "FOLLOW-UP NEEDED"
+                  : "FOLLOW-UP DONE"
+                : "CLIENT"}
+            </span>
             <span>Demo {c.demoShown === "yes" ? "✓" : "×"}</span>
             {c.paused && <span className="cr-paused">PAUSED</span>}
           </div>
           {c.phone && (
             <div className="cs-contact">
               {c.hasWhatsApp !== "no" && (
-                <a href={`https://wa.me/${toWaNumber(c.phone)}`} target="_blank" rel="noreferrer">
+                <a
+                  href={`https://wa.me/${toWaNumber(c.phone)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   WhatsApp
                 </a>
               )}
               <a href={`tel:${c.phone}`}>Call {c.phone}</a>
             </div>
           )}
-          <div className="cs-actions">
+          <div className="cs-actions cs-actionbar">
             {isLead ? (
               <>
-                <button onClick={markDone}>{c.followUp === "needed" ? "✓ Mark done" : "↩ Follow-up"}</button>
-                <button onClick={() => setIsRescheduleForm(true)}>Timeline</button>
+                <button onClick={markDone}>
+                  {c.followUp === "needed" ? "✓ Mark done" : "↩ Follow-up"}
+                </button>
+                <button onClick={() => setIsRescheduleForm(true)}>
+                  Timeline
+                </button>
                 <button
                   onClick={() =>
                     onUpdate(c.id, {
@@ -2636,20 +3822,34 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                 <button className="primary" onClick={() => setIsWinForm(true)}>
                   Won!
                 </button>
-                {(!c.quotedPrice || !c.servicesToOffer) && <button onClick={suggest}>Suggest</button>}
+                {(!c.quotedPrice || !c.servicesToOffer) && (
+                  <button onClick={suggest}>Suggest</button>
+                )}
               </>
             ) : (
               <>
                 <button className="primary" onClick={() => openPaymentForm()}>
                   Record payment
                 </button>
-                <button onClick={() => setSvcEditor({ service: null })}>+ Add service</button>
+                <button onClick={() => setSvcEditor({ service: null })}>
+                  + Add service
+                </button>
                 {c.paused ? (
-                  <button onClick={() => onUpdate(c.id, { paused: false, pausedAt: "", pauseReason: "" })}>
+                  <button
+                    onClick={() =>
+                      onUpdate(c.id, {
+                        paused: false,
+                        pausedAt: "",
+                        pauseReason: "",
+                      })
+                    }
+                  >
                     Resume client
                   </button>
                 ) : (
-                  <button onClick={() => setPauseOpen(true)}>Pause client</button>
+                  <button onClick={() => setPauseOpen(true)}>
+                    Pause client
+                  </button>
                 )}
               </>
             )}
@@ -2704,225 +3904,392 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
             <section className="cs-card">
               <header>
                 <h3>Follow-up</h3>
-                <button onClick={() => setIsRescheduleForm(true)}>Timeline</button>
+                <button onClick={() => setIsRescheduleForm(true)}>
+                  Timeline
+                </button>
               </header>
-              <p>{c.followUpDate ? fmtDate(c.followUpDate) : "No timeline set"}</p>
+              <p>
+                {c.followUpDate ? fmtDate(c.followUpDate) : "No timeline set"}
+              </p>
               <p className="cs-notes">{c.notes || "No notes yet."}</p>
             </section>
           )}
           {!isLead && (
-            <section className="cs-card">
-              <header>
-                <h3>Totals</h3>
-              </header>
-              <div className="cs-totals">
-                {[
-                  ["Agreed", totals.total],
-                  ["Paid", totals.paid],
-                  ["Balance", totals.balance],
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <small>{label}</small>
-                    <b className={c.paused && label === "Balance" ? "paused-balance" : ""}>
-                      {c.paused && label === "Balance" ? `${fmtUGX(value)} excluded` : fmtUGX(value)}
-                    </b>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-          {!isLead && (
-            <section className="cs-card">
-              <header>
-                <h3>Services ({services.length})</h3>
-                <div className="cs-service-tools">
-                  <button onClick={() => setSvcEditor({ service: null })}>+ Add service</button>
-                  {services.length > 1 && (
-                    <button
-                      onClick={() => {
-                        setMergeMode((value) => !value);
-                        setSelectedServices([]);
-                      }}
-                    >
-                      {mergeMode ? "Cancel select" : "Select"}
+            <>
+              <section className="cs-card">
+                <header>
+                  <h3>Services ({services.length})</h3>
+                  <div className="cs-service-tools">
+                    <button onClick={() => setSvcEditor({ service: null })}>
+                      + Add service
                     </button>
-                  )}
+                    {services.length > 1 && (
+                      <button
+                        onClick={() => {
+                          setMergeMode((value) => !value);
+                          setSelectedServices([]);
+                        }}
+                      >
+                        {mergeMode ? "Cancel select" : "Select"}
+                      </button>
+                    )}
+                    {(c.payments || []).length > 1 && (
+                      <button
+                        onClick={() => {
+                          setReceiptMergeMode((value) => !value);
+                          setSelectedPayments([]);
+                        }}
+                      >
+                        {receiptMergeMode
+                          ? "Cancel receipts"
+                          : "Merge receipts…"}
+                      </button>
+                    )}
+                  </div>
+                </header>
+                {mergeMode && (
+                  <div className="cs-merge-tools">
+                    <button
+                      disabled={selectedServices.length < 2}
+                      onClick={() => setMergeOpen(true)}
+                    >
+                      Merge ({selectedServices.length})
+                    </button>
+                    <button
+                      disabled={selectedServices.length < 2}
+                      onClick={() =>
+                        printCombinedInvoice(
+                          { ...c, date },
+                          services.filter((service) =>
+                            selectedServices.includes(service.id),
+                          ),
+                          actions?.assignDocumentNumber,
+                          actions?.profile,
+                          print,
+                        )
+                      }
+                    >
+                      Print combined invoice
+                    </button>
+                  </div>
+                )}
+              </section>
+              <section className="cs-card cs-payments">
+                <header>
+                  <h3>Payments &amp; receipts</h3>
+                </header>
+                <div className="cs-receipt-groups">
+                  {(c.receiptGroups || []).map((group) => {
+                    const grouped = (c.payments || []).filter((payment) =>
+                      group.paymentIds.includes(payment.id),
+                    );
+                    const total = grouped.reduce(
+                      (sum, payment) => sum + (Number(payment.amount) || 0),
+                      0,
+                    );
+                    const expanded = expandedReceiptGroups.includes(group.id);
+                    return (
+                      <article className="cs-receipt-group" key={group.id}>
+                        <strong>
+                          Receipt {group.receiptNo || getReceiptNum(group)} ·{" "}
+                          {grouped.length} payments · {fmtUGX(total)}
+                        </strong>
+                        <button
+                          onClick={() =>
+                            printReceiptGroup(
+                              { ...c, date },
+                              group,
+                              actions?.assignDocumentNumber,
+                              actions?.profile,
+                              print,
+                            )
+                          }
+                        >
+                          Print
+                        </button>
+                        <button
+                          onClick={() =>
+                            setExpandedReceiptGroups((ids) =>
+                              expanded
+                                ? ids.filter((id) => id !== group.id)
+                                : [...ids, group.id],
+                            )
+                          }
+                        >
+                          {expanded ? "Collapse" : "Expand"}
+                        </button>
+                        <button onClick={() => unmergeReceiptGroup(group)}>
+                          Unmerge
+                        </button>
+                        {expanded &&
+                          grouped.map((payment) => (
+                            <div className="cs-group-payment" key={payment.id}>
+                              {payment.note || "Payment"} ·{" "}
+                              {fmtUGX(payment.amount)}
+                            </div>
+                          ))}
+                      </article>
+                    );
+                  })}
                 </div>
-              </header>
-              {mergeMode && (
-                <div className="cs-merge-tools">
-                  <button disabled={selectedServices.length < 2} onClick={() => setMergeOpen(true)}>
-                    Merge ({selectedServices.length})
-                  </button>
-                  <button
-                    disabled={selectedServices.length < 2}
-                    onClick={() =>
-                      printCombinedInvoice(
-                        { ...c, date },
-                        services.filter((service) => selectedServices.includes(service.id)),
-                        actions?.assignDocumentNumber,
-                        actions?.profile,
-                        print,
-                      )
-                    }
-                  >
-                    Print combined invoice
-                  </button>
-                </div>
-              )}
-              <div className="cs-receipt-groups">
-                {(c.receiptGroups || []).map((group) => {
-                  const grouped = (c.payments || []).filter((payment) => group.paymentIds.includes(payment.id));
-                  const total = grouped.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
-                  const expanded = expandedReceiptGroups.includes(group.id);
+                {receiptMergeMode && (
+                  <div className="cs-receipt-select">
+                    {(c.payments || []).map((payment) => {
+                      const grouped = (c.receiptGroups || []).some((group) =>
+                        group.paymentIds.includes(payment.id),
+                      );
+                      return (
+                        <label key={payment.id}>
+                          <input
+                            type="checkbox"
+                            disabled={grouped}
+                            checked={selectedPayments.includes(payment.id)}
+                            onChange={(event) =>
+                              setSelectedPayments((ids) =>
+                                event.target.checked
+                                  ? [...ids, payment.id]
+                                  : ids.filter((id) => id !== payment.id),
+                              )
+                            }
+                          />
+                          {payment.note || "Payment"} · {fmtUGX(payment.amount)}
+                        </label>
+                      );
+                    })}
+                    <button
+                      disabled={selectedPayments.length < 2}
+                      onClick={mergeReceiptGroup}
+                    >
+                      Merge receipts ({selectedPayments.length})
+                    </button>
+                  </div>
+                )}
+                {(c.payments || []).map((payment) => {
+                  const group = (c.receiptGroups || []).find((item) =>
+                    item.paymentIds.includes(payment.id),
+                  );
+                  if (group && !expandedReceiptGroups.includes(group.id))
+                    return null;
+                  const serviceId = payment.serviceId || services[0]?.id || "";
                   return (
-                    <article className="cs-receipt-group" key={group.id}>
-                      <strong>
-                        Receipt {group.receiptNo || getReceiptNum(group)} · {grouped.length} payments · {fmtUGX(total)}
-                      </strong>
-                      <button onClick={() => printReceiptGroup(
-                        { ...c, date }, group, actions?.assignDocumentNumber, actions?.profile, print,
-                      )}>
-                        Print
+                    <div
+                      className="cs-payment"
+                      data-payment-id={payment.id}
+                      key={payment.id}
+                    >
+                      <span>
+                        {payment.date || "Date unknown"} ·{" "}
+                        {payment.note || "Payment"} · {fmtUGX(payment.amount)}
+                      </span>
+                      <button
+                        onClick={() => openEditPaymentForm(payment, serviceId)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="danger"
+                        onClick={() => deleteClientPayment(payment)}
+                      >
+                        Delete
                       </button>
                       <button
                         onClick={() =>
-                          setExpandedReceiptGroups((ids) =>
-                            expanded ? ids.filter((id) => id !== group.id) : [...ids, group.id],
+                          printReceipt(
+                            { ...c, date },
+                            payment,
+                            actions?.assignDocumentNumber,
+                            actions?.profile,
+                            print,
                           )
                         }
                       >
-                        {expanded ? "Collapse" : "Expand"}
+                        Receipt
                       </button>
-                      <button onClick={() => unmergeReceiptGroup(group)}>Unmerge</button>
-                      {expanded &&
-                        grouped.map((payment) => (
-                          <div className="cs-group-payment" key={payment.id}>
-                            {payment.note || "Payment"} · {fmtUGX(payment.amount)}
+                    </div>
+                  );
+                })}
+              </section>
+              <section className="cs-card cs-services">
+                <header>
+                  <h3>Services ({services.length})</h3>
+                  <button onClick={() => setSvcEditor({ service: null })}>
+                    + Add service
+                  </button>
+                </header>
+                {services.length === 0 && (
+                  <p className="cs-empty">No services yet. Add service.</p>
+                )}
+                {services.map((service) => {
+                  const paid = servicePaid(c, service.id);
+                  const total = serviceTotal(service, c);
+                  const balance = total - paid;
+                  return (
+                    <article
+                      className="cs-service"
+                      data-service-id={service.id}
+                      key={service.id}
+                    >
+                      {mergeMode && !service.mergedFrom?.length && (
+                        <label className="cs-select-service">
+                          <input
+                            type="checkbox"
+                            checked={selectedServices.includes(service.id)}
+                            onChange={(event) =>
+                              setSelectedServices((ids) =>
+                                event.target.checked
+                                  ? [...ids, service.id]
+                                  : ids.filter((id) => id !== service.id),
+                              )
+                            }
+                          />
+                          Select service
+                        </label>
+                      )}
+                      <header className="cs-service-head">
+                        <div>
+                          <h4>{service.title}</h4>
+                          <small>
+                            {service.dueDate
+                              ? `Due ${fmtDate(service.dueDate)}`
+                              : "No due date"}
+                          </small>
+                        </div>
+                        {service.mergedFrom?.length > 0 && (
+                          <span className="cs-merged-badge">
+                            MERGED ×{service.mergedFrom.length}
+                          </span>
+                        )}
+                        <b className={balance > 0 ? "warm" : "lime"}>
+                          {balance > 0 ? fmtUGX(balance) : "Paid"}
+                        </b>
+                      </header>
+                      <div className="cs-totals">
+                        {[
+                          ["FEE", total],
+                          ["PAID", paid],
+                          ["BALANCE", balance],
+                        ].map(([label, value]) => (
+                          <div key={label}>
+                            <small>{label}</small>
+                            <b
+                              className={
+                                c.paused && label === "BALANCE"
+                                  ? "paused-balance"
+                                  : ""
+                              }
+                            >
+                              {c.paused && label === "BALANCE"
+                                ? `${fmtUGX(value)} excluded`
+                                : fmtUGX(value)}
+                            </b>
+                          </div>
+                        ))}
+                      </div>
+                      {(service.items || []).map((item) => (
+                        <div className="cs-item" key={item.id}>
+                          <span>{item.title}</span>
+                          <span>
+                            {Number(item.price) > 0
+                              ? fmtUGX(item.price)
+                              : "Included"}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="cs-service-actions">
+                        <button onClick={() => openPaymentForm(service.id)}>
+                          Record payment
+                        </button>
+                        <button onClick={() => setSvcEditor({ service })}>
+                          Edit
+                        </button>
+                        <button
+                          onClick={() =>
+                            printInvoice(
+                              { ...c, date },
+                              service,
+                              actions?.assignDocumentNumber,
+                              actions?.profile,
+                              print,
+                            )
+                          }
+                        >
+                          Invoice
+                        </button>
+                        <button
+                          className="danger"
+                          onClick={() => deleteService(service)}
+                        >
+                          Delete
+                        </button>
+                        {service.mergedFrom?.length > 0 && (
+                          <button onClick={() => unmerge(service)}>
+                            Unmerge
+                          </button>
+                        )}
+                      </div>
+                      {servicePayments(c, service.id)
+                        .filter((payment) => {
+                          const group = (c.receiptGroups || []).find((item) =>
+                            item.paymentIds.includes(payment.id),
+                          );
+                          return (
+                            !group || expandedReceiptGroups.includes(group.id)
+                          );
+                        })
+                        .map((payment) => (
+                          <div
+                            className="cs-payment"
+                            data-payment-id={payment.id}
+                            key={payment.id}
+                          >
+                            <span>
+                              {payment.date || "Date unknown"} ·{" "}
+                              {payment.note || "Payment"} ·{" "}
+                              {fmtUGX(payment.amount)}
+                            </span>
+                            <button
+                              onClick={() =>
+                                openEditPaymentForm(payment, service.id)
+                              }
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="danger"
+                              onClick={() => deleteClientPayment(payment)}
+                            >
+                              Delete
+                            </button>
+                            <button
+                              onClick={() =>
+                                printReceipt(
+                                  { ...c, date },
+                                  payment,
+                                  actions?.assignDocumentNumber,
+                                  actions?.profile,
+                                  print,
+                                )
+                              }
+                            >
+                              Receipt
+                            </button>
                           </div>
                         ))}
                     </article>
                   );
                 })}
-              </div>
-              <div className="cs-receipt-select">
-                {(c.payments || []).map((payment) => {
-                  const grouped = (c.receiptGroups || []).some((group) => group.paymentIds.includes(payment.id));
-                  return (
-                    <label key={payment.id}>
-                      <input
-                        type="checkbox"
-                        disabled={grouped}
-                        checked={selectedPayments.includes(payment.id)}
-                        onChange={(event) =>
-                          setSelectedPayments((ids) =>
-                            event.target.checked ? [...ids, payment.id] : ids.filter((id) => id !== payment.id),
-                          )
-                        }
-                      />
-                      {payment.note || "Payment"} · {fmtUGX(payment.amount)}
-                    </label>
-                  );
-                })}
-                <button disabled={selectedPayments.length < 2} onClick={mergeReceiptGroup}>
-                  Merge receipts ({selectedPayments.length})
-                </button>
-              </div>
-              {services.length === 0 && <p className="cs-empty">No services yet. Add service.</p>}
-              {services.map((service) => {
-                const paid = servicePaid(c, service.id);
-                const total = serviceTotal(service, c);
-                const balance = total - paid;
-                return (
-                  <article className="cs-service" data-service-id={service.id} key={service.id}>
-                    {mergeMode && !service.mergedFrom?.length && (
-                      <label className="cs-select-service">
-                        <input
-                          type="checkbox"
-                          checked={selectedServices.includes(service.id)}
-                          onChange={(event) =>
-                            setSelectedServices((ids) =>
-                              event.target.checked ? [...ids, service.id] : ids.filter((id) => id !== service.id),
-                            )
-                          }
-                        />
-                        Select service
-                      </label>
-                    )}
-                    <header className="cs-service-head">
-                      <div>
-                        <h4>{service.title}</h4>
-                        <small>{service.dueDate ? `Due ${fmtDate(service.dueDate)}` : "No due date"}</small>
-                      </div>
-                      {service.mergedFrom?.length > 0 && (
-                        <span className="cs-merged-badge">MERGED ×{service.mergedFrom.length}</span>
-                      )}
-                      <b className={balance > 0 ? "warm" : "lime"}>{balance > 0 ? fmtUGX(balance) : "Paid"}</b>
-                    </header>
-                    <div className="cs-totals">
-                      {[
-                        ["FEE", total],
-                        ["PAID", paid],
-                        ["BALANCE", balance],
-                      ].map(([label, value]) => (
-                        <div key={label}>
-                          <small>{label}</small>
-                          <b className={c.paused && label === "BALANCE" ? "paused-balance" : ""}>
-                            {c.paused && label === "BALANCE" ? `${fmtUGX(value)} excluded` : fmtUGX(value)}
-                          </b>
-                        </div>
-                      ))}
-                    </div>
-                    {(service.items || []).map((item) => (
-                      <div className="cs-item" key={item.id}>
-                        <span>{item.title}</span>
-                        <span>{Number(item.price) > 0 ? fmtUGX(item.price) : "Included"}</span>
-                      </div>
-                    ))}
-                    <div className="cs-service-actions">
-                      <button onClick={() => openPaymentForm(service.id)}>Record payment</button>
-                      <button onClick={() => setSvcEditor({ service })}>Edit</button>
-                      <button onClick={() => printInvoice(
-                        { ...c, date }, service, actions?.assignDocumentNumber, actions?.profile, print,
-                      )}>
-                        Invoice
-                      </button>
-                      <button className="danger" onClick={() => deleteService(service)}>
-                        Delete
-                      </button>
-                      {service.mergedFrom?.length > 0 && <button onClick={() => unmerge(service)}>Unmerge</button>}
-                    </div>
-                    {servicePayments(c, service.id)
-                      .filter((payment) => {
-                        const group = (c.receiptGroups || []).find((item) => item.paymentIds.includes(payment.id));
-                        return !group || expandedReceiptGroups.includes(group.id);
-                      })
-                      .map((payment) => (
-                        <div className="cs-payment" data-payment-id={payment.id} key={payment.id}>
-                          <span>
-                            {payment.date || "Date unknown"} · {payment.note || "Payment"} · {fmtUGX(payment.amount)}
-                          </span>
-                          <button onClick={() => openEditPaymentForm(payment, service.id)}>Edit</button>
-                          <button className="danger" onClick={() => deleteClientPayment(payment)}>
-                            Delete
-                          </button>
-                          <button onClick={() => printReceipt(
-                            { ...c, date }, payment, actions?.assignDocumentNumber, actions?.profile, print,
-                          )}>
-                            Receipt
-                          </button>
-                        </div>
-                      ))}
-                  </article>
-                );
-              })}
-            </section>
+              </section>
+            </>
           )}
         </div>
       </div>
       <section className="cs-danger">
         {c.paused ? (
-          <button onClick={() => onUpdate(c.id, { paused: false, pausedAt: "", pauseReason: "" })}>
+          <button
+            onClick={() =>
+              onUpdate(c.id, { paused: false, pausedAt: "", pauseReason: "" })
+            }
+          >
             Resume client
           </button>
         ) : !isLead ? (
@@ -2933,11 +4300,15 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
           Delete client
         </button>
       </section>
-      {c.paused && isPaymentForm && <p className="cs-paused-note">Client is paused</p>}
+      {c.paused && isPaymentForm && (
+        <p className="cs-paused-note">Client is paused</p>
+      )}
       {pauseOpen && (
         <div
           className="ce-overlay"
-          onMouseDown={(event) => event.target === event.currentTarget && setPauseOpen(false)}
+          onMouseDown={(event) =>
+            event.target === event.currentTarget && setPauseOpen(false)
+          }
         >
           <form
             className="ce-dialog"
@@ -2946,16 +4317,23 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
               onUpdate(c.id, {
                 paused: true,
                 pausedAt: today,
-                pauseReason: [pauseReason, pauseNote.trim()].filter(Boolean).join(": "),
+                pauseReason: [pauseReason, pauseNote.trim()]
+                  .filter(Boolean)
+                  .join(": "),
               });
               setPauseOpen(false);
             }}
           >
             <h2>Pause client</h2>
-            <p>Their outstanding balance will be excluded from active totals.</p>
+            <p>
+              Their outstanding balance will be excluded from active totals.
+            </p>
             <label className="ce-field">
               Reason
-              <select value={pauseReason} onChange={(event) => setPauseReason(event.target.value)}>
+              <select
+                value={pauseReason}
+                onChange={(event) => setPauseReason(event.target.value)}
+              >
                 <option>No payment</option>
                 <option>Waiting on client</option>
                 <option>Dispute</option>
@@ -2964,7 +4342,10 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
             </label>
             <label className="ce-field">
               Note
-              <textarea value={pauseNote} onChange={(event) => setPauseNote(event.target.value)} />
+              <textarea
+                value={pauseNote}
+                onChange={(event) => setPauseNote(event.target.value)}
+              />
             </label>
             <footer>
               <button type="button" onClick={() => setPauseOpen(false)}>
@@ -2978,7 +4359,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
       {mergeOpen && (
         <div
           className="ce-overlay"
-          onMouseDown={(event) => event.target === event.currentTarget && setMergeOpen(false)}
+          onMouseDown={(event) =>
+            event.target === event.currentTarget && setMergeOpen(false)
+          }
         >
           <form
             className="ce-dialog"
@@ -3017,22 +4400,34 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
         </div>
       )}
       {infoOpen && (
-        <ClientInfoEditor client={c} onUpdate={(_id, fields) => saveInfo(fields)} onClose={() => setInfoOpen(false)} />
+        <ClientInfoEditor
+          client={c}
+          onUpdate={(_id, fields) => saveInfo(fields)}
+          onClose={() => setInfoOpen(false)}
+        />
       )}
       {svcEditor && (
         <ServiceEditor
           service={svcEditor.service}
-          fallbackTotal={svcEditor.service ? serviceTotal(svcEditor.service, c) : 0}
+          fallbackTotal={
+            svcEditor.service ? serviceTotal(svcEditor.service, c) : 0
+          }
           paid={svcEditor.service ? servicePaid(c, svcEditor.service.id) : 0}
           onSave={saveService}
-          onDelete={svcEditor.service ? () => deleteService(svcEditor.service) : undefined}
+          onDelete={
+            svcEditor.service
+              ? () => deleteService(svcEditor.service)
+              : undefined
+          }
           onClose={() => setSvcEditor(null)}
         />
       )}
       {isWinForm && (
         <div
           className="ce-overlay"
-          onMouseDown={(event) => event.target === event.currentTarget && setIsWinForm(false)}
+          onMouseDown={(event) =>
+            event.target === event.currentTarget && setIsWinForm(false)
+          }
         >
           <form
             className="ce-dialog"
@@ -3059,7 +4454,12 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
             </label>
             <label className="ce-field">
               Initial deposit (UGX)
-              <input type="number" min="0" value={deposit} onChange={(event) => setDeposit(event.target.value)} />
+              <input
+                type="number"
+                min="0"
+                value={deposit}
+                onChange={(event) => setDeposit(event.target.value)}
+              />
             </label>
             <footer>
               <button type="button" onClick={() => setIsWinForm(false)}>
@@ -3073,7 +4473,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
       {isRescheduleForm && (
         <div
           className="ce-overlay"
-          onMouseDown={(event) => event.target === event.currentTarget && setIsRescheduleForm(false)}
+          onMouseDown={(event) =>
+            event.target === event.currentTarget && setIsRescheduleForm(false)
+          }
         >
           <form
             className="ce-dialog"
@@ -3090,14 +4492,22 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
             </header>
             <div className="cs-actions">
               {[3, 7, 14, 30].map((days) => (
-                <button type="button" key={days} onClick={() => reschedule(days)}>
+                <button
+                  type="button"
+                  key={days}
+                  onClick={() => reschedule(days)}
+                >
                   +{days} days
                 </button>
               ))}
             </div>
             <label className="ce-field">
               Date
-              <input type="date" value={newFollowDate} onChange={(event) => setNewFollowDate(event.target.value)} />
+              <input
+                type="date"
+                value={newFollowDate}
+                onChange={(event) => setNewFollowDate(event.target.value)}
+              />
             </label>
             <footer>
               <button type="button" onClick={() => setIsRescheduleForm(false)}>
@@ -3111,7 +4521,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
       {isPaymentForm && (
         <div
           className="ce-overlay"
-          onMouseDown={(event) => event.target === event.currentTarget && setIsPaymentForm(false)}
+          onMouseDown={(event) =>
+            event.target === event.currentTarget && setIsPaymentForm(false)
+          }
         >
           <form
             className="ce-dialog"
@@ -3139,11 +4551,18 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
             </label>
             <label className="ce-field">
               Note
-              <input value={paymentNote} onChange={(event) => setPaymentNote(event.target.value)} />
+              <input
+                value={paymentNote}
+                onChange={(event) => setPaymentNote(event.target.value)}
+              />
             </label>
             <label className="ce-field">
               Service
-              <select required value={paymentServiceId} onChange={(event) => setPaymentServiceId(event.target.value)}>
+              <select
+                required
+                value={paymentServiceId}
+                onChange={(event) => setPaymentServiceId(event.target.value)}
+              >
                 {services.map((service) => (
                   <option key={service.id} value={service.id}>
                     {service.title} · {fmtUGX(serviceTotal(service, c))}
@@ -3222,7 +4641,7 @@ function ClientForm({ onAdd, onClose, initialValues }) {
     >
       <div
         style={{
-          background: "#0f0f0f",
+          background: "var(--s1)",
           borderRadius: "16px 16px 0 0",
           width: "100%",
           maxWidth: 480,
@@ -3233,18 +4652,45 @@ function ClientForm({ onAdd, onClose, initialValues }) {
           borderBottom: "none",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <span style={{ fontWeight: "bold", fontSize: 14, letterSpacing: -0.3 }}>New Client Pitch</span>
-          <span onClick={onClose} style={{ color: DIM, cursor: "pointer", fontSize: 20, lineHeight: 1 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 18,
+          }}
+        >
+          <span
+            style={{ fontWeight: "bold", fontSize: 14, letterSpacing: -0.3 }}
+          >
+            New Client Pitch
+          </span>
+          <span
+            onClick={onClose}
+            style={{
+              color: DIM,
+              cursor: "pointer",
+              fontSize: 20,
+              lineHeight: 1,
+            }}
+          >
             ✕
           </span>
         </div>
 
         <Lbl>Full Name *</Lbl>
-        <Inp value={f.name} onChange={(v) => set("name", v)} placeholder="e.g. Sarah Nakato" />
+        <Inp
+          value={f.name}
+          onChange={(v) => set("name", v)}
+          placeholder="e.g. Sarah Nakato"
+        />
 
         <Lbl>Business Name</Lbl>
-        <Inp value={f.business} onChange={(v) => set("business", v)} placeholder="e.g. Nakato Hair Salon" />
+        <Inp
+          value={f.business}
+          onChange={(v) => set("business", v)}
+          placeholder="e.g. Nakato Hair Salon"
+        />
 
         <Lbl>Business Type</Lbl>
         <div style={{ display: "flex", gap: 8 }}>
@@ -3275,14 +4721,30 @@ function ClientForm({ onAdd, onClose, initialValues }) {
 
         {f.businessType &&
           (() => {
-            const match = PACKAGE_TEMPLATES.find((p) => p.match.test(f.businessType));
+            const match = PACKAGE_TEMPLATES.find((p) =>
+              p.match.test(f.businessType),
+            );
             if (!match) return null;
             const items = match.services.split(",").map((s) => s.trim());
             return (
               <div
-                style={{ marginTop: 8, padding: 10, background: SURF, borderRadius: 8, border: `1px solid ${BORDER}` }}
+                style={{
+                  marginTop: 8,
+                  padding: 10,
+                  background: SURF,
+                  borderRadius: 8,
+                  border: `1px solid ${BORDER}`,
+                }}
               >
-                <div style={{ fontSize: 9, color: LIME, letterSpacing: 1, marginBottom: 6, fontWeight: "bold" }}>
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: LIME,
+                    letterSpacing: 1,
+                    marginBottom: 6,
+                    fontWeight: "bold",
+                  }}
+                >
                   SELECT SERVICES TO OFFER:
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -3312,7 +4774,9 @@ function ClientForm({ onAdd, onClose, initialValues }) {
                           cursor: "pointer",
                           fontFamily: FONT,
                           background: active ? LIME + "22" : SURF2,
-                          border: active ? `1px solid ${LIME}` : `1px solid ${BORDER}`,
+                          border: active
+                            ? `1px solid ${LIME}`
+                            : `1px solid ${BORDER}`,
                           color: active ? LIME : DIM,
                           transition: "all 0.1s",
                         }}
@@ -3336,7 +4800,7 @@ function ClientForm({ onAdd, onClose, initialValues }) {
             background: SURF2,
             border: `1px solid ${BORDER}`,
             borderRadius: 8,
-            color: "#fff",
+            color: "var(--text)",
             padding: "10px 12px",
             fontSize: 12,
             fontFamily: FONT,
@@ -3347,7 +4811,11 @@ function ClientForm({ onAdd, onClose, initialValues }) {
         />
 
         <Lbl>Quoted Price (UGX)</Lbl>
-        <Inp value={f.quotedPrice} onChange={(v) => set("quotedPrice", v)} placeholder="e.g. 250k - 450k UGX" />
+        <Inp
+          value={f.quotedPrice}
+          onChange={(v) => set("quotedPrice", v)}
+          placeholder="e.g. 250k - 450k UGX"
+        />
 
         <Lbl>Was the Owner Around?</Lbl>
         <Tog
@@ -3358,7 +4826,12 @@ function ClientForm({ onAdd, onClose, initialValues }) {
         />
 
         <Lbl>Phone Number (Optional)</Lbl>
-        <Inp value={f.phone} onChange={(v) => set("phone", v)} placeholder="e.g. 0701234567" type="tel" />
+        <Inp
+          value={f.phone}
+          onChange={(v) => set("phone", v)}
+          placeholder="e.g. 0701234567"
+          type="tel"
+        />
 
         {f.phone && (
           <>
@@ -3373,10 +4846,18 @@ function ClientForm({ onAdd, onClose, initialValues }) {
         )}
 
         <Lbl>Follow-Up Target Date (Optional)</Lbl>
-        <Inp type="date" value={f.followUpDate} onChange={(v) => set("followUpDate", v)} />
+        <Inp
+          type="date"
+          value={f.followUpDate}
+          onChange={(v) => set("followUpDate", v)}
+        />
 
         <Lbl>Pitched Via</Lbl>
-        <Tog value={f.pitchMethod} opts={["In-Person", "WhatsApp"]} onChange={(v) => set("pitchMethod", v)} />
+        <Tog
+          value={f.pitchMethod}
+          opts={["In-Person", "WhatsApp"]}
+          onChange={(v) => set("pitchMethod", v)}
+        />
 
         <Lbl>Package They Reacted To</Lbl>
         <Tog
@@ -3419,7 +4900,7 @@ function ClientForm({ onAdd, onClose, initialValues }) {
             background: SURF2,
             border: `1px solid ${BORDER}`,
             borderRadius: 8,
-            color: "#fff",
+            color: "var(--text)",
             padding: "10px 12px",
             fontSize: 12,
             fontFamily: FONT,
@@ -3435,7 +4916,7 @@ function ClientForm({ onAdd, onClose, initialValues }) {
           style={{
             width: "100%",
             background: LIME,
-            color: "#000",
+            color: "var(--on-lime)",
             border: "none",
             borderRadius: 8,
             padding: 14,
@@ -3455,13 +4936,18 @@ function ClientForm({ onAdd, onClose, initialValues }) {
 
 // ── Cloud Setup Modal
 function CloudSetupModal({ onClose, onSaved }) {
-  const [url, setUrl] = useState(localStorage.getItem(CLOUD_URL_KEY) || DEFAULT_SUPABASE_URL);
-  const [key, setKey] = useState(localStorage.getItem(CLOUD_KEY_KEY) || DEFAULT_SUPABASE_KEY);
+  const [url, setUrl] = useState(
+    localStorage.getItem(CLOUD_URL_KEY) || DEFAULT_SUPABASE_URL,
+  );
+  const [key, setKey] = useState(
+    localStorage.getItem(CLOUD_KEY_KEY) || DEFAULT_SUPABASE_KEY,
+  );
 
   const save = () => {
     const cleanUrl = normalizeSupabaseUrl(url);
     const cleanKey = key.trim();
-    if (!cleanUrl || !cleanKey) return alert("Add your Supabase URL and anon key first.");
+    if (!cleanUrl || !cleanKey)
+      return alert("Add your Supabase URL and anon key first.");
     localStorage.setItem(CLOUD_URL_KEY, cleanUrl);
     localStorage.setItem(CLOUD_KEY_KEY, cleanKey);
     onSaved({ url: cleanUrl, key: cleanKey });
@@ -3491,28 +4977,57 @@ function CloudSetupModal({ onClose, onSaved }) {
           padding: 18,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: "bold" }}>Cloud backup (Supabase)</div>
-          <span onClick={onClose} style={{ color: DIM, cursor: "pointer", fontSize: 20 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: "bold" }}>
+            Cloud backup (Supabase)
+          </div>
+          <span
+            onClick={onClose}
+            style={{ color: DIM, cursor: "pointer", fontSize: 20 }}
+          >
             ✕
           </span>
         </div>
-        <div style={{ fontSize: 10, color: DIM, lineHeight: 1.6, marginBottom: 12 }}>
-          Use the same Supabase project URL and anon key on every device. These connection settings are saved in this
-          browser only. Create a table named <b>sales_os_state</b> with columns <b>id</b> (text), <b>payload</b>{" "}
-          (jsonb), and <b>updated_at</b> (text). The app uses the row with <b>id = primary</b>.
+        <div
+          style={{
+            fontSize: 10,
+            color: DIM,
+            lineHeight: 1.6,
+            marginBottom: 12,
+          }}
+        >
+          Use the same Supabase project URL and anon key on every device. These
+          connection settings are saved in this browser only. Create a table
+          named <b>sales_os_state</b> with columns <b>id</b> (text),{" "}
+          <b>payload</b> (jsonb), and <b>updated_at</b> (text). The app uses the
+          row with <b>id = primary</b>.
         </div>
         <Lbl>Supabase URL</Lbl>
-        <Inp value={url} onChange={setUrl} placeholder="https://xyzcompany.supabase.co" />
+        <Inp
+          value={url}
+          onChange={setUrl}
+          placeholder="https://xyzcompany.supabase.co"
+        />
         <Lbl>Anon Key</Lbl>
-        <Inp value={key} onChange={setKey} placeholder="Paste your anon/public key" />
+        <Inp
+          value={key}
+          onChange={setKey}
+          placeholder="Paste your anon/public key"
+        />
         <button
           onClick={save}
           style={{
             width: "100%",
             marginTop: 14,
             background: LIME,
-            color: "#000",
+            color: "var(--on-lime)",
             border: "none",
             borderRadius: 8,
             padding: 12,
@@ -3532,7 +5047,9 @@ function CloudSetupModal({ onClose, onSaved }) {
 // ── Micro components
 const Pill = ({ label, count, color }) => (
   <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-    <div style={{ width: 6, height: 6, borderRadius: "50%", background: color }} />
+    <div
+      style={{ width: 6, height: 6, borderRadius: "50%", background: color }}
+    />
     <span style={{ fontSize: 9, color: DIM }}>{label}</span>
     <span style={{ fontSize: 12, fontWeight: "bold", color }}>{count}</span>
   </div>
@@ -3555,7 +5072,17 @@ const TempBadge = ({ temp }) => (
 );
 
 const Bdg = ({ children, color }) => (
-  <span style={{ fontSize: 9, padding: "3px 8px", borderRadius: 20, background: color + "22", color }}>{children}</span>
+  <span
+    style={{
+      fontSize: 9,
+      padding: "3px 8px",
+      borderRadius: 20,
+      background: color + "22",
+      color,
+    }}
+  >
+    {children}
+  </span>
 );
 
 const Chip = ({ children, style }) => (
@@ -3580,7 +5107,7 @@ const ABtn = ({ children, onClick, color, tc }) => (
     onClick={onClick}
     style={{
       background: color || SURF2,
-      color: tc || "#fff",
+      color: tc || "var(--text)",
       border: "none",
       borderRadius: 6,
       padding: "7px 11px",
@@ -3601,7 +5128,7 @@ const SmBtn = ({ children, onClick }) => (
     style={{
       background: SURF2,
       border: `1px solid ${BORDER}`,
-      color: "#fff",
+      color: "var(--text)",
       width: 26,
       height: 26,
       borderRadius: 6,
@@ -3619,7 +5146,17 @@ const SmBtn = ({ children, onClick }) => (
 );
 
 const Lbl = ({ children }) => (
-  <div style={{ color: DIM, fontSize: 9, letterSpacing: 2, marginBottom: 5, marginTop: 13 }}>{children}</div>
+  <div
+    style={{
+      color: DIM,
+      fontSize: 9,
+      letterSpacing: 2,
+      marginBottom: 5,
+      marginTop: 13,
+    }}
+  >
+    {children}
+  </div>
 );
 
 const Inp = ({ value, onChange, placeholder, type }) => (
@@ -3633,7 +5170,7 @@ const Inp = ({ value, onChange, placeholder, type }) => (
       background: SURF2,
       border: `1px solid ${BORDER}`,
       borderRadius: 8,
-      color: "#fff",
+      color: "var(--text)",
       padding: "10px 12px",
       fontSize: 12,
       fontFamily: FONT,
@@ -3675,7 +5212,14 @@ const Tog = ({ value, opts, onChange, colors = {} }) => (
 
 const Empty = ({ text }) => (
   <div
-    style={{ textAlign: "center", color: DIM, fontSize: 11, padding: "44px 0", letterSpacing: 0.5, lineHeight: 1.8 }}
+    style={{
+      textAlign: "center",
+      color: DIM,
+      fontSize: 11,
+      padding: "44px 0",
+      letterSpacing: 0.5,
+      lineHeight: 1.8,
+    }}
   >
     {text}
   </div>
@@ -3687,7 +5231,13 @@ function SystemFlowView() {
     <div style={{ paddingBottom: 20 }}>
       {/* Business Design Flow */}
       <div
-        style={{ marginBottom: 24, background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "16px" }}
+        style={{
+          marginBottom: 24,
+          background: SURF,
+          border: `1px solid ${BORDER}`,
+          borderRadius: 12,
+          padding: "16px",
+        }}
       >
         <h3
           style={{
@@ -3704,8 +5254,25 @@ function SystemFlowView() {
         </h3>
 
         <div style={{ marginTop: 12 }}>
-          <div style={{ color: WARM_C, fontSize: 11, fontWeight: "bold", marginBottom: 6 }}>🚀 Client Flow</div>
-          <ol style={{ fontSize: 11, color: "#ccc", paddingLeft: 20, margin: 0, lineHeight: 1.6 }}>
+          <div
+            style={{
+              color: WARM_C,
+              fontSize: 11,
+              fontWeight: "bold",
+              marginBottom: 6,
+            }}
+          >
+            🚀 Client Flow
+          </div>
+          <ol
+            style={{
+              fontSize: 11,
+              color: "var(--text-2)",
+              paddingLeft: 20,
+              margin: 0,
+              lineHeight: 1.6,
+            }}
+          >
             <li>Meet client & Understand problem</li>
             <li>Show relevant demo</li>
             <li>Collect details</li>
@@ -3716,12 +5283,28 @@ function SystemFlowView() {
         </div>
 
         <div style={{ marginTop: 16 }}>
-          <div style={{ color: COLD_C, fontSize: 11, fontWeight: "bold", marginBottom: 6 }}>
+          <div
+            style={{
+              color: COLD_C,
+              fontSize: 11,
+              fontWeight: "bold",
+              marginBottom: 6,
+            }}
+          >
             📦 My Packages (Examples)
           </div>
-          <ul style={{ fontSize: 11, color: "#ccc", paddingLeft: 20, margin: 0, lineHeight: 1.6 }}>
+          <ul
+            style={{
+              fontSize: 11,
+              color: "var(--text-2)",
+              paddingLeft: 20,
+              margin: 0,
+              lineHeight: 1.6,
+            }}
+          >
             <li>
-              <b>Restaurant Setup:</b> QR Menu, Whatsapp ordering, Flyer, Hosting
+              <b>Restaurant Setup:</b> QR Menu, Whatsapp ordering, Flyer,
+              Hosting
             </li>
             <li>
               <b>Salon Setup:</b> Booking, Whatsapp, Gallery
@@ -3730,17 +5313,44 @@ function SystemFlowView() {
         </div>
 
         <div style={{ marginTop: 16 }}>
-          <div style={{ color: GREEN_WA, fontSize: 11, fontWeight: "bold", marginBottom: 6 }}>
+          <div
+            style={{
+              color: GREEN_WA,
+              fontSize: 11,
+              fontWeight: "bold",
+              marginBottom: 6,
+            }}
+          >
             ♻️ Reusable Assets (Time Savers)
           </div>
-          <div style={{ fontSize: 11, color: "#ccc", lineHeight: 1.6 }}>
-            Keep organized: demos, logos, QR templates, flyer templates, code templates.
+          <div
+            style={{ fontSize: 11, color: "var(--text-2)", lineHeight: 1.6 }}
+          >
+            Keep organized: demos, logos, QR templates, flyer templates, code
+            templates.
           </div>
         </div>
 
         <div style={{ marginTop: 16 }}>
-          <div style={{ color: LIME, fontSize: 11, fontWeight: "bold", marginBottom: 6 }}>💬 Communication Style</div>
-          <ul style={{ fontSize: 11, color: "#ccc", paddingLeft: 20, margin: 0, lineHeight: 1.6 }}>
+          <div
+            style={{
+              color: LIME,
+              fontSize: 11,
+              fontWeight: "bold",
+              marginBottom: 6,
+            }}
+          >
+            💬 Communication Style
+          </div>
+          <ul
+            style={{
+              fontSize: 11,
+              color: "var(--text-2)",
+              paddingLeft: 20,
+              margin: 0,
+              lineHeight: 1.6,
+            }}
+          >
             <li>Don't pressure clients</li>
             <li>Focus on business benefits</li>
             <li>Guide confidently (Short followups)</li>
@@ -3767,17 +5377,67 @@ function SystemFlowView() {
         {PACKAGE_TEMPLATES.map((p, i) => (
           <div
             key={i}
-            style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14, marginTop: 10 }}
+            style={{
+              background: SURF,
+              border: `1px solid ${BORDER}`,
+              borderRadius: 10,
+              padding: 14,
+              marginTop: 10,
+            }}
           >
-            <div style={{ fontSize: 12, fontWeight: "bold", color: "#fff", marginBottom: 6 }}>{p.name}</div>
-            <div style={{ fontSize: 11, color: DIM, marginBottom: 8, lineHeight: 1.4 }}>Includes: {p.services}</div>
-            <div style={{ fontSize: 12, color: LIME, fontWeight: "bold" }}>Charge: {p.price}</div>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: "bold",
+                color: "var(--text)",
+                marginBottom: 6,
+              }}
+            >
+              {p.name}
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                color: DIM,
+                marginBottom: 8,
+                lineHeight: 1.4,
+              }}
+            >
+              Includes: {p.services}
+            </div>
+            <div style={{ fontSize: 12, color: LIME, fontWeight: "bold" }}>
+              Charge: {p.price}
+            </div>
           </div>
         ))}
 
-        <div style={{ background: SURF2, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14, marginTop: 10 }}>
-          <div style={{ fontSize: 12, fontWeight: "bold", color: "#fff", marginBottom: 6 }}>🔄 Monthly Support</div>
-          <div style={{ fontSize: 11, color: DIM, marginBottom: 8, lineHeight: 1.4 }}>
+        <div
+          style={{
+            background: SURF2,
+            border: `1px solid ${BORDER}`,
+            borderRadius: 10,
+            padding: 14,
+            marginTop: 10,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: "bold",
+              color: "var(--text)",
+              marginBottom: 6,
+            }}
+          >
+            🔄 Monthly Support
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: DIM,
+              marginBottom: 8,
+              lineHeight: 1.4,
+            }}
+          >
             Includes: updates, small edits, promo banners, monitoring/help
           </div>
           <div style={{ fontSize: 12, color: WARM_C, fontWeight: "bold" }}>
@@ -3795,29 +5455,41 @@ function OngoingView({ clients }) {
   const ongoing = Object.entries(clients).flatMap(([date, arr]) =>
     arr.filter((c) => c.status === "ongoing").map((c) => ({ ...c, date })),
   );
-  const activeIds = new Set(outstandingBalances(clients).map((item) => item.clientId));
-  const active = ongoing.filter((client) => !client.paused && activeIds.has(client.id));
+  const active = ongoing.filter((client) => !client.paused);
   const paused = ongoing.filter((client) => client.paused);
-  const visible = filter === "Paused" ? paused : filter === "All" ? ongoing : active;
+  const visible =
+    filter === "Paused" ? paused : filter === "All" ? ongoing : active;
 
   if (ongoing.length === 0) {
-    return <Empty text="No ongoing projects yet. Win some deals to move them here! 🏆" />;
+    return (
+      <Empty text="No ongoing projects yet. Win some deals to move them here! 🏆" />
+    );
   }
 
   return (
     <div>
       <div className="os-segments" role="group" aria-label="Ongoing clients">
         {["Active", "Paused", "All"].map((item) => (
-          <button className={filter === item ? "active" : ""} key={item} onClick={() => setFilter(item)}>
+          <button
+            className={filter === item ? "active" : ""}
+            key={item}
+            onClick={() => setFilter(item)}
+          >
             {item}
-            {item === "Paused" ? ` (${paused.length})` : item === "Active" ? ` (${active.length})` : ""}
+            {item === "Paused"
+              ? ` (${paused.length})`
+              : item === "Active"
+                ? ` (${active.length})`
+                : ""}
           </button>
         ))}
       </div>
       {visible.length === 0 ? (
         <Empty text={`No ${filter.toLowerCase()} ongoing clients.`} />
       ) : (
-        visible.map((c) => <ClientRow key={c.id + c.date} client={c} date={c.date} />)
+        visible.map((c) => (
+          <ClientRow key={c.id + c.date} client={c} date={c.date} />
+        ))
       )}
     </div>
   );
@@ -3833,69 +5505,125 @@ function ServiceAccountList({ accounts, onUpdate, tone, label }) {
   });
   return (
     <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 10, color: tone, letterSpacing: 2, marginBottom: 10, fontWeight: "bold" }}>{label}</div>
+      <div
+        style={{
+          fontSize: 10,
+          color: tone,
+          letterSpacing: 2,
+          marginBottom: 10,
+          fontWeight: "bold",
+        }}
+      >
+        {label}
+      </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {sortedAccounts.map(({ client, service, total, paid, balance, dueDate }) => (
-          <div
-            key={`${client.id}-${service.id}`}
-            style={{
-              background: SURF,
-              border: `1px solid ${BORDER}`,
-              borderLeft: `3px solid ${tone}`,
-              borderRadius: 8,
-              padding: 12,
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 5 }}>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: "bold", color: "#fff" }}>{client.name}</div>
-                <div style={{ fontSize: 10, color: DIM, marginTop: 2 }}>
-                  {client.business || "No business"} · {service.title}
-                </div>
-              </div>
-              <div style={{ textAlign: "right", fontSize: 10, color: balance > 0 ? WARM_C : LIME, fontWeight: "bold" }}>
-                {fmtUGX(balance)} left
-              </div>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10, color: DIM }}>
-              <span>
-                Agreed {fmtUGX(total)} · Paid {fmtUGX(paid)}
-              </span>
-              <span>{dueDate ? `Due ${fmtDate(dueDate)}` : "No due date"}</span>
-            </div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 9 }}>
-              <button
-                onClick={() =>
-                  onUpdate(client.date, client.id, {
-                    services: getClientServices(client).map((s) =>
-                      s.id === service.id ? { ...s, dueDate: todayStr() } : s,
-                    ),
-                  })
-                }
+        {sortedAccounts.map(
+          ({ client, service, total, paid, balance, dueDate }) => (
+            <div
+              key={`${client.id}-${service.id}`}
+              style={{
+                background: SURF,
+                border: `1px solid ${BORDER}`,
+                borderLeft: `3px solid ${tone}`,
+                borderRadius: 8,
+                padding: 12,
+              }}
+            >
+              <div
                 style={{
-                  background: SURF2,
-                  border: `1px solid ${BORDER}`,
-                  color: WARM_C,
-                  borderRadius: 5,
-                  padding: "5px 8px",
-                  fontSize: 9,
-                  cursor: "pointer",
-                  fontFamily: FONT,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  marginBottom: 5,
                 }}
               >
-                Mark due today
-              </button>
+                <div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "bold",
+                      color: "var(--text)",
+                    }}
+                  >
+                    {client.name}
+                  </div>
+                  <div style={{ fontSize: 10, color: DIM, marginTop: 2 }}>
+                    {client.business || "No business"} · {service.title}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    textAlign: "right",
+                    fontSize: 10,
+                    color: balance > 0 ? WARM_C : LIME,
+                    fontWeight: "bold",
+                  }}
+                >
+                  {fmtUGX(balance)} left
+                </div>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  fontSize: 10,
+                  color: DIM,
+                }}
+              >
+                <span>
+                  Agreed {fmtUGX(total)} · Paid {fmtUGX(paid)}
+                </span>
+                <span>
+                  {dueDate ? `Due ${fmtDate(dueDate)}` : "No due date"}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 6,
+                  flexWrap: "wrap",
+                  marginTop: 9,
+                }}
+              >
+                <button
+                  onClick={() =>
+                    onUpdate(client.date, client.id, {
+                      services: getClientServices(client).map((s) =>
+                        s.id === service.id ? { ...s, dueDate: todayStr() } : s,
+                      ),
+                    })
+                  }
+                  style={{
+                    background: SURF2,
+                    border: `1px solid ${BORDER}`,
+                    color: WARM_C,
+                    borderRadius: 5,
+                    padding: "5px 8px",
+                    fontSize: 9,
+                    cursor: "pointer",
+                    fontFamily: FONT,
+                  }}
+                >
+                  Mark due today
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          ),
+        )}
       </div>
     </div>
   );
 }
 
 function StatsView({ clients, target }) {
-  const activeOutstanding = outstandingBalances(clients).reduce((sum, item) => sum + item.balance, 0);
-  const allClients = Object.entries(clients).flatMap(([date, arr]) => arr.map((c) => ({ ...c, date })));
+  const activeOutstanding = outstandingBalances(clients).reduce(
+    (sum, item) => sum + item.balance,
+    0,
+  );
+  const allClients = Object.entries(clients).flatMap(([date, arr]) =>
+    arr.map((c) => ({ ...c, date })),
+  );
 
   const today = todayStr();
 
@@ -3911,17 +5639,28 @@ function StatsView({ clients, target }) {
 
   const todayOutreaches = allClients.filter((c) => c.date === today).length;
   const weekOutreaches = allClients.filter((c) => c.date >= oneWeekAgo).length;
-  const monthOutreaches = allClients.filter((c) => c.date >= oneMonthAgo).length;
-  const yearOutreaches = allClients.filter((c) => c.date >= thisYearStart).length;
+  const monthOutreaches = allClients.filter(
+    (c) => c.date >= oneMonthAgo,
+  ).length;
+  const yearOutreaches = allClients.filter(
+    (c) => c.date >= thisYearStart,
+  ).length;
 
   const totalOutreaches = allClients.length;
   const totalLeads = allClients.filter((c) => c.status === "lead").length;
   const totalOngoing = allClients.filter((c) => c.status === "ongoing").length;
 
-  const conversionRate = totalOutreaches > 0 ? ((totalOngoing / totalOutreaches) * 100).toFixed(1) : "0.0";
+  const conversionRate =
+    totalOutreaches > 0
+      ? ((totalOngoing / totalOutreaches) * 100).toFixed(1)
+      : "0.0";
 
-  const inPerson = allClients.filter((c) => c.pitchMethod === "In-Person").length;
-  const whatsapp = allClients.filter((c) => c.pitchMethod === "WhatsApp").length;
+  const inPerson = allClients.filter(
+    (c) => c.pitchMethod === "In-Person",
+  ).length;
+  const whatsapp = allClients.filter(
+    (c) => c.pitchMethod === "WhatsApp",
+  ).length;
 
   const warm = allClients.filter((c) => c.temp === "warm").length;
   const cold = allClients.filter((c) => c.temp === "cold").length;
@@ -3933,14 +5672,42 @@ function StatsView({ clients, target }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-          <span style={{ fontSize: 10, color: DIM, letterSpacing: 1 }}>TODAY'S OUTREACH TARGET</span>
-          <span style={{ fontSize: 12, color: todayPct >= 1 ? LIME : "#fff", fontWeight: "bold" }}>
+      <div
+        style={{
+          background: SURF,
+          border: `1px solid ${BORDER}`,
+          borderRadius: 12,
+          padding: "16px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginBottom: 8,
+          }}
+        >
+          <span style={{ fontSize: 10, color: DIM, letterSpacing: 1 }}>
+            TODAY'S OUTREACH TARGET
+          </span>
+          <span
+            style={{
+              fontSize: 12,
+              color: todayPct >= 1 ? LIME : "var(--text)",
+              fontWeight: "bold",
+            }}
+          >
             {todayOutreaches} / {target} ({Math.round(todayPct * 100)}%)
           </span>
         </div>
-        <div style={{ background: BORDER, borderRadius: 4, height: 6, overflow: "hidden" }}>
+        <div
+          style={{
+            background: BORDER,
+            borderRadius: 4,
+            height: 6,
+            overflow: "hidden",
+          }}
+        >
           <div
             style={{
               height: "100%",
@@ -3954,94 +5721,292 @@ function StatsView({ clients, target }) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 4 }}>TODAY</div>
-          <div style={{ fontSize: 20, fontWeight: "bold", color: LIME }}>{todayOutreaches}</div>
-          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>Target: {target}</div>
+        <div
+          style={{
+            background: SURF,
+            border: `1px solid ${BORDER}`,
+            borderRadius: 10,
+            padding: 12,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 8,
+              color: DIM,
+              letterSpacing: 1,
+              marginBottom: 4,
+            }}
+          >
+            TODAY
+          </div>
+          <div style={{ fontSize: 20, fontWeight: "bold", color: LIME }}>
+            {todayOutreaches}
+          </div>
+          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>
+            Target: {target}
+          </div>
         </div>
-        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 4 }}>THIS WEEK (7D)</div>
-          <div style={{ fontSize: 20, fontWeight: "bold", color: "#fff" }}>{weekOutreaches}</div>
-          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>Avg: {(weekOutreaches / 7).toFixed(1)}/day</div>
+        <div
+          style={{
+            background: SURF,
+            border: `1px solid ${BORDER}`,
+            borderRadius: 10,
+            padding: 12,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 8,
+              color: DIM,
+              letterSpacing: 1,
+              marginBottom: 4,
+            }}
+          >
+            THIS WEEK (7D)
+          </div>
+          <div
+            style={{ fontSize: 20, fontWeight: "bold", color: "var(--text)" }}
+          >
+            {weekOutreaches}
+          </div>
+          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>
+            Avg: {(weekOutreaches / 7).toFixed(1)}/day
+          </div>
         </div>
-        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 4 }}>THIS MONTH (30D)</div>
-          <div style={{ fontSize: 20, fontWeight: "bold", color: "#fff" }}>{monthOutreaches}</div>
-          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>Avg: {(monthOutreaches / 30).toFixed(1)}/day</div>
+        <div
+          style={{
+            background: SURF,
+            border: `1px solid ${BORDER}`,
+            borderRadius: 10,
+            padding: 12,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 8,
+              color: DIM,
+              letterSpacing: 1,
+              marginBottom: 4,
+            }}
+          >
+            THIS MONTH (30D)
+          </div>
+          <div
+            style={{ fontSize: 20, fontWeight: "bold", color: "var(--text)" }}
+          >
+            {monthOutreaches}
+          </div>
+          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>
+            Avg: {(monthOutreaches / 30).toFixed(1)}/day
+          </div>
         </div>
-        <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 8, color: DIM, letterSpacing: 1, marginBottom: 4 }}>THIS YEAR</div>
-          <div style={{ fontSize: 20, fontWeight: "bold", color: "#fff" }}>{yearOutreaches}</div>
-          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>Total year pitches</div>
+        <div
+          style={{
+            background: SURF,
+            border: `1px solid ${BORDER}`,
+            borderRadius: 10,
+            padding: 12,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 8,
+              color: DIM,
+              letterSpacing: 1,
+              marginBottom: 4,
+            }}
+          >
+            THIS YEAR
+          </div>
+          <div
+            style={{ fontSize: 20, fontWeight: "bold", color: "var(--text)" }}
+          >
+            {yearOutreaches}
+          </div>
+          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>
+            Total year pitches
+          </div>
         </div>
       </div>
 
-      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "16px" }}>
-        <div style={{ fontSize: 10, color: DIM, letterSpacing: 1, marginBottom: 12 }}>CONVERSION PERFORMANCE</div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div
+        style={{
+          background: SURF,
+          border: `1px solid ${BORDER}`,
+          borderRadius: 12,
+          padding: "16px",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 10,
+            color: DIM,
+            letterSpacing: 1,
+            marginBottom: 12,
+          }}
+        >
+          CONVERSION PERFORMANCE
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 12,
+          }}
+        >
           <div>
-            <div style={{ fontSize: 24, fontWeight: "bold", color: LIME }}>{conversionRate}%</div>
+            <div style={{ fontSize: 24, fontWeight: "bold", color: LIME }}>
+              {conversionRate}%
+            </div>
             <div style={{ fontSize: 9, color: DIM }}>LEADS TO ONGOING</div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 11, color: "#ccc" }}>
+            <div style={{ fontSize: 11, color: "var(--text-2)" }}>
               <b>{totalOngoing}</b> Won Clients
             </div>
-            <div style={{ fontSize: 11, color: "#ccc", marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 2 }}>
               <b>{totalLeads}</b> Active Leads
             </div>
             <div style={{ fontSize: 10, color: DIM, marginTop: 4 }}>
               Active balance due: {fmtUGX(activeOutstanding)}
             </div>
-            <div style={{ fontSize: 10, color: DIM, marginTop: 4 }}>Out of {totalOutreaches} total pitches</div>
+            <div style={{ fontSize: 10, color: DIM, marginTop: 4 }}>
+              Out of {totalOutreaches} total pitches
+            </div>
           </div>
         </div>
       </div>
 
-      <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "16px" }}>
-        <div style={{ fontSize: 10, color: DIM, letterSpacing: 1, marginBottom: 12 }}>OUTREACH ANALYSIS</div>
+      <div
+        style={{
+          background: SURF,
+          border: `1px solid ${BORDER}`,
+          borderRadius: 12,
+          padding: "16px",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 10,
+            color: DIM,
+            letterSpacing: 1,
+            marginBottom: 12,
+          }}
+        >
+          OUTREACH ANALYSIS
+        </div>
 
         <div style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontSize: 10,
+              marginBottom: 4,
+            }}
+          >
             <span style={{ color: DIM }}>Pitch Method</span>
             <span>
               In-Person: {inPerson} · WhatsApp: {whatsapp}
             </span>
           </div>
-          <div style={{ background: BORDER, height: 6, borderRadius: 3, display: "flex", overflow: "hidden" }}>
-            <div style={{ background: LIME, width: `${totalOutreaches ? (inPerson / totalOutreaches) * 100 : 0}%` }} />
+          <div
+            style={{
+              background: BORDER,
+              height: 6,
+              borderRadius: 3,
+              display: "flex",
+              overflow: "hidden",
+            }}
+          >
             <div
-              style={{ background: GREEN_WA, width: `${totalOutreaches ? (whatsapp / totalOutreaches) * 100 : 0}%` }}
+              style={{
+                background: LIME,
+                width: `${totalOutreaches ? (inPerson / totalOutreaches) * 100 : 0}%`,
+              }}
+            />
+            <div
+              style={{
+                background: GREEN_WA,
+                width: `${totalOutreaches ? (whatsapp / totalOutreaches) * 100 : 0}%`,
+              }}
             />
           </div>
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontSize: 10,
+              marginBottom: 4,
+            }}
+          >
             <span style={{ color: DIM }}>Lead Temperature</span>
             <span>
               Warm: {warm} · Cold: {cold}
             </span>
           </div>
-          <div style={{ background: BORDER, height: 6, borderRadius: 3, display: "flex", overflow: "hidden" }}>
-            <div style={{ background: WARM_C, width: `${totalOutreaches ? (warm / totalOutreaches) * 100 : 0}%` }} />
-            <div style={{ background: COLD_C, width: `${totalOutreaches ? (cold / totalOutreaches) * 100 : 0}%` }} />
+          <div
+            style={{
+              background: BORDER,
+              height: 6,
+              borderRadius: 3,
+              display: "flex",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                background: WARM_C,
+                width: `${totalOutreaches ? (warm / totalOutreaches) * 100 : 0}%`,
+              }}
+            />
+            <div
+              style={{
+                background: COLD_C,
+                width: `${totalOutreaches ? (cold / totalOutreaches) * 100 : 0}%`,
+              }}
+            />
           </div>
         </div>
 
         <div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 4 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontSize: 10,
+              marginBottom: 4,
+            }}
+          >
             <span style={{ color: DIM }}>Decision Maker Presence</span>
             <span>
               Owner Around: {ownerPresent} · Staff Only: {ownerAbsent}
             </span>
           </div>
-          <div style={{ background: BORDER, height: 6, borderRadius: 3, display: "flex", overflow: "hidden" }}>
+          <div
+            style={{
+              background: BORDER,
+              height: 6,
+              borderRadius: 3,
+              display: "flex",
+              overflow: "hidden",
+            }}
+          >
             <div
-              style={{ background: LIME, width: `${totalOutreaches ? (ownerPresent / totalOutreaches) * 100 : 0}%` }}
+              style={{
+                background: LIME,
+                width: `${totalOutreaches ? (ownerPresent / totalOutreaches) * 100 : 0}%`,
+              }}
             />
             <div
-              style={{ background: DIM, width: `${totalOutreaches ? (ownerAbsent / totalOutreaches) * 100 : 0}%` }}
+              style={{
+                background: DIM,
+                width: `${totalOutreaches ? (ownerAbsent / totalOutreaches) * 100 : 0}%`,
+              }}
             />
           </div>
         </div>

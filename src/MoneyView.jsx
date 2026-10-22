@@ -1,7 +1,13 @@
 import { useMemo, useState } from "react";
-import { DEFAULT_FINANCE, allocateAmount, getBalances, getTransactions } from "./money.js";
+import {
+  DEFAULT_FINANCE,
+  allocateAmount,
+  getBalances,
+  getTransactions,
+} from "./money.js";
 import { outstandingBalances, pausedBalances } from "./clients.js";
 import { useConfirm } from "./Confirm.jsx";
+import { Icon } from "./icons.jsx";
 
 const money = (n) => `UGX ${Math.round(n || 0).toLocaleString("en-UG")}`;
 const uid = () => `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -28,6 +34,7 @@ export default function MoneyView({
   const [message, setMessage] = useState("");
   const [paymentEdit, setPaymentEdit] = useState(null);
   const [paymentEditError, setPaymentEditError] = useState("");
+  const [incomeMenuOpen, setIncomeMenuOpen] = useState(false);
   const [resetBucket, setResetBucket] = useState(null);
   const [resetOpening, setResetOpening] = useState("0");
   const [resetNote, setResetNote] = useState("");
@@ -44,8 +51,14 @@ export default function MoneyView({
     .filter((b) => b.status !== "archived")
     .sort((a, b) => a.sortOrder - b.sortOrder);
   const transactions = useMemo(() => getTransactions(data), [data]);
-  const totals = useMemo(() => getBalances(transactions, finance), [transactions, finance]);
-  const allocationTotal = activeBuckets.reduce((n, b) => n + (Number(b.percentage) || 0), 0);
+  const totals = useMemo(
+    () => getBalances(transactions, finance),
+    [transactions, finance],
+  );
+  const allocationTotal = activeBuckets.reduce(
+    (n, b) => n + (Number(b.percentage) || 0),
+    0,
+  );
   const assignedBalance = Object.values(totals.buckets).reduce(
     (sum, bucket) => sum + bucket.allocated - bucket.spent,
     0,
@@ -117,7 +130,9 @@ export default function MoneyView({
             note: draft.note || "",
             sourceType: draft.sourceType,
             accountId: draft.accountId,
-            allocationMode: draft.custom ? "custom" : editing.allocationMode || "default",
+            allocationMode: draft.custom
+              ? "custom"
+              : editing.allocationMode || "default",
             allocations: split.allocations,
             unallocated: split.unallocated,
             origin: editing.origin || "current",
@@ -126,7 +141,9 @@ export default function MoneyView({
             ...data,
             finance: {
               ...finance,
-              manualIncome: finance.manualIncome.map((x) => (x.id === editing.id ? updated : x)),
+              manualIncome: finance.manualIncome.map((x) =>
+                x.id === editing.id ? updated : x,
+              ),
             },
           });
         } else {
@@ -218,7 +235,12 @@ export default function MoneyView({
       closeForm();
     } else if (form === "source") {
       if (!draft.name?.trim()) return setMessage("Enter a source type.");
-      if (finance.sources.some((x) => x.toLocaleLowerCase() === draft.name.trim().toLocaleLowerCase()))
+      if (
+        finance.sources.some(
+          (x) =>
+            x.toLocaleLowerCase() === draft.name.trim().toLocaleLowerCase(),
+        )
+      )
         return setMessage("That source type already exists.");
       onSave({
         ...data,
@@ -245,7 +267,9 @@ export default function MoneyView({
       finance: {
         ...finance,
         buckets: finance.buckets.map((b) =>
-          b.id === bucket.id ? { ...b, status: "archived", archivedAt: new Date().toISOString() } : b,
+          b.id === bucket.id
+            ? { ...b, status: "archived", archivedAt: new Date().toISOString() }
+            : b,
         ),
       },
     });
@@ -255,7 +279,9 @@ export default function MoneyView({
       ...data,
       finance: {
         ...finance,
-        buckets: finance.buckets.map((b) => (b.id === bucket.id ? { ...b, status: "active", archivedAt: null } : b)),
+        buckets: finance.buckets.map((b) =>
+          b.id === bucket.id ? { ...b, status: "active", archivedAt: null } : b,
+        ),
       },
     });
   const reorderBucket = (bucket, direction) => {
@@ -293,7 +319,9 @@ export default function MoneyView({
       finance: {
         ...finance,
         accounts: finance.accounts.map((a) =>
-          a.id === account.id ? { ...a, status: "archived", archivedAt: new Date().toISOString() } : a,
+          a.id === account.id
+            ? { ...a, status: "archived", archivedAt: new Date().toISOString() }
+            : a,
         ),
       },
     });
@@ -318,7 +346,13 @@ export default function MoneyView({
       opening: Math.max(0, Number(resetOpening) || 0),
       note: resetNote.trim(),
     };
-    onSave({ ...data, finance: { ...finance, bucketResets: [...(finance.bucketResets || []), reset] } });
+    onSave({
+      ...data,
+      finance: {
+        ...finance,
+        bucketResets: [...(finance.bucketResets || []), reset],
+      },
+    });
     setResetBucket(null);
     setResetOpening("0");
     setResetNote("");
@@ -326,7 +360,12 @@ export default function MoneyView({
   const undoBucketClear = (reset) =>
     onSave({
       ...data,
-      finance: { ...finance, bucketResets: (finance.bucketResets || []).filter((item) => item.id !== reset.id) },
+      finance: {
+        ...finance,
+        bucketResets: (finance.bucketResets || []).filter(
+          (item) => item.id !== reset.id,
+        ),
+      },
     });
   const setPaymentAccount = (transaction, accountId) => {
     const entry = Object.entries(data.clients).find(([, clients]) =>
@@ -336,7 +375,9 @@ export default function MoneyView({
     const [date, clients] = entry;
     const client = clients.find((c) => c.id === transaction.clientId);
     onUpdateClient(date, client.id, {
-      payments: (client.payments || []).map((p) => (p.id === transaction.paymentId ? { ...p, accountId } : p)),
+      payments: (client.payments || []).map((p) =>
+        p.id === transaction.paymentId ? { ...p, accountId } : p,
+      ),
     });
   };
   const openClientPaymentEdit = (row, payment) => {
@@ -357,7 +398,10 @@ export default function MoneyView({
       return setPaymentEditError("Enter a valid amount greater than zero.");
     const clients = data.clients[paymentEdit.date] || [];
     const client = clients.find((item) => item.id === paymentEdit.clientId);
-    if (!client) return setPaymentEditError("This client could not be found. Refresh and try again.");
+    if (!client)
+      return setPaymentEditError(
+        "This client could not be found. Refresh and try again.",
+      );
     const payments = (client.payments || []).map((payment) =>
       payment.id === paymentEdit.paymentId
         ? {
@@ -370,20 +414,34 @@ export default function MoneyView({
     );
     onUpdateClient(paymentEdit.date, client.id, {
       payments,
-      amountPaid: payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0),
+      amountPaid: payments.reduce(
+        (sum, payment) => sum + (Number(payment.amount) || 0),
+        0,
+      ),
     });
     setPaymentEdit(null);
   };
   const archiveTransaction = (t) => {
-    if (t.type === "income" && t.sourceType !== "client_payment") onDeleteIncome(t.id.replace("income:", ""));
+    if (t.type === "income" && t.sourceType !== "client_payment")
+      onDeleteIncome(t.id.replace("income:", ""));
     if (t.type === "expense") onDeleteExpense(t.id.replace("expense:", ""));
   };
   const visible = transactions
-    .filter((t) => filter === "All" || (filter === "Income" ? t.type === "income" : t.type === "expense"))
+    .filter(
+      (t) =>
+        filter === "All" ||
+        (filter === "Income" ? t.type === "income" : t.type === "expense"),
+    )
     .filter(
       (transaction) =>
         !searchText ||
-        [transaction.description, transaction.note, transaction.sourceType, transaction.amount, transaction.date]
+        [
+          transaction.description,
+          transaction.note,
+          transaction.sourceType,
+          transaction.amount,
+          transaction.date,
+        ]
           .join(" ")
           .toLocaleLowerCase()
           .includes(searchText.toLocaleLowerCase()),
@@ -393,9 +451,21 @@ export default function MoneyView({
   return (
     <main className="money-app">
       <header className="money-header">
+        <h1>Money</h1>
         <nav className="money-nav" aria-label="Money sections">
-          {["Overview", "Income", "Expenses", "Allocations", "Accounts", "Client balances"].map((item) => (
-            <button key={item} className={tab === item ? "selected" : ""} onClick={() => setTab(item)}>
+          {[
+            "Overview",
+            "Income",
+            "Expenses",
+            "Allocations",
+            "Accounts",
+            "Client balances",
+          ].map((item) => (
+            <button
+              key={item}
+              className={tab === item ? "selected" : ""}
+              onClick={() => setTab(item)}
+            >
               {item}
             </button>
           ))}
@@ -414,7 +484,11 @@ export default function MoneyView({
                 value={money(totals.income)}
                 detail={`${money(totals.clientIncome)} from clients · ${money(totals.otherIncome)} other`}
               />
-              <Metric title="Available money" value={money(totals.available)} detail="Income received less expenses" />
+              <Metric
+                title="Available money"
+                value={money(totals.available)}
+                detail="Income received less expenses"
+              />
               <Metric
                 title="Total expenses"
                 value={money(totals.expenses)}
@@ -422,7 +496,12 @@ export default function MoneyView({
               />
               <Metric
                 title="Outstanding client money"
-                value={money(outstandingBalances(data.clients).reduce((sum, item) => sum + item.balance, 0))}
+                value={money(
+                  outstandingBalances(data.clients).reduce(
+                    (sum, item) => sum + item.balance,
+                    0,
+                  ),
+                )}
                 detail="Agreed client balances · not cash"
               />
             </div>
@@ -432,7 +511,10 @@ export default function MoneyView({
                   <h2>Money by purpose</h2>
                   <p>Current balances from allocations and expenses</p>
                 </div>
-                <button className="m-quiet" onClick={() => setTab("Allocations")}>
+                <button
+                  className="m-quiet"
+                  onClick={() => setTab("Allocations")}
+                >
                   Manage allocations →
                 </button>
               </div>
@@ -472,7 +554,10 @@ export default function MoneyView({
                           </span>
                         </div>
                         <div className="m-row-actions">
-                          <button className="m-quiet" onClick={() => startForm("bucket", b)}>
+                          <button
+                            className="m-quiet"
+                            onClick={() => startForm("bucket", b)}
+                          >
                             Edit
                           </button>
                           <button
@@ -484,7 +569,10 @@ export default function MoneyView({
                           >
                             Start fresh
                           </button>
-                          <button className="m-quiet" onClick={() => archiveBucket(b)}>
+                          <button
+                            className="m-quiet"
+                            onClick={() => archiveBucket(b)}
+                          >
                             Archive
                           </button>
                         </div>
@@ -493,8 +581,12 @@ export default function MoneyView({
                           .slice(-1)
                           .map((reset) => (
                             <p className="m-muted" key={reset.id}>
-                              Counting since {new Date(reset.at).toLocaleDateString("en-UG")} ·{" "}
-                              <button className="m-quiet" onClick={() => undoBucketClear(reset)}>
+                              Counting since{" "}
+                              {new Date(reset.at).toLocaleDateString("en-UG")} ·{" "}
+                              <button
+                                className="m-quiet"
+                                onClick={() => undoBucketClear(reset)}
+                              >
                                 Undo clear
                               </button>
                             </p>
@@ -511,7 +603,10 @@ export default function MoneyView({
                   label="Set up buckets"
                 />
               )}
-              <p className="m-muted">Not assigned to a purpose: {money(totals.available - assignedBalance)}</p>
+              <p className="m-muted">
+                Not assigned to a purpose:{" "}
+                {money(totals.available - assignedBalance)}
+              </p>
             </div>
             <div className="m-two-col">
               <div className="m-panel">
@@ -520,7 +615,10 @@ export default function MoneyView({
                     <h2>Where money is</h2>
                     <p>Balances derive from recorded activity</p>
                   </div>
-                  <button className="m-quiet" onClick={() => setTab("Accounts")}>
+                  <button
+                    className="m-quiet"
+                    onClick={() => setTab("Accounts")}
+                  >
                     Accounts →
                   </button>
                 </div>
@@ -558,22 +656,43 @@ export default function MoneyView({
             <div className="m-section-head">
               <div>
                 <h2>Income</h2>
-                <p>Client payments appear automatically. Other income is recorded here.</p>
+                <p>
+                  Client payments appear automatically. Other income is recorded
+                  here.
+                </p>
+                <button
+                  className="m-menu-button"
+                  aria-label="Income options"
+                  onClick={() => setIncomeMenuOpen((open) => !open)}
+                >
+                  ⋯
+                </button>
+                {incomeMenuOpen && (
+                  <button
+                    className="m-secondary"
+                    onClick={() => {
+                      setIncomeMenuOpen(false);
+                      startForm("source");
+                    }}
+                  >
+                    Source type
+                  </button>
+                )}
               </div>
               <div className="m-actions">
-                <button className="m-secondary" onClick={() => startForm("source")}>
+                <button
+                  className="m-secondary"
+                  onClick={() => startForm("source")}
+                >
                   ＋ Source type
                 </button>
                 <button className="m-primary" onClick={createManualIncome}>
-                  ＋ Log income
+                  ＋ Add income
                 </button>
               </div>
             </div>
             <FilterBar filter={filter} setFilter={setFilter} />
-            <label className="m-search-filter">
-              Search transactions
-              <input value={searchText} onChange={(event) => setSearchText(event.target.value)} />
-            </label>
+            <TransactionSearch value={searchText} onChange={setSearchText} />
             <TransactionList
               rows={visible.filter((t) => t.type === "income")}
               finance={finance}
@@ -590,15 +709,15 @@ export default function MoneyView({
                 <h2>Expenses</h2>
                 <p>Assign each expense to its purpose and payment account.</p>
               </div>
-              <button className="m-primary" onClick={() => startForm("expense")}>
+              <button
+                className="m-primary"
+                onClick={() => startForm("expense")}
+              >
                 ＋ Log expense
               </button>
             </div>
             <FilterBar filter={filter} setFilter={setFilter} />
-            <label className="m-search-filter">
-              Search transactions
-              <input value={searchText} onChange={(event) => setSearchText(event.target.value)} />
-            </label>
+            <TransactionSearch value={searchText} onChange={setSearchText} />
             <TransactionList
               rows={visible.filter((t) => t.type === "expense")}
               finance={finance}
@@ -612,13 +731,18 @@ export default function MoneyView({
             <div className="m-section-head">
               <div>
                 <h2>Allocation rules</h2>
-                <p>Changes apply only to future income. Past allocations stay unchanged.</p>
+                <p>
+                  Changes apply only to future income. Past allocations stay
+                  unchanged.
+                </p>
               </div>
               <button className="m-primary" onClick={() => startForm("bucket")}>
                 ＋ Add bucket
               </button>
             </div>
-            <div className={`m-allocation-total ${allocationTotal > 100 ? "invalid" : ""}`}>
+            <div
+              className={`m-allocation-total ${allocationTotal > 100 ? "invalid" : ""}`}
+            >
               <b>{allocationTotal}%</b>
               <span>
                 {allocationTotal > 100
@@ -634,12 +758,19 @@ export default function MoneyView({
               .map((b) => {
                 const index = activeBuckets.findIndex((x) => x.id === b.id);
                 return (
-                  <div className={`m-rule ${b.status === "archived" ? "archived" : ""}`} key={b.id}>
+                  <div
+                    className={`m-rule ${b.status === "archived" ? "archived" : ""}`}
+                    key={b.id}
+                  >
                     <span className="m-icon">{b.icon || "◇"}</span>
                     <div className="m-rule-main">
                       <strong>{b.name}</strong>
                       <div className="m-muted">
-                        {money((totals.buckets[b.id]?.allocated || 0) - (totals.buckets[b.id]?.spent || 0))} available
+                        {money(
+                          (totals.buckets[b.id]?.allocated || 0) -
+                            (totals.buckets[b.id]?.spent || 0),
+                        )}{" "}
+                        available
                         {b.target ? ` · Goal ${money(b.target)}` : ""}
                       </div>
                     </div>
@@ -649,14 +780,21 @@ export default function MoneyView({
                       .slice(-1)
                       .map((reset) => (
                         <small className="m-muted" key={reset.id}>
-                          Counting since {new Date(reset.at).toLocaleDateString("en-UG")} ·{" "}
-                          <button className="m-quiet" onClick={() => undoBucketClear(reset)}>
+                          Counting since{" "}
+                          {new Date(reset.at).toLocaleDateString("en-UG")} ·{" "}
+                          <button
+                            className="m-quiet"
+                            onClick={() => undoBucketClear(reset)}
+                          >
                             Undo clear
                           </button>
                         </small>
                       ))}
                     {b.status === "archived" ? (
-                      <button className="m-quiet" onClick={() => restoreBucket(b)}>
+                      <button
+                        className="m-quiet"
+                        onClick={() => restoreBucket(b)}
+                      >
                         Restore
                       </button>
                     ) : (
@@ -677,7 +815,10 @@ export default function MoneyView({
                         >
                           ↓
                         </button>
-                        <button className="m-quiet" onClick={() => startForm("bucket", b)}>
+                        <button
+                          className="m-quiet"
+                          onClick={() => startForm("bucket", b)}
+                        >
                           Edit
                         </button>
                         <button
@@ -689,7 +830,10 @@ export default function MoneyView({
                         >
                           Start fresh
                         </button>
-                        <button className="m-quiet" onClick={() => archiveBucket(b)}>
+                        <button
+                          className="m-quiet"
+                          onClick={() => archiveBucket(b)}
+                        >
                           Archive
                         </button>
                       </>
@@ -698,9 +842,15 @@ export default function MoneyView({
                 );
               })}
             {allocationTotal > 100 && (
-              <p className="m-error">New income cannot be saved while active bucket percentages exceed 100%.</p>
+              <p className="m-error">
+                New income cannot be saved while active bucket percentages
+                exceed 100%.
+              </p>
             )}
-            <p className="m-muted">Not assigned to a purpose: {money(totals.available - assignedBalance)}</p>
+            <p className="m-muted">
+              Not assigned to a purpose:{" "}
+              {money(totals.available - assignedBalance)}
+            </p>
           </div>
         )}
         {tab === "Accounts" && (
@@ -708,14 +858,23 @@ export default function MoneyView({
             <div className="m-section-head">
               <div>
                 <h2>Accounts</h2>
-                <p>Where money physically exists. Balances use recorded transactions.</p>
+                <p>
+                  Where money physically exists. Balances use recorded
+                  transactions.
+                </p>
               </div>
-              <button className="m-primary" onClick={() => startForm("account")}>
+              <button
+                className="m-primary"
+                onClick={() => startForm("account")}
+              >
                 ＋ Add account
               </button>
             </div>
             {finance.accounts.map((a) => (
-              <div className={`m-rule ${a.status === "archived" ? "archived" : ""}`} key={a.id}>
+              <div
+                className={`m-rule ${a.status === "archived" ? "archived" : ""}`}
+                key={a.id}
+              >
                 <span className="m-icon">⌁</span>
                 <div className="m-rule-main">
                   <strong>{a.name}</strong>
@@ -726,10 +885,16 @@ export default function MoneyView({
                 <b>{money(totals.accounts[a.id] || 0)}</b>
                 {a.status !== "archived" && (
                   <>
-                    <button className="m-quiet" onClick={() => startForm("account", a)}>
+                    <button
+                      className="m-quiet"
+                      onClick={() => startForm("account", a)}
+                    >
                       Edit
                     </button>
-                    <button className="m-quiet" onClick={() => archiveAccount(a)}>
+                    <button
+                      className="m-quiet"
+                      onClick={() => archiveAccount(a)}
+                    >
                       Archive
                     </button>
                   </>
@@ -737,7 +902,8 @@ export default function MoneyView({
               </div>
             ))}
             <p className="m-hint">
-              Legacy expenses with no account remain marked as unknown and are excluded from account balances.
+              Legacy expenses with no account remain marked as unknown and are
+              excluded from account balances.
             </p>
           </div>
         )}
@@ -745,8 +911,8 @@ export default function MoneyView({
           <div className="m-panel">
             <h2>Outstanding client balances</h2>
             <p className="m-muted">
-              Unpaid agreements are not included in available money. Editing a payment updates both the balance owed and
-              its ledger entry.
+              Unpaid agreements are not included in available money. Editing a
+              payment updates both the balance owed and its ledger entry.
             </p>
             {outstandingBalances(data.clients).map((x) => (
               <div className="m-list-row m-client-balance" key={x.id}>
@@ -760,9 +926,14 @@ export default function MoneyView({
                       {x.payments.map((payment) => (
                         <div className="m-client-payment" key={payment.id}>
                           <span>
-                            {payment.date || "Date unknown"} · {payment.note || "Payment"} · {money(payment.amount)}
+                            {payment.date || "Date unknown"} ·{" "}
+                            {payment.note || "Payment"} ·{" "}
+                            {money(payment.amount)}
                           </span>
-                          <button className="m-quiet" onClick={() => openClientPaymentEdit(x, payment)}>
+                          <button
+                            className="m-quiet"
+                            onClick={() => openClientPaymentEdit(x, payment)}
+                          >
                             Edit payment
                           </button>
                         </div>
@@ -774,12 +945,21 @@ export default function MoneyView({
               </div>
             ))}
             {!outstandingBalances(data.clients).length && (
-              <Empty title="No outstanding balances" text="Client balances will appear here when payments are due." />
+              <Empty
+                title="No outstanding balances"
+                text="Client balances will appear here when payments are due."
+              />
             )}
             <details className="m-paused">
               <summary>
                 Paused ({pausedBalances(data.clients).length}) ·{" "}
-                {money(pausedBalances(data.clients).reduce((sum, row) => sum + row.balance, 0))} not counted
+                {money(
+                  pausedBalances(data.clients).reduce(
+                    (sum, row) => sum + row.balance,
+                    0,
+                  ),
+                )}{" "}
+                not counted
               </summary>
               {pausedBalances(data.clients).map((row) => (
                 <div className="m-list-row" key={row.id}>
@@ -790,13 +970,18 @@ export default function MoneyView({
                   <strong className="m-muted">{money(row.balance)}</strong>
                 </div>
               ))}
-              {!pausedBalances(data.clients).length && <p className="m-muted">No paused client balances.</p>}
+              {!pausedBalances(data.clients).length && (
+                <p className="m-muted">No paused client balances.</p>
+              )}
             </details>
           </div>
         )}
       </section>
       {form && (
-        <div className="m-overlay" onMouseDown={(e) => e.target === e.currentTarget && closeForm()}>
+        <div
+          className="m-overlay"
+          onMouseDown={(e) => e.target === e.currentTarget && closeForm()}
+        >
           <form
             className="m-dialog"
             onSubmit={(e) => {
@@ -839,17 +1024,27 @@ export default function MoneyView({
                     type="number"
                     inputMode="numeric"
                     value={draft.amount}
-                    onChange={(e) => setDraft({ ...draft, amount: e.target.value })}
+                    onChange={(e) =>
+                      setDraft({ ...draft, amount: e.target.value })
+                    }
                     placeholder="e.g. 250000"
                   />
                 </label>
                 <label>
-                  {form === "income" ? "Source / description" : "Expense description"}
+                  {form === "income"
+                    ? "Source / description"
+                    : "Expense description"}
                   <input
                     required
                     value={draft.description || ""}
-                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                    placeholder={form === "income" ? "What was this income for?" : "What did you spend on?"}
+                    onChange={(e) =>
+                      setDraft({ ...draft, description: e.target.value })
+                    }
+                    placeholder={
+                      form === "income"
+                        ? "What was this income for?"
+                        : "What did you spend on?"
+                    }
                   />
                 </label>
                 <div className="m-form-grid">
@@ -858,7 +1053,9 @@ export default function MoneyView({
                     <input
                       type="date"
                       value={draft.date}
-                      onChange={(e) => setDraft({ ...draft, date: e.target.value })}
+                      onChange={(e) =>
+                        setDraft({ ...draft, date: e.target.value })
+                      }
                     />
                   </label>
                   {form === "income" ? (
@@ -866,7 +1063,9 @@ export default function MoneyView({
                       Source type
                       <select
                         value={draft.sourceType}
-                        onChange={(e) => setDraft({ ...draft, sourceType: e.target.value })}
+                        onChange={(e) =>
+                          setDraft({ ...draft, sourceType: e.target.value })
+                        }
                       >
                         {finance.sources.map((s) => (
                           <option key={s}>{s}</option>
@@ -878,11 +1077,17 @@ export default function MoneyView({
                       Bucket
                       <select
                         value={draft.bucketId || ""}
-                        onChange={(e) => setDraft({ ...draft, bucketId: e.target.value })}
+                        onChange={(e) =>
+                          setDraft({ ...draft, bucketId: e.target.value })
+                        }
                       >
                         <option value="">Uncategorized</option>
                         {finance.buckets
-                          .filter((b) => b.status !== "archived" || draft.bucketId === b.id)
+                          .filter(
+                            (b) =>
+                              b.status !== "archived" ||
+                              draft.bucketId === b.id,
+                          )
                           .map((b) => (
                             <option key={b.id} value={b.id}>
                               {b.name}
@@ -897,11 +1102,16 @@ export default function MoneyView({
                   Account
                   <select
                     value={draft.accountId || ""}
-                    onChange={(e) => setDraft({ ...draft, accountId: e.target.value })}
+                    onChange={(e) =>
+                      setDraft({ ...draft, accountId: e.target.value })
+                    }
                   >
                     <option value="">Unknown / not selected</option>
                     {finance.accounts
-                      .filter((a) => a.status !== "archived" || draft.accountId === a.id)
+                      .filter(
+                        (a) =>
+                          a.status !== "archived" || draft.accountId === a.id,
+                      )
                       .map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.name}
@@ -914,7 +1124,8 @@ export default function MoneyView({
                   <details className="m-custom">
                     <summary>Customize this income allocation</summary>
                     <p className="m-hint">
-                      Defaults are applied automatically. Set a one-off split below; remaining funds stay unallocated.
+                      Defaults are applied automatically. Set a one-off split
+                      below; remaining funds stay unallocated.
                     </p>
                     {activeBuckets.map((b) => (
                       <label className="m-split" key={b.id}>
@@ -924,7 +1135,11 @@ export default function MoneyView({
                             type="number"
                             min="0"
                             max="100"
-                            value={draft.customAllocations?.find((x) => x.id === b.id)?.percentage ?? b.percentage}
+                            value={
+                              draft.customAllocations?.find(
+                                (x) => x.id === b.id,
+                              )?.percentage ?? b.percentage
+                            }
                             onChange={(e) => {
                               const cur =
                                 draft.customAllocations ||
@@ -957,7 +1172,9 @@ export default function MoneyView({
                   <textarea
                     rows="2"
                     value={draft.note || ""}
-                    onChange={(e) => setDraft({ ...draft, note: e.target.value })}
+                    onChange={(e) =>
+                      setDraft({ ...draft, note: e.target.value })
+                    }
                   />
                 </label>
               </>
@@ -966,14 +1183,21 @@ export default function MoneyView({
               <>
                 <label>
                   Name
-                  <input value={draft.name || ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+                  <input
+                    value={draft.name || ""}
+                    onChange={(e) =>
+                      setDraft({ ...draft, name: e.target.value })
+                    }
+                  />
                 </label>
                 <label>
                   Icon or symbol
                   <input
                     maxLength="4"
                     value={draft.icon || editing?.icon || "◇"}
-                    onChange={(e) => setDraft({ ...draft, icon: e.target.value })}
+                    onChange={(e) =>
+                      setDraft({ ...draft, icon: e.target.value })
+                    }
                   />
                 </label>
                 <div className="m-form-grid">
@@ -984,7 +1208,9 @@ export default function MoneyView({
                       min="0"
                       max="100"
                       value={draft.percentage ?? 0}
-                      onChange={(e) => setDraft({ ...draft, percentage: e.target.value })}
+                      onChange={(e) =>
+                        setDraft({ ...draft, percentage: e.target.value })
+                      }
                     />
                   </label>
                   <label>
@@ -993,7 +1219,9 @@ export default function MoneyView({
                       type="number"
                       min="0"
                       value={draft.target ?? 0}
-                      onChange={(e) => setDraft({ ...draft, target: e.target.value })}
+                      onChange={(e) =>
+                        setDraft({ ...draft, target: e.target.value })
+                      }
                     />
                   </label>
                 </div>
@@ -1003,13 +1231,20 @@ export default function MoneyView({
               <>
                 <label>
                   Name
-                  <input value={draft.name || ""} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+                  <input
+                    value={draft.name || ""}
+                    onChange={(e) =>
+                      setDraft({ ...draft, name: e.target.value })
+                    }
+                  />
                 </label>
                 <label>
                   Type
                   <input
                     value={draft.accountType || editing?.type || ""}
-                    onChange={(e) => setDraft({ ...draft, accountType: e.target.value })}
+                    onChange={(e) =>
+                      setDraft({ ...draft, accountType: e.target.value })
+                    }
                     placeholder="Bank, Mobile money, Cash…"
                   />
                 </label>
@@ -1041,7 +1276,9 @@ export default function MoneyView({
       {resetBucket && (
         <div
           className="m-overlay"
-          onMouseDown={(event) => event.target === event.currentTarget && setResetBucket(null)}
+          onMouseDown={(event) =>
+            event.target === event.currentTarget && setResetBucket(null)
+          }
         >
           <form
             className="m-dialog"
@@ -1053,9 +1290,15 @@ export default function MoneyView({
             <h2>Start fresh: {resetBucket.name}</h2>
             <p>
               Current balance:{" "}
-              {money((totals.buckets[resetBucket.id]?.allocated || 0) - (totals.buckets[resetBucket.id]?.spent || 0))}
+              {money(
+                (totals.buckets[resetBucket.id]?.allocated || 0) -
+                  (totals.buckets[resetBucket.id]?.spent || 0),
+              )}
             </p>
-            <p>Past transactions stay in history. This only stops counting the old balance under this purpose.</p>
+            <p>
+              Past transactions stay in history. This only stops counting the
+              old balance under this purpose.
+            </p>
             <label>
               Opening balance (UGX)
               <input
@@ -1067,10 +1310,17 @@ export default function MoneyView({
             </label>
             <label>
               Note
-              <input value={resetNote} onChange={(event) => setResetNote(event.target.value)} />
+              <input
+                value={resetNote}
+                onChange={(event) => setResetNote(event.target.value)}
+              />
             </label>
             <div className="m-dialog-actions">
-              <button type="button" className="m-secondary" onClick={() => setResetBucket(null)}>
+              <button
+                type="button"
+                className="m-secondary"
+                onClick={() => setResetBucket(null)}
+              >
                 Cancel
               </button>
               <button className="m-primary">Continue</button>
@@ -1079,15 +1329,27 @@ export default function MoneyView({
         </div>
       )}
       {paymentEdit && (
-        <div className="m-overlay" onMouseDown={(e) => e.target === e.currentTarget && setPaymentEdit(null)}>
+        <div
+          className="m-overlay"
+          onMouseDown={(e) =>
+            e.target === e.currentTarget && setPaymentEdit(null)
+          }
+        >
           <form className="m-dialog" onSubmit={saveClientPaymentEdit}>
             <div className="m-section-head">
               <div>
                 <div className="money-eyebrow">CLIENT PAYMENT</div>
                 <h2>Edit payment</h2>
-                <p className="m-muted">The amount owed and Money ledger will update when you save.</p>
+                <p className="m-muted">
+                  The amount owed and Money ledger will update when you save.
+                </p>
               </div>
-              <button type="button" className="m-close" aria-label="Close" onClick={() => setPaymentEdit(null)}>
+              <button
+                type="button"
+                className="m-close"
+                aria-label="Close"
+                onClick={() => setPaymentEdit(null)}
+              >
                 ×
               </button>
             </div>
@@ -1101,7 +1363,9 @@ export default function MoneyView({
                 type="number"
                 inputMode="numeric"
                 value={paymentEdit.amount}
-                onChange={(e) => setPaymentEdit({ ...paymentEdit, amount: e.target.value })}
+                onChange={(e) =>
+                  setPaymentEdit({ ...paymentEdit, amount: e.target.value })
+                }
               />
             </label>
             <label>
@@ -1122,13 +1386,19 @@ export default function MoneyView({
               Payment note
               <input
                 value={paymentEdit.note}
-                onChange={(e) => setPaymentEdit({ ...paymentEdit, note: e.target.value })}
+                onChange={(e) =>
+                  setPaymentEdit({ ...paymentEdit, note: e.target.value })
+                }
                 placeholder="Payment details"
               />
             </label>
             {paymentEditError && <p className="m-error">{paymentEditError}</p>}
             <div className="m-dialog-actions">
-              <button type="button" className="m-secondary" onClick={() => setPaymentEdit(null)}>
+              <button
+                type="button"
+                className="m-secondary"
+                onClick={() => setPaymentEdit(null)}
+              >
                 Cancel
               </button>
               <button className="m-primary" type="submit">
@@ -1168,21 +1438,62 @@ function FilterBar({ filter, setFilter }) {
   return (
     <div className="m-filters">
       {["All", "Income", "Expenses"].map((x) => (
-        <button className={filter === x ? "selected" : ""} key={x} onClick={() => setFilter(x)}>
+        <button
+          className={filter === x ? "selected" : ""}
+          key={x}
+          onClick={() => setFilter(x)}
+        >
           {x}
         </button>
       ))}
     </div>
   );
 }
+function TransactionSearch({ value, onChange }) {
+  return (
+    <div className="m-transaction-search">
+      <Icon name="Search" size={18} />
+      <input
+        className="field"
+        aria-label="Search transactions"
+        placeholder="Search transactions"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {value && (
+        <button
+          type="button"
+          aria-label="Clear search"
+          onClick={() => onChange("")}
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
 function TransactionList({ rows, finance, onEdit, onDelete, onSetAccount }) {
+  const [accountPicker, setAccountPicker] = useState(null);
   if (!rows.length)
-    return <Empty title="No transactions yet" text="Income and expenses will show here as they are recorded." />;
+    return (
+      <Empty
+        title="No transactions yet"
+        text="Income and expenses will show here as they are recorded."
+      />
+    );
   return (
     <div className="m-transactions">
       {rows.map((t) => (
         <article className="m-transaction" key={t.id}>
-          <span className={`m-amount ${t.type === "income" ? "positive" : "negative"}`}>
+          <span className={`m-transaction-icon ${t.type}`}>
+            <Icon
+              name={t.type === "income" ? "ArrowDown" : "ArrowUp"}
+              size={20}
+            />
+          </span>
+          <span
+            className={`m-amount ${t.type === "income" ? "positive" : "negative"}`}
+          >
             {t.type === "income" ? "+" : "−"}
             {money(t.amount)}
           </span>
@@ -1200,24 +1511,26 @@ function TransactionList({ rows, finance, onEdit, onDelete, onSetAccount }) {
             </span>
             <small>
               {t.date || "Date unknown"}
-              {t.type === "income" && t.unallocated ? ` · ${money(t.unallocated)} unallocated` : ""}
+              {t.type === "income" && t.unallocated
+                ? ` · ${money(t.unallocated)} unallocated`
+                : ""}
             </small>
           </div>
-          {t.type === "income" && t.sourceType === "client_payment" && onSetAccount && (
-            <select
-              className="m-account-inline"
-              aria-label={`Account for ${t.clientName} payment`}
-              value={t.accountId || ""}
-              onChange={(e) => onSetAccount(t, e.target.value)}
-            >
-              <option value="">Unknown</option>
-              {finance.accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          )}
+          {t.type === "income" &&
+            t.sourceType === "client_payment" &&
+            onSetAccount && (
+              <button
+                className={`m-account-chip${t.accountId ? " assigned" : " warn"}`}
+                aria-label={`Account for ${t.clientName} payment`}
+                onClick={() => setAccountPicker(t)}
+              >
+                {t.accountId
+                  ? finance.accounts.find(
+                      (account) => account.id === t.accountId,
+                    )?.name || "Archived account"
+                  : "Assign account"}
+              </button>
+            )}
           {t.type === "income" && t.sourceType !== "client_payment" && (
             <>
               <button className="m-quiet" onClick={() => onEdit?.(t)}>
@@ -1244,11 +1557,54 @@ function TransactionList({ rows, finance, onEdit, onDelete, onSetAccount }) {
           )}
         </article>
       ))}
+      {accountPicker && (
+        <div
+          className="m-overlay"
+          onMouseDown={(event) =>
+            event.target === event.currentTarget && setAccountPicker(null)
+          }
+        >
+          <section className="m-dialog m-account-picker">
+            <h2>Assign account</h2>
+            <p>Select where this payment was received.</p>
+            {finance.accounts
+              .filter((account) => account.status !== "archived")
+              .map((account) => (
+                <button
+                  key={account.id}
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    onSetAccount(accountPicker, account.id);
+                    setAccountPicker(null);
+                  }}
+                >
+                  {account.name}
+                </button>
+              ))}
+            <button
+              className="btn btn-ghost"
+              onClick={() => {
+                onSetAccount(accountPicker, "");
+                setAccountPicker(null);
+              }}
+            >
+              Unknown
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={() => setAccountPicker(null)}
+            >
+              Cancel
+            </button>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
 function editTransaction(t, start) {
   if (t.type === "income" && t.sourceType !== "client_payment")
     start("income", { ...t, id: t.id.replace("income:", "") });
-  if (t.type === "expense") start("expense", { ...t, rawId: t.id.replace("expense:", "") });
+  if (t.type === "expense")
+    start("expense", { ...t, rawId: t.id.replace("expense:", "") });
 }

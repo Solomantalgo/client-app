@@ -1,25 +1,34 @@
 import qrcode from "qrcode-generator";
 
 export function esc(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[character]);
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[character],
+  );
 }
 
-const cash = (value) => `UGX ${Math.max(0, Math.round(Number(value) || 0)).toLocaleString("en-UG")}`;
-const methodName = (value) => ({
-  cash: "Cash",
-  bank: "Bank",
-  "mobile-money": "MTN MoMo",
-  momo: "MTN MoMo",
-}[String(value || "").toLowerCase()] || value || "Not specified");
+const cash = (value) =>
+  `UGX ${Math.max(0, Math.round(Number(value) || 0)).toLocaleString("en-UG")}`;
+const methodName = (value) =>
+  ({
+    cash: "Cash",
+    bank: "Bank",
+    "mobile-money": "MTN MoMo",
+    momo: "MTN MoMo",
+  })[String(value || "").toLowerCase()] ||
+  value ||
+  "Not specified";
 
 function qrMarkup(profile) {
-  const website = profile.qrUrl || `https://${profile.website || "solomantalgo.com"}`;
+  const website =
+    profile.qrUrl || `https://${profile.website || "solomantalgo.com"}`;
   const qr = qrcode(0, "M");
   qr.addData(website);
   qr.make();
@@ -30,14 +39,22 @@ function qrMarkup(profile) {
 function fontMarkup(profile) {
   const declarations = [profile.font400Url, profile.font500Url]
     .filter(Boolean)
-    .map((url, index) => `@font-face{font-family:'DM Mono';font-weight:${index ? 500 : 400};src:url('${esc(url)}') format('woff2');}`)
+    .map(
+      (url, index) =>
+        `@font-face{font-family:'DM Mono';font-weight:${index ? 500 : 400};src:url('${esc(url)}') format('woff2');}`,
+    )
     .join("");
   return `<style>${declarations}</style>`;
 }
 
 function logoMarkup(profile, format) {
-  const enabled = format === "a4" ? profile.showLogoA4 !== false : profile.showLogoThermal === true;
-  return enabled && profile.logoDataUri ? `<img class="logo" src="${esc(profile.logoDataUri)}" alt="">` : "";
+  const enabled =
+    format === "a4"
+      ? profile.showLogoA4 !== false
+      : profile.showLogoThermal === true;
+  return enabled && profile.logoDataUri
+    ? `<img class="logo" src="${esc(profile.logoDataUri)}" alt="">`
+    : "";
 }
 
 function brand(profile, format) {
@@ -57,7 +74,9 @@ ${profile.bankAccountNo ? `<div>Account No: ${esc(profile.bankAccountNo)}</div>`
     rows.push(`<b>Mobile Money (MTN)</b>${profile.momoNumber ? `<div>Number: ${esc(profile.momoNumber)}</div>` : ""}
 ${profile.momoName ? `<div>Name: ${esc(profile.momoName)}</div>` : ""}`);
   }
-  return rows.length ? `<section class="payment-details"><label>PAYMENT DETAILS</label>${rows.join("<div class='detail-gap'></div>")}</section>` : "";
+  return rows.length
+    ? `<section class="payment-details"><label>PAYMENT DETAILS</label>${rows.join("<div class='detail-gap'></div>")}</section>`
+    : "";
 }
 
 function signature(profile) {
@@ -78,7 +97,8 @@ html,body{margin:0;font-family:'DM Mono','Courier New',monospace;color:#000;back
 .line-name{min-width:0;overflow-wrap:anywhere}.stamp{border:2px solid #000;text-align:center;padding:8px;font-weight:700;margin:14px 0}
 .signature{display:flex;flex-direction:column;gap:3px;margin-top:18px}.qr{text-align:center;margin:12px auto}.qr svg{width:30mm;height:30mm}
 .qr svg path{fill:#000!important}.detail-gap{height:7px}.wrap{overflow-wrap:anywhere}.included{margin:10px 0}`;
-  if (format === "thermal58") return `@page{size:58mm auto;margin:0}html,body{width:58mm;margin:0}
+  if (format === "thermal58")
+    return `@page{size:58mm auto;margin:0}html,body{width:58mm;margin:0}
 body{width:48mm;padding:3mm 5mm 8mm;font:9px/1.35 'DM Mono','Courier New',monospace}
 ${base.replace("height:18mm", "height:12mm").replace("width:30mm;height:30mm", "width:26mm;height:26mm")}
 .brand{gap:1px}.rule{margin:7px 0}.thin{margin:5px 0}.doc-title{font-size:1.35em}
@@ -108,7 +128,8 @@ body{max-width:170mm;margin:0 auto}
 .info section{flex:1}.info-right{text-align:right}.eyebrow{font-size:9px;letter-spacing:.08em;text-transform:uppercase}
 .info b{display:block;font-size:14px}.sub{color:#333}.included{margin-top:7px}.included .row{padding:2px 0}
 .row{display:flex;justify-content:space-between;gap:12px;padding:5px 0}.row b,.amount{font-variant-numeric:tabular-nums}
-.receipt-summary{max-width:125mm;margin:11px 0 0 auto}.received{font-size:15.5px;font-weight:700;border-top:2.5px solid #000;border-bottom:2.5px solid #000;padding:9px 0}
+.receipt-summary{max-width:125mm;margin:11px 0 0 auto}
+.received{font-size:15.5px;font-weight:700;border-top:2.5px solid #000;border-bottom:2.5px solid #000;padding:9px 0}
 .balance-band,.paid-band{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;margin-top:8px;font-weight:700}
 .balance-band{border:2px solid #000}.paid-band{background:#C3F83E}.paid-band *{background:#C3F83E}
 .invoice-table{width:100%;border-collapse:collapse;margin:14px 0}.invoice-table th{text-align:left;border-bottom:2px solid #000;padding:7px 4px}
@@ -116,9 +137,15 @@ body{max-width:170mm;margin:0 auto}
 .totals{width:80mm;margin-left:auto}.stamp-qr{display:flex;justify-content:space-between;align-items:center;margin:12px 0}
 .stamp{border:2.5px solid #000;padding:10px 18px;font:bold 13px Arial,sans-serif;transform:rotate(-4deg);text-align:center}
 .stamp.paid{background:#C3F83E}.qrbox{text-align:center;font-size:9px}.qrbox svg{width:25mm;height:25mm;display:block;margin:0 auto 4px}
-.qrbox svg path{fill:#000!important}.details{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin:12px 0}.details-title{grid-column:1/-1}.details section{min-width:0}
-.terms{margin:10px 0}.signature-a4{text-align:right;margin:12px 0 5px}.sig-line{display:block;width:62mm;margin-left:auto;border-top:1px solid #000;padding-top:5px}
-.thanks{text-align:right;font-style:italic;margin:7px 0}.footer{position:absolute;right:0;bottom:0;left:0;border-top:1px solid #000;padding-top:5px;font-size:9px;display:flex;justify-content:space-between}
+.qrbox svg path{fill:#000!important}
+.details{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin:12px 0}
+.details-title{grid-column:1/-1}.details section{min-width:0}
+.terms{margin:10px 0}
+.signature-a4{text-align:right;margin:12px 0 5px}
+.sig-line{display:block;width:62mm;margin-left:auto;border-top:1px solid #000;padding-top:5px}
+.thanks{text-align:right;font-style:italic;margin:7px 0}
+.footer{position:absolute;right:0;bottom:0;left:0;border-top:1px solid #000;padding-top:5px;
+font-size:9px;display:flex;justify-content:space-between}
 .lines-page-break{break-inside:avoid}@media print{tr{break-inside:avoid}}`;
 }
 
@@ -141,7 +168,9 @@ ${profile.bankAccountNo ? `<div>Account No: ${esc(profile.bankAccountNo)}</div>`
     blocks.push(`<section><b>Mobile Money (MTN)</b>${profile.momoNumber ? `<div>Number: ${esc(profile.momoNumber)}</div>` : ""}
 ${profile.momoName ? `<div>Name: ${esc(profile.momoName)}</div>` : ""}</section>`);
   }
-  return blocks.length ? `<div class="details"><span class="eyebrow details-title">PAYMENT DETAILS</span>${blocks.join("")}</div>` : "";
+  return blocks.length
+    ? `<div class="details"><span class="eyebrow details-title">PAYMENT DETAILS</span>${blocks.join("")}</div>`
+    : "";
 }
 
 function a4StampQr(profile, stamp, paid) {
@@ -156,15 +185,32 @@ function a4Footer(model, profile) {
 }
 
 function buildA4Receipt(model, profile) {
-  const total = Number(model.total ?? (model.lines || []).reduce((sum, line) => sum + (Number(line.amount) || 0), 0));
+  const total = Number(
+    model.total ??
+      (model.lines || []).reduce(
+        (sum, line) => sum + (Number(line.amount) || 0),
+        0,
+      ),
+  );
   const received = Math.max(0, Number(model.received ?? total));
   const previous = Math.max(0, Number(model.previouslyPaid) || 0);
-  const balance = Math.max(0, Number(model.invoiceTotal || 0) - previous - received);
+  const balance = Math.max(
+    0,
+    Number(model.invoiceTotal || 0) - previous - received,
+  );
   const paid = balance === 0 && Number(model.invoiceTotal || model.total) > 0;
-  const reference = model.invoiceNo ? `<div>Ref Invoice: ${esc(model.invoiceNo)}</div>` : "";
+  const reference = model.invoiceNo
+    ? `<div>Ref Invoice: ${esc(model.invoiceNo)}</div>`
+    : "";
   const paymentMethod = `<div class="info-right"><span class="eyebrow">Payment method</span><b>${esc(methodName(model.method))}</b></div>`;
-  const included = model.payments?.length ? `<section class="included"><b>PAYMENTS INCLUDED</b>${model.payments.map((payment) =>
-    `<div class="row"><span>${esc(payment.date)} · ${esc(methodName(payment.method))}</span><b>${cash(payment.amount)}</b></div>`).join("")}</section>` : "";
+  const included = model.payments?.length
+    ? `<section class="included"><b>PAYMENTS INCLUDED</b>${model.payments
+        .map(
+          (payment) =>
+            `<div class="row"><span>${esc(payment.date)} · ${esc(methodName(payment.method))}</span><b>${cash(payment.amount)}</b></div>`,
+        )
+        .join("")}</section>`
+    : "";
   const summary = `<section class="receipt-summary"><div class="row"><span>Invoice Total</span><b>${cash(model.invoiceTotal || model.total)}</b></div>
 <div class="row"><span>Previously Paid</span><b>${cash(previous)}</b></div>
 <div class="row received"><span>AMOUNT RECEIVED</span><b>${cash(received)}</b></div>
@@ -184,14 +230,25 @@ function buildA4Invoice(model, profile) {
   const paid = Math.max(0, Number(model.paid) || 0);
   const balance = Math.max(0, total - paid);
   const isPaid = balance === 0;
-  const status = isPaid ? "PAID IN FULL" : paid ? "PARTIAL PAYMENT" : "AWAITING PAYMENT";
-  const rows = (model.items || []).map((item) => `<tr><td>${esc(item.title)}</td><td>${cash(item.amount)}</td></tr>`).join("");
+  const status = isPaid
+    ? "PAID IN FULL"
+    : paid
+      ? "PARTIAL PAYMENT"
+      : "AWAITING PAYMENT";
+  const rows = (model.items || [])
+    .map(
+      (item) =>
+        `<tr><td>${esc(item.title)}</td><td>${cash(item.amount)}</td></tr>`,
+    )
+    .join("");
   const middle = `<div>Issued: ${esc(model.date || "")}</div><div>Due: ${esc(model.dueDate || "")}</div>`;
   const totals = `<section class="totals"><div class="row"><span>Total</span><b>${cash(total)}</b></div>
 <div class="row"><span>Paid</span><b>${cash(paid)}</b></div><div class="balance-band${isPaid ? " paid-band" : ""}">
 <span>BALANCE DUE</span><b>${cash(balance)}</b></div></section>`;
-  const terms = profile.termsText ? `<section class="terms"><span class="eyebrow">Terms</span>
-<div>${esc(profile.termsText)}</div></section>` : "";
+  const terms = profile.termsText
+    ? `<section class="terms"><span class="eyebrow">Terms</span>
+<div>${esc(profile.termsText)}</div></section>`
+    : "";
   const content = `<main class="page">${a4Header(profile, model, "Invoice", "a4", middle)}<div class="info">
 <section><span class="eyebrow">Billed to</span><b>${esc(model.clientName)}</b><span class="sub">${esc(model.business || "")}</span></section>
 <div class="info-right"><span class="eyebrow">Status</span><b>${status}</b></div></div>
@@ -213,20 +270,43 @@ function clientBlock(model) {
 }
 
 function linesBlock(items) {
-  return `<section class="lines">${(items || []).map((item) => `<div class="line">
-<div class="line-name">${esc(item.title)}</div><b class="amount">${cash(item.amount)}</b></div>`).join("")}</section>`;
+  return `<section class="lines">${(items || [])
+    .map(
+      (item) => `<div class="line">
+<div class="line-name">${esc(item.title)}</div><b class="amount">${cash(item.amount)}</b></div>`,
+    )
+    .join("")}</section>`;
 }
 
 export function buildReceiptHtml(model, format = "a4", profile = {}) {
   if (format === "a4") return buildA4Receipt(model, profile);
-  const total = Number(model.total ?? (model.lines || []).reduce((sum, line) => sum + (Number(line.amount) || 0), 0));
+  const total = Number(
+    model.total ??
+      (model.lines || []).reduce(
+        (sum, line) => sum + (Number(line.amount) || 0),
+        0,
+      ),
+  );
   const received = Math.max(0, Number(model.received ?? total));
   const previous = Math.max(0, Number(model.previouslyPaid) || 0);
-  const balance = Math.max(0, Number(model.invoiceTotal || 0) - previous - received);
-  const method = methodName(model.method || model.payment?.accountName || model.payment?.accountId);
-  const invoiceRef = model.invoiceNo ? `<div>Ref Invoice: ${esc(model.invoiceNo)}</div>` : "";
-  const included = model.payments?.length ? `<section class="included"><b>PAYMENTS INCLUDED</b>${model.payments.map((payment) =>
-    `<div class="row"><span>${esc(payment.date)} · ${esc(methodName(payment.method))}</span><b>${cash(payment.amount)}</b></div>`).join("")}</section>` : "";
+  const balance = Math.max(
+    0,
+    Number(model.invoiceTotal || 0) - previous - received,
+  );
+  const method = methodName(
+    model.method || model.payment?.accountName || model.payment?.accountId,
+  );
+  const invoiceRef = model.invoiceNo
+    ? `<div>Ref Invoice: ${esc(model.invoiceNo)}</div>`
+    : "";
+  const included = model.payments?.length
+    ? `<section class="included"><b>PAYMENTS INCLUDED</b>${model.payments
+        .map(
+          (payment) =>
+            `<div class="row"><span>${esc(payment.date)} · ${esc(methodName(payment.method))}</span><b>${cash(payment.amount)}</b></div>`,
+        )
+        .join("")}</section>`
+    : "";
   const paidFull = balance === 0 && model.invoiceTotal > 0;
   const content = `${brand(profile, format)}<div class="rule"></div><div class="doc-title">RECEIPT</div>
 <div class="doc-meta"><b>${esc(model.number || "")}</b><div>Date: ${esc(model.date || "")}</div>${invoiceRef}</div>
@@ -239,7 +319,12 @@ ${model.lines?.length ? linesBlock(model.lines) : ""}<div class="row"><span>Invo
 <div class="stamp">${paidFull ? "PAID IN FULL" : "PARTIAL PAYMENT"}</div>${balance ? `<div class="c"><b>BALANCE DUE ${cash(balance)}</b></div>` : ""}
 ${signature(profile)}${qrMarkup(profile)}<div class="c">${esc(profile.website || "solomantalgo.com")}</div>
 <div class="c block">Thank you for your business.</div>`;
-  return page(titleFile("Receipt", model.number || "", model.clientName), content, format, profile);
+  return page(
+    titleFile("Receipt", model.number || "", model.clientName),
+    content,
+    format,
+    profile,
+  );
 }
 
 export function buildInvoiceHtml(model, format = "a4", profile = {}) {
@@ -254,7 +339,14 @@ export function buildInvoiceHtml(model, format = "a4", profile = {}) {
 ${linesBlock(model.items || [])}<div class="rule thin"></div><div class="row"><span>Total</span><b>${cash(total)}</b></div>
 <div class="row"><span>Paid</span><span>${cash(paid)}</span></div><div class="row grand"><span>BALANCE DUE</span><b>${cash(balance)}</b></div>
 <div class="stamp">${esc(model.stamp || (balance === 0 ? "PAID IN FULL" : paid ? "PARTIAL PAYMENT" : "AWAITING PAYMENT"))}</div>
-${paymentDetails(profile)}${profile.termsText ? `<section class="block"><label class="label">TERMS</label><div class="wrap">${esc(profile.termsText)}</div></section>` : ""}
+${paymentDetails(profile)}
+${profile.termsText ? `<section class="block"><label class="label">TERMS</label>
+<div class="wrap">${esc(profile.termsText)}</div></section>` : ""}
 ${signature(profile)}${qrMarkup(profile)}<div class="c">${esc(profile.website || "solomantalgo.com")}</div>`;
-  return page(titleFile("Invoice", model.number || "", model.clientName), content, format, profile);
+  return page(
+    titleFile("Invoice", model.number || "", model.clientName),
+    content,
+    format,
+    profile,
+  );
 }

@@ -12,11 +12,18 @@ export function touchData(data) {
 }
 
 export function makeServiceFromClient(c) {
-  const agreed = Number(c.totalAgreedPrice) || Number(String(c.quotedPrice || "").replace(/\D/g, "")) || 0;
+  const agreed =
+    Number(c.totalAgreedPrice) ||
+    Number(String(c.quotedPrice || "").replace(/\D/g, "")) ||
+    0;
   const service = {
     id: `svc-${c.id || Date.now()}`,
     title:
-      c.package && c.package !== "Undecided" ? c.package : c.servicesToOffer ? "Client Service" : "Web Design Service",
+      c.package && c.package !== "Undecided"
+        ? c.package
+        : c.servicesToOffer
+          ? "Client Service"
+          : "Web Design Service",
     categories: c.servicesToOffer || "",
     items: splitServiceItems(c.servicesToOffer).map((title) => ({
       id: `item-${Date.now()}-${title}`,
@@ -80,27 +87,38 @@ export function normalizeData(d) {
           })),
           services: Array.isArray(c.services)
             ? c.services.map((s) => ({
-                id: s.id || `svc-${c.id || Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                id:
+                  s.id ||
+                  `svc-${c.id || Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                 title: s.title || s.name || "Client Service",
-                categories: s.categories || s.description || c.servicesToOffer || "",
+                categories:
+                  s.categories || s.description || c.servicesToOffer || "",
                 items:
                   Array.isArray(s.items) && s.items.length
                     ? s.items.map((item) => ({
-                        id: item.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                        id:
+                          item.id ||
+                          `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                         title: item.title || item.name || "Service item",
                         price: Number(item.price ?? item.amount) || 0,
                       }))
-                    : splitServiceItems(s.categories || s.description || "").map((title) => ({
+                    : splitServiceItems(
+                        s.categories || s.description || "",
+                      ).map((title) => ({
                         id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                         title,
                         price: 0,
                       })),
-                agreedPrice: Number(s.agreedPrice ?? s.price ?? c.totalAgreedPrice) || 0,
+                agreedPrice:
+                  Number(s.agreedPrice ?? s.price ?? c.totalAgreedPrice) || 0,
                 dueDate: s.dueDate || s.paymentDueDate || "",
                 status: s.status || "active",
                 createdAt: s.createdAt || date,
                 mergedFrom: Array.isArray(s.mergedFrom) ? s.mergedFrom : [],
-                paymentMap: s.paymentMap && typeof s.paymentMap === "object" ? s.paymentMap : {},
+                paymentMap:
+                  s.paymentMap && typeof s.paymentMap === "object"
+                    ? s.paymentMap
+                    : {},
                 invoiceNo: s.invoiceNo || "",
               }))
             : c.status === "ongoing" || c.totalAgreedPrice || c.amountPaid
@@ -112,10 +130,19 @@ export function normalizeData(d) {
   }
   const financeSource = source.finance || {};
   const finance = {
-    buckets: Array.isArray(financeSource.buckets) ? financeSource.buckets : DEFAULT_FINANCE.buckets,
-    accounts: Array.isArray(financeSource.accounts) ? financeSource.accounts : DEFAULT_FINANCE.accounts,
-    sources: Array.isArray(financeSource.sources) ? financeSource.sources : DEFAULT_FINANCE.sources,
-    manualIncome: (Array.isArray(financeSource.manualIncome) ? financeSource.manualIncome : []).map((income) =>
+    buckets: Array.isArray(financeSource.buckets)
+      ? financeSource.buckets
+      : DEFAULT_FINANCE.buckets,
+    accounts: Array.isArray(financeSource.accounts)
+      ? financeSource.accounts
+      : DEFAULT_FINANCE.accounts,
+    sources: Array.isArray(financeSource.sources)
+      ? financeSource.sources
+      : DEFAULT_FINANCE.sources,
+    manualIncome: (Array.isArray(financeSource.manualIncome)
+      ? financeSource.manualIncome
+      : []
+    ).map((income) =>
       income.origin
         ? income
         : {
@@ -126,12 +153,16 @@ export function normalizeData(d) {
           },
     ),
     paymentSnapshots: { ...(financeSource.paymentSnapshots || {}) },
-    bucketResets: Array.isArray(financeSource.bucketResets) ? financeSource.bucketResets : [],
+    bucketResets: Array.isArray(financeSource.bucketResets)
+      ? financeSource.bucketResets
+      : [],
   };
   // Snapshots written by the first Money migration had no origin marker and
   // applied today's rules to pre-existing receipts. Treat those as legacy cash.
   // New receipts are tagged "current" and retain their historical allocation.
-  for (const [paymentId, snapshot] of Object.entries(finance.paymentSnapshots)) {
+  for (const [paymentId, snapshot] of Object.entries(
+    finance.paymentSnapshots,
+  )) {
     if (snapshot && !snapshot.origin) {
       const payment = Object.values(normalizedClients)
         .flat()
@@ -143,7 +174,10 @@ export function normalizeData(d) {
         unallocated:
           Number(payment?.amount) ||
           Number(snapshot.unallocated) ||
-          (snapshot.allocations || []).reduce((sum, allocation) => sum + (Number(allocation.amount) || 0), 0),
+          (snapshot.allocations || []).reduce(
+            (sum, allocation) => sum + (Number(allocation.amount) || 0),
+            0,
+          ),
         totalPercentage: 0,
         origin: "legacy",
       };
@@ -166,11 +200,15 @@ export function normalizeData(d) {
       }
   for (const arr of Object.values(normalizedClients)) {
     for (const client of arr) {
-      const paymentIds = new Set((client.payments || []).map((payment) => payment.id));
+      const paymentIds = new Set(
+        (client.payments || []).map((payment) => payment.id),
+      );
       client.receiptGroups = (client.receiptGroups || [])
         .map((group) => ({
           ...group,
-          paymentIds: (group.paymentIds || []).filter((paymentId) => paymentIds.has(paymentId)),
+          paymentIds: (group.paymentIds || []).filter((paymentId) =>
+            paymentIds.has(paymentId),
+          ),
         }))
         .filter((group) => group.paymentIds.length >= 2);
     }
@@ -212,8 +250,14 @@ export function normalizeData(d) {
       accountId: e.accountId || "",
     })),
     outreach: {
-      remotePointer: Math.min(120, Math.max(1, Number(source.outreach?.remotePointer) || 1)),
-      physicalPointer: Math.min(120, Math.max(1, Number(source.outreach?.physicalPointer) || 120)),
+      remotePointer: Math.min(
+        120,
+        Math.max(1, Number(source.outreach?.remotePointer) || 1),
+      ),
+      physicalPointer: Math.min(
+        120,
+        Math.max(1, Number(source.outreach?.physicalPointer) || 120),
+      ),
       logs: Array.isArray(source.outreach?.logs) ? source.outreach.logs : [],
       laps: Number(source.outreach?.laps) || 0,
     },

@@ -28,9 +28,13 @@
 .os-sync span { width:8px; height:8px; flex:none; border-radius:50%; background:var(--text-3); }
 .os-sync.green span { background:var(--lime); }.os-sync.orange span { background:var(--warn); }
 .os-sync small { font-size:12px; }.os-search-button { flex:none; }
-.os-content { width:min(100%,1168px); min-width:0; margin:0 auto; padding:20px 24px 44px; }
+.os-content { width:min(100%,1120px); min-width:0; margin:0 auto; padding:20px 24px 44px; }
 .os-list,.os-detail { min-width:0; }.os-detail { container-type:inline-size; }
 .os-content.has-detail { display:grid; grid-template-columns:minmax(320px,460px) minmax(0,1fr); align-items:start; gap:20px; }
+.os-inline-search { width:100%; min-height:44px; display:flex; align-items:center; gap:10px; margin:0 0 14px; padding:8px 12px;
+  border:1px solid var(--line-2); border-radius:var(--r-ctl); background:var(--s1); color:var(--text-3); text-align:left; }
+.os-detail-empty .card { min-height:180px; display:grid; place-content:center; justify-items:center; gap:14px; text-align:center; }
+.os-detail-empty h2 { margin:0; color:var(--text-2); font:600 18px var(--font-ui); }
 .os-content.has-detail .os-detail { position:sticky; top:80px; max-height:calc(100vh - 96px); overflow-y:auto; }
 .os-banner { display:flex; min-height:44px; align-items:center; justify-content:space-between; gap:12px; padding:4px 16px;
   background:var(--lime); color:var(--on-lime); font-weight:600; }
@@ -103,6 +107,8 @@
 .cs-item span:first-child,.cs-payment span { flex:1; min-width:0; overflow-wrap:anywhere; }.cs-service-actions,.cs-payment { margin-top:8px; }
 .cs button.danger,.cs .danger { border-color:var(--danger); color:var(--danger); }.cs-danger { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
 .cs-empty { padding:10px 0; color:var(--text-3); font-size:13px; }
+.loading-brand { display:flex; flex-direction:column; align-items:center; gap:8px; margin-right:12px; color:var(--text); font:11px var(--font-mono); }
+.loading-brand img { width:72px; height:52px; object-fit:contain; }
 @container (min-width:720px) { .cs-grid { grid-template-columns:1fr 1fr; align-items:start; } }
 @media(max-width:899px) {
   .os-sidebar { display:none; }.os-topbar { height:56px; gap:8px; padding:0 12px; }.os-topbar h1 { font-size:16px; }
@@ -133,5 +139,8 @@
 }
 @media(min-width:900px) { .os-mobile-logo { display:none; }.os-topbar { height:64px; }.os-content.has-detail { grid-template-columns:minmax(320px,460px) minmax(0,1fr); }
   .cs-back { display:none!important; }.cs { padding-bottom:24px; }.search-panel-head>.iconbtn:first-child { display:none; }.search-desktop-close { display:inline-grid; } }
-@media(max-width:1179px) { .os-content.has-detail { display:block; }.os-content.has-detail .os-list { display:none; }.os-content.has-detail .os-detail { position:static; max-height:none; overflow:visible; } }
+@media(min-width:1180px) { .os-content.split-pipeline { display:grid; grid-template-columns:minmax(320px,460px) minmax(0,1fr); align-items:start; gap:20px; }
+  .split-pipeline .os-list { grid-column:1; }.split-pipeline .os-detail { grid-column:2; position:sticky; top:80px; } }
+@media(max-width:1179px) { .os-content.has-detail { display:block; }.os-content.has-detail .os-list { display:none; }
+  .os-content.has-detail .os-detail { position:static; max-height:none; overflow:visible; }.os-content.split-pipeline .os-detail-empty { display:none; } }
 @media(max-width:560px) { .profile-grid,.ce-grid { grid-template-columns:1fr; }.cs-card dl { grid-template-columns:1fr 1fr; }.cs-payment { display:grid; grid-template-columns:minmax(0,1fr) auto auto; }.cs-payment span { grid-column:1/-1; } }

@@ -31,9 +31,15 @@ export function PrintDialogProvider({ children }) {
   const close = () => setRequest(null);
   const build = request ? request.build(format, request.profile) : () => "";
   const html = request ? build() : "";
-  const hasPaymentDetails = request && ![
-    "bankName", "bankAccountName", "bankAccountNo", "momoNumber", "momoName",
-  ].some((key) => request.profile[key]);
+  const hasPaymentDetails =
+    request &&
+    ![
+      "bankName",
+      "bankAccountName",
+      "bankAccountNo",
+      "momoNumber",
+      "momoName",
+    ].some((key) => request.profile[key]);
   const doPrint = async () => {
     const frame = document.querySelector(".print-preview iframe");
     await frame?.contentDocument?.fonts?.ready;
@@ -49,24 +55,73 @@ export function PrintDialogProvider({ children }) {
     <PrintContext.Provider value={print}>
       {children}
       {request && (
-        <div className="print-overlay" onMouseDown={(event) => event.target === event.currentTarget && close()}>
-          <section className="print-dialog" role="dialog" aria-modal="true" aria-label={`Print ${request.docType}`}>
-            <header><h2>Print {request.docType}</h2><button className="iconbtn" onClick={close} aria-label="Close"><Close /></button></header>
-            <label className="print-format label">Format
-              <select className="field" value={format} onChange={(event) => {
-                setFormat(event.target.value);
-                try { localStorage.setItem("solo-print-format", event.target.value); } catch { /* optional */ }
-              }}>
+        <div
+          className="print-overlay"
+          onMouseDown={(event) =>
+            event.target === event.currentTarget && close()
+          }
+        >
+          <section
+            className="print-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Print ${request.docType}`}
+          >
+            <header>
+              <h2>Print {request.docType}</h2>
+              <button className="iconbtn" onClick={close} aria-label="Close">
+                <Close />
+              </button>
+            </header>
+            <label className="print-format label">
+              Format
+              <select
+                className="field"
+                value={format}
+                onChange={(event) => {
+                  setFormat(event.target.value);
+                  try {
+                    localStorage.setItem(
+                      "solo-print-format",
+                      event.target.value,
+                    );
+                  } catch {
+                    /* optional */
+                  }
+                }}
+              >
                 <option value="a4">A4 document (print or save as PDF)</option>
                 <option value="thermal58">58mm thermal receipt</option>
               </select>
             </label>
-            {hasPaymentDetails && <span className="chip chip-blue">Add payment details in More → Business profile</span>}
-            <div className={`print-stage ${format}`}><div className="print-preview"><iframe srcDoc={html} title="Preview" /></div></div>
+            {hasPaymentDetails && (
+              <span className="chip chip-blue">
+                Add payment details in More → Business profile
+              </span>
+            )}
+            <div className={`print-stage ${format}`}>
+              <div className="print-preview">
+                <iframe srcDoc={html} title="Preview" />
+              </div>
+            </div>
             <p>In the print window choose your printer, or “Save as PDF”.</p>
-            <a href="#open-print" onClick={(event) => { event.preventDefault(); openFallback(); }}>Having trouble? Open in a new tab</a>
-            <footer><button className="btn btn-ghost" onClick={close}>Cancel</button>
-              <button className="btn btn-primary" onClick={doPrint}>Print</button></footer>
+            <a
+              href="#open-print"
+              onClick={(event) => {
+                event.preventDefault();
+                openFallback();
+              }}
+            >
+              Having trouble? Open in a new tab
+            </a>
+            <footer>
+              <button className="btn btn-ghost" onClick={close}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={doPrint}>
+                Print
+              </button>
+            </footer>
           </section>
         </div>
       )}

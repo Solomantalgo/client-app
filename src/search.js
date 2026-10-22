@@ -10,7 +10,9 @@ const normalize = (value) =>
 const digits = (value) => String(value ?? "").replace(/\D/g, "");
 const phoneVariants = (value) => {
   const valueDigits = digits(value);
-  return valueDigits.startsWith("256") ? `${valueDigits} 0${valueDigits.slice(3)}` : valueDigits;
+  return valueDigits.startsWith("256")
+    ? `${valueDigits} 0${valueDigits.slice(3)}`
+    : valueDigits;
 };
 const amountText = (value) => {
   const amount = Math.round(Number(value) || 0);
@@ -41,7 +43,9 @@ export function buildIndex(data) {
         text: clientText,
       });
       for (const service of client.services || []) {
-        const items = (service.items || []).map((item) => `${item.title} ${item.name} ${item.price}`).join(" ");
+        const items = (service.items || [])
+          .map((item) => `${item.title} ${item.name} ${item.price}`)
+          .join(" ");
         index.push({
           type: "Services",
           id: service.id,
@@ -110,7 +114,8 @@ export function buildIndex(data) {
       type: "Accounts",
       id: account.id,
       title: account.name,
-      subtitle: account.status === "archived" ? "Archived account" : account.type,
+      subtitle:
+        account.status === "archived" ? "Archived account" : account.type,
       text: `${account.name} ${account.type} ${account.status === "archived" ? "archived" : "active"}`,
     });
   return index;
@@ -122,7 +127,8 @@ function rank(item, tokens) {
   let score = 0;
   for (const token of tokens) {
     if (title.startsWith(token)) score += 30;
-    else if (title.split(/\s+/).some((word) => word.startsWith(token))) score += 20;
+    else if (title.split(/\s+/).some((word) => word.startsWith(token)))
+      score += 20;
     else if (text.includes(token)) score += 10;
     else return -1;
   }
@@ -137,7 +143,9 @@ export function runSearch(index, query, { types, limit = 8 } = {}) {
     .filter((item) => !allowed || allowed.has(item.type))
     .map((item) => ({ item, score: rank(item, tokens) }))
     .filter((result) => result.score >= 0)
-    .sort((a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title));
+    .sort(
+      (a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title),
+    );
   const groups = new Map();
   for (const result of ranked) {
     if (!groups.has(result.item.type)) groups.set(result.item.type, []);
@@ -164,7 +172,9 @@ export function resolveSearchTarget(item) {
       query: item.title || "",
     };
   }
-  if (item?.type === "Buckets") return { kind: "money", tab: "Allocations", query: item.title || "" };
-  if (item?.type === "Accounts") return { kind: "money", tab: "Accounts", query: item.title || "" };
+  if (item?.type === "Buckets")
+    return { kind: "money", tab: "Allocations", query: item.title || "" };
+  if (item?.type === "Accounts")
+    return { kind: "money", tab: "Accounts", query: item.title || "" };
   return { kind: "money", tab: "Income", query: item?.title || "" };
 }
