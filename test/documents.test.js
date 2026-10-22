@@ -16,12 +16,18 @@ test("A4 and thermal invoice templates have separate page structures", () => {
   const a4 = buildInvoiceHtml(model, "a4");
   const thermal = buildInvoiceHtml(model, "thermal58");
   assert.match(a4, /size:A4/);
-  assert.doesNotMatch(a4, /58mm/);
+  assert.doesNotMatch(a4, /@page\{size:58mm/);
   assert.match(thermal, /58mm/);
   assert.doesNotMatch(thermal, /<table/);
   assert.notEqual(a4, thermal);
   assert.match(a4, /max-width:170mm/);
   assert.match(thermal, /width:48mm/);
+});
+
+test("A4 uses lime as a fill only", () => {
+  const html = buildInvoiceHtml({ ...model, paid: 500_000 }, "a4");
+  assert.match(html, /background:#C3F83E/);
+  assert.doesNotMatch(html, /color:\s*#C3F83E/i);
 });
 
 test("invoice escapes user supplied markup", () => {
@@ -44,8 +50,8 @@ test("receipt has true payment method, payment details only when configured, and
   };
   const plain = buildReceiptHtml(base, "a4");
   assert.match(plain, /<title>Receipt-RCP-2026-002-William-Kalule<\/title>/);
-  assert.match(plain, /<label class="label">PAYMENT METHOD<\/label><div><b>MTN MoMo<\/b>/);
-  assert.doesNotMatch(plain.match(/PAYMENT METHOD[\s\S]*?<\/section>/)?.[0] || "", /Thank you/);
+  assert.match(plain, /Payment method<\/span><b>MTN MoMo<\/b>/);
+  assert.doesNotMatch(plain.match(/Payment method[\s\S]*?<\/div>/)?.[0] || "", /Thank you/);
   assert.doesNotMatch(plain, /PAYMENT DETAILS/);
   assert.match(plain, /REMAINING BALANCE[\s\S]*?UGX 300,000/);
   assert.match(plain, /<svg/);

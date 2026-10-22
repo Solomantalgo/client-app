@@ -95,6 +95,114 @@ function page(title, content, format, profile) {
 <style>${styles(format)}</style></head><body>${content}</body></html>`;
 }
 
+function a4Styles() {
+  return `@page{size:A4;margin:16mm}*{box-sizing:border-box;color:#000}
+html,body{margin:0;background:#fff;font:12px/1.45 'DM Mono','Courier New',monospace;color:#000}
+body{max-width:170mm;margin:0 auto}
+.page{position:relative;min-height:258mm;padding-bottom:12mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}.brand-a4{display:flex;align-items:center;gap:10px}
+.brand-a4 img{max-width:38mm;height:16mm;object-fit:contain}.brand-copy{display:flex;flex-direction:column;gap:2px}
+.brand-copy b{font:600 18px/1.2 Arial,sans-serif;white-space:nowrap}.doc-a4{text-align:right;min-width:60mm}
+.doc-a4 h1{font:600 27px/1.05 Arial,sans-serif;letter-spacing:.12em;margin:0 0 7px}.doc-a4 div{line-height:1.7}
+.ink-rule{border-top:2.5px solid #000;margin:10px 0 12px}.info{display:flex;justify-content:space-between;gap:16px;min-height:20mm}
+.info section{flex:1}.info-right{text-align:right}.eyebrow{font-size:9px;letter-spacing:.08em;text-transform:uppercase}
+.info b{display:block;font-size:14px}.sub{color:#333}.included{margin-top:7px}.included .row{padding:2px 0}
+.row{display:flex;justify-content:space-between;gap:12px;padding:5px 0}.row b,.amount{font-variant-numeric:tabular-nums}
+.receipt-summary{max-width:125mm;margin:11px 0 0 auto}.received{font-size:15.5px;font-weight:700;border-top:2.5px solid #000;border-bottom:2.5px solid #000;padding:9px 0}
+.balance-band,.paid-band{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;margin-top:8px;font-weight:700}
+.balance-band{border:2px solid #000}.paid-band{background:#C3F83E}.paid-band *{background:#C3F83E}
+.invoice-table{width:100%;border-collapse:collapse;margin:14px 0}.invoice-table th{text-align:left;border-bottom:2px solid #000;padding:7px 4px}
+.invoice-table th:last-child,.invoice-table td:last-child{text-align:right}.invoice-table td{border-bottom:1px solid #999;padding:8px 4px;vertical-align:top}
+.totals{width:80mm;margin-left:auto}.stamp-qr{display:flex;justify-content:space-between;align-items:center;margin:12px 0}
+.stamp{border:2.5px solid #000;padding:10px 18px;font:bold 13px Arial,sans-serif;transform:rotate(-4deg);text-align:center}
+.stamp.paid{background:#C3F83E}.qrbox{text-align:center;font-size:9px}.qrbox svg{width:25mm;height:25mm;display:block;margin:0 auto 4px}
+.qrbox svg path{fill:#000!important}.details{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin:12px 0}.details-title{grid-column:1/-1}.details section{min-width:0}
+.terms{margin:10px 0}.signature-a4{text-align:right;margin:12px 0 5px}.sig-line{display:block;width:62mm;margin-left:auto;border-top:1px solid #000;padding-top:5px}
+.thanks{text-align:right;font-style:italic;margin:7px 0}.footer{position:absolute;right:0;bottom:0;left:0;border-top:1px solid #000;padding-top:5px;font-size:9px;display:flex;justify-content:space-between}
+.lines-page-break{break-inside:avoid}@media print{tr{break-inside:avoid}}`;
+}
+
+function a4Header(profile, model, type, format, middle) {
+  return `<header class="head"><div class="brand-a4">${logoMarkup(profile, format)}<div class="brand-copy">
+<b>${esc(profile.brandName || "Solomantalgo")}</b><span>${esc(profile.location || "Kampala, Uganda")}</span>
+<span>${esc(profile.website || "solomantalgo.com")}</span></div></div><div class="doc-a4"><h1>${type.toUpperCase()}</h1>
+<div><b>${esc(model.number || "")}</b></div>${middle}<div>Date: ${esc(model.date || "")}</div></div></header>
+<div class="ink-rule"></div>`;
+}
+
+function a4Details(profile) {
+  const blocks = [];
+  if (profile.bankName || profile.bankAccountName || profile.bankAccountNo) {
+    blocks.push(`<section><b>Bank Transfer</b>${profile.bankName ? `<div>${esc(profile.bankName)}</div>` : ""}
+${profile.bankAccountName ? `<div>Account Name: ${esc(profile.bankAccountName)}</div>` : ""}
+${profile.bankAccountNo ? `<div>Account No: ${esc(profile.bankAccountNo)}</div>` : ""}</section>`);
+  }
+  if (profile.momoNumber || profile.momoName) {
+    blocks.push(`<section><b>Mobile Money (MTN)</b>${profile.momoNumber ? `<div>Number: ${esc(profile.momoNumber)}</div>` : ""}
+${profile.momoName ? `<div>Name: ${esc(profile.momoName)}</div>` : ""}</section>`);
+  }
+  return blocks.length ? `<div class="details"><span class="eyebrow details-title">PAYMENT DETAILS</span>${blocks.join("")}</div>` : "";
+}
+
+function a4StampQr(profile, stamp, paid) {
+  return `<div class="stamp-qr"><div class="stamp${paid ? " paid" : ""}">${esc(stamp)}</div>
+<div class="qrbox">${qrMarkup(profile)}<span>Scan to visit ${esc(profile.website || "solomantalgo.com")}</span></div></div>`;
+}
+
+function a4Footer(model, profile) {
+  return `<footer class="footer"><span>${esc(model.number || "")}</span>
+<span>${esc(profile.brandName || "Solomantalgo")} · ${esc(profile.website || "solomantalgo.com")}</span>
+<span>Page 1 of 1</span></footer>`;
+}
+
+function buildA4Receipt(model, profile) {
+  const total = Number(model.total ?? (model.lines || []).reduce((sum, line) => sum + (Number(line.amount) || 0), 0));
+  const received = Math.max(0, Number(model.received ?? total));
+  const previous = Math.max(0, Number(model.previouslyPaid) || 0);
+  const balance = Math.max(0, Number(model.invoiceTotal || 0) - previous - received);
+  const paid = balance === 0 && Number(model.invoiceTotal || model.total) > 0;
+  const reference = model.invoiceNo ? `<div>Ref Invoice: ${esc(model.invoiceNo)}</div>` : "";
+  const paymentMethod = `<div class="info-right"><span class="eyebrow">Payment method</span><b>${esc(methodName(model.method))}</b></div>`;
+  const included = model.payments?.length ? `<section class="included"><b>PAYMENTS INCLUDED</b>${model.payments.map((payment) =>
+    `<div class="row"><span>${esc(payment.date)} · ${esc(methodName(payment.method))}</span><b>${cash(payment.amount)}</b></div>`).join("")}</section>` : "";
+  const summary = `<section class="receipt-summary"><div class="row"><span>Invoice Total</span><b>${cash(model.invoiceTotal || model.total)}</b></div>
+<div class="row"><span>Previously Paid</span><b>${cash(previous)}</b></div>
+<div class="row received"><span>AMOUNT RECEIVED</span><b>${cash(received)}</b></div>
+<div class="balance-band${balance === 0 ? " paid-band" : ""}"><span>REMAINING BALANCE</span><b>${cash(balance)}</b></div></section>`;
+  const content = `<main class="page">${a4Header(profile, model, "Receipt", "a4", reference)}
+<div class="info"><section><span class="eyebrow">Received from</span><b>${esc(model.clientName)}</b>
+<span class="sub">${esc(model.business || "")}</span>${included}</section>${paymentMethod}</div>${summary}
+${a4Details(profile)}${a4StampQr(profile, paid ? "PAID IN FULL" : "PARTIAL PAYMENT", paid)}
+<div class="signature-a4"><span class="sig-line"><b>${esc(profile.ownerName || "")}</b><br>${esc(profile.ownerTitle || "")}</span></div>
+<div class="thanks">Thank you for your business.</div>${a4Footer(model, profile)}</main>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(titleFile("Receipt", model.number, model.clientName))}</title>
+${fontMarkup(profile)}<style>${a4Styles()}</style></head><body>${content}</body></html>`;
+}
+
+function buildA4Invoice(model, profile) {
+  const total = Math.max(0, Number(model.total) || 0);
+  const paid = Math.max(0, Number(model.paid) || 0);
+  const balance = Math.max(0, total - paid);
+  const isPaid = balance === 0;
+  const status = isPaid ? "PAID IN FULL" : paid ? "PARTIAL PAYMENT" : "AWAITING PAYMENT";
+  const rows = (model.items || []).map((item) => `<tr><td>${esc(item.title)}</td><td>${cash(item.amount)}</td></tr>`).join("");
+  const middle = `<div>Issued: ${esc(model.date || "")}</div><div>Due: ${esc(model.dueDate || "")}</div>`;
+  const totals = `<section class="totals"><div class="row"><span>Total</span><b>${cash(total)}</b></div>
+<div class="row"><span>Paid</span><b>${cash(paid)}</b></div><div class="balance-band${isPaid ? " paid-band" : ""}">
+<span>BALANCE DUE</span><b>${cash(balance)}</b></div></section>`;
+  const terms = profile.termsText ? `<section class="terms"><span class="eyebrow">Terms</span>
+<div>${esc(profile.termsText)}</div></section>` : "";
+  const content = `<main class="page">${a4Header(profile, model, "Invoice", "a4", middle)}<div class="info">
+<section><span class="eyebrow">Billed to</span><b>${esc(model.clientName)}</b><span class="sub">${esc(model.business || "")}</span></section>
+<div class="info-right"><span class="eyebrow">Status</span><b>${status}</b></div></div>
+<table class="invoice-table"><thead><tr><th>Description</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table>${totals}
+${terms}${a4Details(profile)}${a4StampQr(profile, status, isPaid)}<div class="signature-a4"><span class="sig-line">
+<b>${esc(profile.ownerName || "")}</b><br>${esc(profile.ownerTitle || "")}</span></div>
+<div class="thanks">Thank you for your business.</div>${a4Footer(model, profile)}</main>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(titleFile("Invoice", model.number, model.clientName))}</title>
+${fontMarkup(profile)}<style>${a4Styles()}</style></head><body>${content}</body></html>`;
+}
+
 function titleFile(type, number, name) {
   return `${type}-${number}-${String(name || "Client").replace(/[^\p{L}\p{N}-]+/gu, "-")}`;
 }
@@ -110,6 +218,7 @@ function linesBlock(items) {
 }
 
 export function buildReceiptHtml(model, format = "a4", profile = {}) {
+  if (format === "a4") return buildA4Receipt(model, profile);
   const total = Number(model.total ?? (model.lines || []).reduce((sum, line) => sum + (Number(line.amount) || 0), 0));
   const received = Math.max(0, Number(model.received ?? total));
   const previous = Math.max(0, Number(model.previouslyPaid) || 0);
@@ -134,6 +243,7 @@ ${signature(profile)}${qrMarkup(profile)}<div class="c">${esc(profile.website ||
 }
 
 export function buildInvoiceHtml(model, format = "a4", profile = {}) {
+  if (format === "a4") return buildA4Invoice(model, profile);
   const total = Math.max(0, Number(model.total) || 0);
   const paid = Math.max(0, Number(model.paid) || 0);
   const balance = Math.max(0, total - paid);
