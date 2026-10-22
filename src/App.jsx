@@ -12,8 +12,10 @@ import { ClientInfoEditor, ServiceEditor } from "./ClientEditors.jsx";
 import "./ClientCard.css";
 import { ConfirmProvider, useConfirm } from "./Confirm.jsx";
 import { buildInvoiceHtml, buildReceiptHtml } from "./documents.js";
-import { buildIndex, runSearch } from "./search.js";
+import { buildIndex, resolveSearchTarget, runSearch } from "./search.js";
 import { PrintDialogProvider, usePrintDialog } from "./PrintDialog.jsx";
+import { Back, Close } from "./icons.jsx";
+import BusinessProfile from "./BusinessProfile.jsx";
 
 const ClientActions = createContext(null);
 
@@ -432,8 +434,16 @@ function AppBody() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchType, setSearchType] = useState("All");
+  const [searchHighlight, setSearchHighlight] = useState(0);
+  const [recentSearches, setRecentSearches] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("solo-recent-searches") || "[]"); }
+    catch { return []; }
+  });
+  const searchFocus = useRef(null);
+  const searchTargetRef = useRef(null);
   const [moneyRoute, setMoneyRoute] = useState({ tab: "Income", query: "" });
   const [showCloudSetup, setShowCloudSetup] = useState(false);
+  const [showBusinessProfile, setShowBusinessProfile] = useState(false);
   const [cloudConfig, setCloudConfig] = useState(
     getStoredCloudConfig() || { url: DEFAULT_SUPABASE_URL, key: DEFAULT_SUPABASE_KEY },
   );
@@ -441,28 +451,70 @@ function AppBody() {
   const today = todayStr();
   const searchIndex = useMemo(() => (data ? buildIndex(data) : []), [data]);
 
+  const openSearch = useCallback(() => {
+    if (searchOpen) return;
+    window.history.pushState({ ...(window.history.state || {}), search: true }, "", window.location.href);
+    setSearchOpen(true);
+  }, [searchOpen]);
+  const closeSearch = useCallback(() => {
+    if (window.history.state?.search) window.history.back();
+    else setSearchOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!searchOpen) return undefined;
+    const oldOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = oldOverflow; };
+  }, [searchOpen]);
+
   useEffect(() => {
     const onKey = (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setSearchOpen(true);
+        openSearch();
       } else if (event.key === "/" && !["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) {
         event.preventDefault();
-        setSearchOpen(true);
-      } else if (event.key === "Escape") setSearchOpen(false);
+        openSearch();
+      } else if (event.key === "Escape" && searchOpen) closeSearch();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [searchOpen, openSearch, closeSearch]);
 
   useEffect(() => {
     const onPop = () => {
-      setOpenClient(null);
-      requestAnimationFrame(() => window.scrollTo(0, listScroll.current));
+      if (searchOpen) {
+        setSearchOpen(false);
+        return;
+      }
+      if (openClient) {
+        setOpenClient(null);
+        requestAnimationFrame(() => window.scrollTo(0, listScroll.current));
+      }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [searchOpen, openClient]);
+
+  useEffect(() => {
+    if (!openClient || !searchTargetRef.current) return undefined;
+    const focus = searchTargetRef.current;
+    searchTargetRef.current = null;
+    const timer = window.setTimeout(() => {
+      const selector = focus.serviceId
+        ? `[data-service-id="${CSS.escape(focus.serviceId)}"]`
+        : focus.paymentId
+          ? `[data-payment-id="${CSS.escape(focus.paymentId)}"]`
+          : null;
+      if (!selector) return;
+      const element = document.querySelector(selector);
+      element?.scrollIntoView({ behavior: "smooth", block: "center" });
+      element?.classList.add("flash");
+      window.setTimeout(() => element?.classList.remove("flash"), 1500);
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [openClient]);
 
   useEffect(() => {
     if (!localStorage.getItem(CLOUD_URL_KEY) && !localStorage.getItem(CLOUD_KEY_KEY)) {
@@ -1006,29 +1058,67 @@ function AppBody() {
     limit: 20,
   });
   const chooseSearchResult = (item) => {
+    const query = searchQuery.trim();
+    if (query) {
+      const nextRecent = [query, ...recentSearches.filter((value) => value !== query)].slice(0, 5);
+      setRecentSearches(nextRecent);
+      try { localStorage.setItem("solo-recent-searches", JSON.stringify(nextRecent)); } catch { /* optional */ }
+    }
+    const target = resolveSearchTarget(item);
+    if (window.history.state?.search) window.history.replaceState({}, "", window.location.href);
     setSearchOpen(false);
-    if (item.clientId && item.date) {
-      openClientScreen(item.date, item.clientId);
+    if (target.kind === "client") {
+      searchTargetRef.current = target.focus;
+      openClientScreen(target.date, target.clientId);
       return;
     }
-    if (item.type === "Buckets") setMoneyRoute({ tab: "Allocations", query: item.title });
-    else if (item.type === "Accounts") setMoneyRoute({ tab: "Accounts", query: item.title });
-    else setMoneyRoute({ tab: item.subtype === "expense" ? "Expenses" : "Income", query: searchQuery });
+    setMoneyRoute(target);
     selectTab("payments");
+  };
+  const highlightResult = (value) => {
+    const text = String(value || "");
+    const tokens = searchQuery.trim().split(/\s+/).filter(Boolean);
+    const normalizedText = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const match = tokens.map((token) => {
+      const normalizedToken = token.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      return { token, at: normalizedText.indexOf(normalizedToken) };
+    }).filter((entry) => entry.at >= 0).sort((a, b) => a.at - b.at)[0];
+    if (!match) return text;
+    return <>{text.slice(0, match.at)}<mark>{text.slice(match.at, match.at + match.token.length)}</mark>
+      {text.slice(match.at + match.token.length)}</>;
   };
   const searchPanel = searchOpen ? (
     <div
       className="os-search-overlay"
-      onMouseDown={(event) => event.target === event.currentTarget && setSearchOpen(false)}
+      onMouseDown={(event) => event.target === event.currentTarget && closeSearch()}
     >
-      <section className="os-search-dialog">
-        <input
+      <section className="os-search-dialog" role="dialog" aria-modal="true" aria-label="Search">
+        <header className="search-panel-head">
+          <button className="iconbtn" onClick={closeSearch} aria-label="Back"><Back /></button>
+          <input
+          ref={searchFocus}
           autoFocus
           inputMode="search"
           placeholder="Search clients, services, payments…"
           value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
-        />
+          onChange={(event) => { setSearchQuery(event.target.value); setSearchHighlight(0); }}
+          aria-activedescendant={results[searchHighlight] ? `search-result-${searchHighlight}` : undefined}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setSearchHighlight((index) => Math.min(results.length - 1, index + 1));
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setSearchHighlight((index) => Math.max(0, index - 1));
+            } else if (event.key === "Enter" && results[searchHighlight]) {
+              event.preventDefault();
+              chooseSearchResult(results[searchHighlight]);
+            }
+          }}
+          />
+          {searchQuery && <button className="iconbtn" onClick={() => setSearchQuery("")} aria-label="Clear"><Close /></button>}
+          <button className="iconbtn search-desktop-close" onClick={closeSearch} aria-label="Close"><Close /></button>
+        </header>
         <nav className="os-search-types">
           {["All", "Clients", "Services", "Payments", "Money"].map((type) => (
             <button className={searchType === type ? "active" : ""} key={type} onClick={() => setSearchType(type)}>
@@ -1038,15 +1128,24 @@ function AppBody() {
         </nav>
         <div className="os-search-results">
           {searchQuery &&
-            results.map((item) => (
-              <button key={`${item.type}-${item.id}-${item.clientId || ""}`} onClick={() => chooseSearchResult(item)}>
+            results.map((item, index) => (
+              <button id={`search-result-${index}`} aria-selected={searchHighlight === index}
+                className={searchHighlight === index ? "selected" : ""}
+                key={`${item.type}-${item.id}-${item.clientId || ""}`} onClick={() => chooseSearchResult(item)}>
                 <small>{item.type}</small>
-                <b>{item.title}</b>
-                <span>{item.subtitle}</span>
+                <b>{highlightResult(item.title)}</b>
+                <span>{highlightResult(item.subtitle)}</span>
               </button>
             ))}
           {searchQuery && !results.length && <p>No results found.</p>}
-          {!searchQuery && <p>Search by client, service, amount, note, or number.</p>}
+          {!searchQuery && recentSearches.length > 0 && <div className="search-recents">
+            <header><b>Recent searches</b><button onClick={() => {
+              setRecentSearches([]);
+              try { localStorage.removeItem("solo-recent-searches"); } catch { /* optional */ }
+            }}>Clear</button></header>
+            {recentSearches.map((query) => <button key={query} onClick={() => setSearchQuery(query)}>{query}</button>)}
+          </div>}
+          {!searchQuery && !recentSearches.length && <p>Search by client, service, amount, note, or number.</p>}
         </div>
       </section>
     </div>
@@ -1058,7 +1157,7 @@ function AppBody() {
         openClientScreen,
         closeClientScreen,
         assignDocumentNumber,
-        profile: data.settings?.business || {},
+        profile: { ...(data.settings?.business || {}), accounts: data.finance?.accounts || [] },
         accounts: data.finance?.accounts || [],
         openId: current?.id || null,
       }}
@@ -1071,12 +1170,12 @@ function AppBody() {
         banner={banner}
         onDismissBanner={() => setBanner(null)}
         onSync={syncNow}
-        onSearch={() => setSearchOpen(true)}
+        onSearch={openSearch}
         searchPanel={searchPanel}
         onExportBackup={() => exportBackup(data)}
         onOpenCloud={() => setShowCloudSetup(true)}
+        onOpenProfile={() => setShowBusinessProfile(true)}
         onReset={resetDatabase}
-        topExtra={tab === "today" ? <TargetCtrl target={data.target} onChange={setTarget} /> : null}
         detail={
           current ? (
             <ClientScreen
@@ -1095,6 +1194,7 @@ function AppBody() {
             clients={data.clients}
             target={data.target}
             today={today}
+            onTargetChange={setTarget}
             onMarkDone={markOutreachDone}
             onAddLead={openAddLeadFromOutreach}
           />
@@ -1166,6 +1266,9 @@ function AppBody() {
           }}
         />
       )}
+      {showBusinessProfile && <BusinessProfile profile={data.settings?.business}
+        onSave={(business) => save({ ...data, settings: { ...data.settings, business } })}
+        onClose={() => setShowBusinessProfile(false)} />}
     </ClientActions.Provider>
   );
 }
@@ -1197,7 +1300,7 @@ function TargetCtrl({ target, onChange }) {
 }
 
 // ── Today View
-function TodayView({ outreach, clients, target, today, onMarkDone, onAddLead }) {
+function TodayView({ outreach, clients, target, today, onMarkDone, onAddLead, onTargetChange }) {
   const [activeTrack, setActiveTrack] = useState("physical");
 
   const remoteSeq = outreach?.remotePointer || 1;
@@ -1209,18 +1312,27 @@ function TodayView({ outreach, clients, target, today, onMarkDone, onAddLead }) 
   const todayClients = clients[today] || [];
   const pct = Math.min(1, todayClients.length / target);
   const hit = todayClients.length >= target;
+  const allClients = Object.entries(clients).flatMap(([date, entries]) => entries.map((client) => ({ ...client, date })));
+  const overdueLeads = allClients.filter((client) => client.status !== "ongoing" && client.followUpDate &&
+    client.followUpDate < today && client.followUp !== "done")
+    .map((client) => ({ ...client, overdueDays: Math.floor((Date.parse(`${today}T00:00:00Z`) -
+      Date.parse(`${client.followUpDate}T00:00:00Z`)) / 86400000) }))
+    .sort((a, b) => b.overdueDays - a.overdueDays).slice(0, 5);
+  const biggestBalances = outstandingBalances(clients).sort((a, b) => b.balance - a.balance).slice(0, 3);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="today-layout">
+      <div className="today-main" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* Today's Pitches & Leads Summary Card */}
       <div style={{ background: SURF, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "14px 16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <span style={{ fontSize: 10, color: LIME, letterSpacing: 1, fontWeight: "bold" }}>
             TODAY'S PITCHES & LEADS
           </span>
-          <span style={{ fontSize: 12, color: hit ? LIME : "#fff", fontWeight: "bold" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {todayClients.length} / {target} {hit ? "✓ HIT" : ""}
-          </span>
+            <TargetCtrl target={target} onChange={onTargetChange} />
+          </div>
         </div>
         <div style={{ background: BORDER, borderRadius: 4, height: 5, overflow: "hidden", marginBottom: 12 }}>
           <div
@@ -1436,6 +1548,25 @@ function TodayView({ outreach, clients, target, today, onMarkDone, onAddLead }) 
           </div>
         </div>
       )}
+      </div>
+      <aside className="today-attention card">
+        <h2>Needs attention</h2>
+        <h3>Overdue follow-ups</h3>
+        {overdueLeads.length ? overdueLeads.map((client) => (
+          <div className="attention-row" key={client.id}>
+            <div><b>{client.name}</b><span className="chip chip-warn">{client.temp || "warm"}</span>
+              <small>{client.overdueDays} days overdue</small></div>
+            <div className="attention-links">{client.phone && <>
+              {client.hasWhatsApp !== "no" && <a aria-label={`WhatsApp ${client.name}`} href={`https://wa.me/${toWaNumber(client.phone)}`}>WA</a>}
+              <a aria-label={`Call ${client.name}`} href={`tel:${client.phone}`}>Call</a></>}
+            </div>
+          </div>
+        )) : <p>No overdue follow-ups.</p>}
+        <h3>Largest balances</h3>
+        {biggestBalances.length ? biggestBalances.map((balance) => <div className="attention-balance" key={balance.id}>
+          <span>{balance.name}<small>{balance.service}</small></span><b>{fmtUGX(balance.balance)}</b>
+        </div>) : <p>No outstanding balances.</p>}
+      </aside>
     </div>
   );
 }
@@ -2011,6 +2142,11 @@ function clientTotals(client) {
   const paid = (client.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   return { total, paid, balance: total - paid };
 }
+function documentDueDate(issueDate, days = 14) {
+  const date = new Date(`${issueDate}T00:00:00`);
+  date.setDate(date.getDate() + (Number(days) || 14));
+  return date.toISOString().slice(0, 10);
+}
 function printInvoice(client, service = null, assignNumber = null, profile = {}, print = null) {
   const activeService = service || getClientServices(client)[0];
   if (!activeService) {
@@ -2027,13 +2163,14 @@ function printInvoice(client, service = null, assignNumber = null, profile = {},
   const sourceItems = (activeService.items || []).length
     ? activeService.items
     : [{ title: activeService.title || client.servicesToOffer || "Services", price: total }];
-  const items = sourceItems.map((item) => ({
-    title: item.title,
-    amount: Number(item.price) > 0 ? Number(item.price) : sourceItems.length === 1 ? total : 0,
-  }));
+  const itemized = sourceItems.some((item) => Number(item.price) > 0);
+  const items = itemized
+    ? sourceItems.map((item) => ({ title: item.title, amount: Number(item.price) || 0 }))
+    : [{ title: sourceItems.map((item) => item.title).filter(Boolean).join(", ") || activeService.title, amount: total }];
   const model = {
       number,
       date: activeService.createdAt || client.date || todayStr(),
+      dueDate: documentDueDate(activeService.createdAt || client.date || todayStr(), profile.invoiceDueDays),
       clientName: client.name,
       business: client.business || "",
       items,
@@ -2058,10 +2195,14 @@ function printReceipt(client, payment, assignNumber = null, profile = {}, print 
   const model = {
       number,
       date: payment.date || client.date || todayStr(),
+      invoiceNo: service.invoiceNo || getInvoiceNum(client, service),
       clientName: client.name,
       business: client.business || "",
       lines: [{ title: payment.note || service.title || "Payment", amount: payment.amount }],
       total: payment.amount,
+      received: payment.amount,
+      invoiceTotal: serviceTotal(service, client),
+      previouslyPaid: Math.max(0, servicePaid(client, service.id) - Number(payment.amount || 0)),
       stamp: "PAYMENT RECEIVED",
       method: payment.accountName || profile.accounts?.find((account) => account.id === payment.accountId)?.name || payment.accountId,
     };
@@ -2074,6 +2215,11 @@ function printReceiptGroup(client, group, assignNumber, profile = {}, print = nu
   const number =
     group.receiptNo || assignNumber?.(client.date, client.id, "receiptGroup", group.id) || getReceiptNum(group);
   const total = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+  const services = [...new Set(payments.map((payment) => payment.serviceId))]
+    .map((serviceId) => getClientServices(client).find((item) => item.id === serviceId))
+    .filter(Boolean);
+  const invoiceTotal = services.reduce((sum, service) => sum + serviceTotal(service, client), 0);
+  const totalPaid = services.reduce((sum, service) => sum + servicePaid(client, service.id), 0);
   const model = {
       number,
       date: group.createdAt?.slice(0, 10) || todayStr(),
@@ -2082,6 +2228,9 @@ function printReceiptGroup(client, group, assignNumber, profile = {}, print = nu
       lines: payments.map((payment) => ({ title: payment.note || "Payment", amount: payment.amount })),
       total,
       received: total,
+      invoiceTotal,
+      previouslyPaid: Math.max(0, totalPaid - total),
+      invoiceNo: services[0]?.invoiceNo || "",
       payments: payments.map((payment) => ({
         date: payment.date || "",
         method: payment.accountName || profile.accounts?.find((account) => account.id === payment.accountId)?.name || payment.accountId,
@@ -2103,6 +2252,7 @@ function printCombinedInvoice(client, services, assignNumber, profile = {}, prin
   const model = {
       number,
       date: todayStr(),
+      dueDate: documentDueDate(todayStr(), profile.invoiceDueDays),
       clientName: client.name,
       business: client.business || "",
       items: services.map((service) => ({ title: service.title, amount: serviceTotal(service, client) })),
@@ -2684,7 +2834,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                 const total = serviceTotal(service, c);
                 const balance = total - paid;
                 return (
-                  <article className="cs-service" key={service.id}>
+                  <article className="cs-service" data-service-id={service.id} key={service.id}>
                     {mergeMode && !service.mergedFrom?.length && (
                       <label className="cs-select-service">
                         <input
@@ -2748,7 +2898,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                         return !group || expandedReceiptGroups.includes(group.id);
                       })
                       .map((payment) => (
-                        <div className="cs-payment" key={payment.id}>
+                        <div className="cs-payment" data-payment-id={payment.id} key={payment.id}>
                           <span>
                             {payment.date || "Date unknown"} · {payment.note || "Payment"} · {fmtUGX(payment.amount)}
                           </span>

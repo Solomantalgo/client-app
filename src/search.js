@@ -149,3 +149,22 @@ export function runSearch(index, query, { types, limit = 8 } = {}) {
     .slice(0, limit)
     .map((result) => result.item);
 }
+
+export function resolveSearchTarget(item) {
+  if (item?.clientId && item?.date) {
+    const focus = {};
+    if (item.serviceId) focus.serviceId = item.serviceId;
+    if (item.type === "Payments" && item.id) focus.paymentId = item.id;
+    return { kind: "client", date: item.date, clientId: item.clientId, focus };
+  }
+  if (item?.type === "Money") {
+    return {
+      kind: "money",
+      tab: item.subtype === "expense" ? "Expenses" : "Income",
+      query: item.title || "",
+    };
+  }
+  if (item?.type === "Buckets") return { kind: "money", tab: "Allocations", query: item.title || "" };
+  if (item?.type === "Accounts") return { kind: "money", tab: "Accounts", query: item.title || "" };
+  return { kind: "money", tab: "Income", query: item?.title || "" };
+}

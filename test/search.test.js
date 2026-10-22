@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildIndex, runSearch } from "../src/search.js";
+import { buildIndex, resolveSearchTarget, runSearch } from "../src/search.js";
 
 const sample = {
   clients: {
@@ -56,4 +56,21 @@ test("search ignores accents and ranks title starts before later text matches", 
     "cafe",
   );
   assert.equal(ranked[0].id, "starts");
+});
+
+test("search results resolve to the matching client, service, payment, invoice, or money view", () => {
+  assert.deepEqual(resolveSearchTarget({ type: "Clients", id: "c1", clientId: "c1", date: "d1" }), {
+    kind: "client", date: "d1", clientId: "c1", focus: {},
+  });
+  assert.deepEqual(resolveSearchTarget({ type: "Services", id: "s1", serviceId: "s1", clientId: "c1", date: "d1" }), {
+    kind: "client", date: "d1", clientId: "c1", focus: { serviceId: "s1" },
+  });
+  assert.deepEqual(resolveSearchTarget({ type: "Payments", id: "p1", clientId: "c1", date: "d1" }), {
+    kind: "client", date: "d1", clientId: "c1", focus: { paymentId: "p1" },
+  });
+  assert.deepEqual(resolveSearchTarget({ type: "Invoices", id: "s1", serviceId: "s1", clientId: "c1", date: "d1" }).focus,
+    { serviceId: "s1" });
+  assert.deepEqual(resolveSearchTarget({ type: "Money", subtype: "expense", title: "Taxi" }), {
+    kind: "money", tab: "Expenses", query: "Taxi",
+  });
 });
