@@ -1,9 +1,9 @@
 body, html {
   margin: 0;
   padding: 0;
-  background-color: #080808;
-  color: #fff;
-  font-family: 'DM Mono', 'Courier New', monospace;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
 }
 * {
   box-sizing: border-box;

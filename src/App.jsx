@@ -30,16 +30,16 @@ if (typeof window !== "undefined" && !window.storage) {
 }
 
 // ── Design Tokens
-const LIME = "#aaff00";
-const BG = "#080808";
-const SURF = "#111111";
-const SURF2 = "#1a1a1a";
-const BORDER = "#1f1f1f";
-const DIM = "#555555";
-const WARM_C = "#ff7a3d";
-const COLD_C = "#4da6ff";
+const LIME = "var(--lime)";
+const BG = "var(--bg)";
+const SURF = "var(--s1)";
+const SURF2 = "var(--s2)";
+const BORDER = "var(--line)";
+const DIM = "var(--text-3)";
+const WARM_C = "var(--warn)";
+const COLD_C = "var(--blue)";
 const GREEN_WA = "#25D366";
-const FONT = "'DM Mono', 'Courier New', monospace";
+const FONT = "var(--font-mono)";
 
 const PACKAGE_TEMPLATES = [
   {
