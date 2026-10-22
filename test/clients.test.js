@@ -78,7 +78,10 @@ test("legacy shaped saved service data is retained without edits", () => {
 });
 
 test("adding keeps services separate and editing updates only its service", () => {
-  const one = upsertService({ services: [] }, { id: "one", title: "One", agreedPrice: 50, items: [] });
+  const one = upsertService(
+    { services: [] },
+    { id: "one", title: "One", agreedPrice: 50, items: [] },
+  );
   const added = upsertService(one, {
     id: "two",
     title: "Two",
@@ -150,7 +153,9 @@ test("normalizeData round-trips pause, merge, receipt, reset, and document count
           pausedAt: "2026-01-02",
           pauseReason: "Waiting",
           payments: [{ id: "p1" }, { id: "p2" }],
-          receiptGroups: [{ id: "g", paymentIds: ["p1", "p2"], receiptNo: "RCP-2026-1" }],
+          receiptGroups: [
+            { id: "g", paymentIds: ["p1", "p2"], receiptNo: "RCP-2026-1" },
+          ],
           services: [
             {
               id: "s",
@@ -162,7 +167,18 @@ test("normalizeData round-trips pause, merge, receipt, reset, and document count
         },
       ],
     },
-    finance: { bucketResets: [{ id: "r", bucketId: "living" }] },
+    finance: {
+      bucketResets: [{ id: "r", bucketId: "living" }],
+      bucketLoans: [
+        {
+          id: "l",
+          borrowerId: "living",
+          lenderId: "reserve",
+          amount: 10,
+          repaid: 2,
+        },
+      ],
+    },
     meta: { counters: { invoice: 2, receipt: 3 } },
   });
   const client = result.clients.day[0];
@@ -173,7 +189,18 @@ test("normalizeData round-trips pause, merge, receipt, reset, and document count
   assert.deepEqual(client.services[0].mergedFrom, [{ id: "old" }]);
   assert.deepEqual(client.services[0].paymentMap, { p1: "old" });
   assert.equal(client.services[0].invoiceNo, "SWD-2026-1");
-  assert.deepEqual(result.finance.bucketResets, [{ id: "r", bucketId: "living" }]);
+  assert.deepEqual(result.finance.bucketResets, [
+    { id: "r", bucketId: "living" },
+  ]);
+  assert.deepEqual(result.finance.bucketLoans, [
+    {
+      id: "l",
+      borrowerId: "living",
+      lenderId: "reserve",
+      amount: 10,
+      repaid: 2,
+    },
+  ]);
   assert.deepEqual(result.meta.counters, { invoice: 2, receipt: 3 });
 });
 
@@ -196,14 +223,29 @@ test("normalizeData removes receipt groups with deleted payments or fewer than t
     result.clients.day[0].receiptGroups.map((group) => group.id),
     ["keep"],
   );
-  assert.deepEqual(result.clients.day[0].receiptGroups[0].paymentIds, ["p1", "p2"]);
+  assert.deepEqual(result.clients.day[0].receiptGroups[0].paymentIds, [
+    "p1",
+    "p2",
+  ]);
 });
 
 test("shared serviceTotal prefers priced items and supports single-service legacy fallback", () => {
-  assert.equal(serviceTotal({ agreedPrice: 100, items: [{ price: 45 }, { price: 5 }] }), 50);
+  assert.equal(
+    serviceTotal({ agreedPrice: 100, items: [{ price: 45 }, { price: 5 }] }),
+    50,
+  );
   assert.equal(serviceTotal({ agreedPrice: 75, items: [{ price: 0 }] }), 75);
-  assert.equal(serviceTotal({ agreedPrice: 0 }, { services: [{}], totalAgreedPrice: 80 }), 80);
-  assert.equal(serviceTotal({ agreedPrice: 0 }, { services: [{}, {}], totalAgreedPrice: 80 }), 0);
+  assert.equal(
+    serviceTotal({ agreedPrice: 0 }, { services: [{}], totalAgreedPrice: 80 }),
+    80,
+  );
+  assert.equal(
+    serviceTotal(
+      { agreedPrice: 0 },
+      { services: [{}, {}], totalAgreedPrice: 80 },
+    ),
+    0,
+  );
 });
 
 test("service pricing edits converted lump services and preserves itemized prices", () => {
@@ -216,8 +258,15 @@ test("service pricing edits converted lump services and preserves itemized price
       },
     ],
   };
-  const lumpDraft = applyServicePricing("lump", 150, converted.services[0].items);
-  assert.equal(serviceTotal({ ...converted.services[0], ...lumpDraft }, converted), 150);
+  const lumpDraft = applyServicePricing(
+    "lump",
+    150,
+    converted.services[0].items,
+  );
+  assert.equal(
+    serviceTotal({ ...converted.services[0], ...lumpDraft }, converted),
+    150,
+  );
   assert.equal(lumpDraft.items[0].title, "Design");
 
   const itemized = {
@@ -238,18 +287,37 @@ test("paused clients are excluded from active balances and resume restores them"
   };
   const clients = { day: [active] };
   assert.equal(outstandingBalances(clients)[0].balance, 80);
-  const paused = { ...active, paused: true, pausedAt: "2026-10-21", pauseReason: "No payment" };
+  const paused = {
+    ...active,
+    paused: true,
+    pausedAt: "2026-10-21",
+    pauseReason: "No payment",
+  };
   assert.equal(outstandingBalances({ day: [paused] }).length, 0);
   assert.equal(pausedBalances({ day: [paused] })[0].balance, 80);
-  const resumed = normalizeData({ clients: { day: [{ ...paused, paused: false }] } });
+  const resumed = normalizeData({
+    clients: { day: [{ ...paused, paused: false }] },
+  });
   assert.equal(outstandingBalances(resumed.clients)[0].balance, 80);
 });
 
 test("merging and unmerging services restores service snapshots and payment assignments", () => {
   const client = {
     services: [
-      { id: "a", title: "Design", agreedPrice: 100, createdAt: "2026-01-01", items: [] },
-      { id: "b", title: "Copy", agreedPrice: 200, dueDate: "2026-03-01", items: [] },
+      {
+        id: "a",
+        title: "Design",
+        agreedPrice: 100,
+        createdAt: "2026-01-01",
+        items: [],
+      },
+      {
+        id: "b",
+        title: "Copy",
+        agreedPrice: 200,
+        dueDate: "2026-03-01",
+        items: [],
+      },
     ],
     payments: [
       { id: "pa", serviceId: "a", amount: 25 },
@@ -266,7 +334,10 @@ test("merging and unmerging services restores service snapshots and payment assi
   );
   const afterNewPayment = {
     ...merged,
-    payments: [...merged.payments, { id: "pc", serviceId: service.id, amount: 10 }],
+    payments: [
+      ...merged.payments,
+      { id: "pc", serviceId: service.id, amount: 10 },
+    ],
   };
   const restored = unmergeService(afterNewPayment, service.id);
   assert.deepEqual(restored.services.map((item) => item.id).sort(), ["a", "b"]);

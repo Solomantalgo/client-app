@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   DEFAULT_FINANCE,
   allocateAmount,
+  applyBucketLoanRepayment,
   getBalances,
   getTransactions,
 } from "../money.js";
@@ -39,6 +40,11 @@ export default function MoneyView({
   const [resetBucket, setResetBucket] = useState(null);
   const [resetOpening, setResetOpening] = useState("0");
   const [resetNote, setResetNote] = useState("");
+  const [borrowBucket, setBorrowBucket] = useState(null);
+  const [borrowFrom, setBorrowFrom] = useState("");
+  const [borrowAmount, setBorrowAmount] = useState("");
+  const [borrowNote, setBorrowNote] = useState("");
+  const [borrowError, setBorrowError] = useState("");
   const [draft, setDraft] = useState({
     date: today(),
     amount: "",
@@ -61,7 +67,7 @@ export default function MoneyView({
     0,
   );
   const assignedBalance = Object.values(totals.buckets).reduce(
-    (sum, bucket) => sum + bucket.allocated - bucket.spent,
+    (sum, bucket) => sum + bucket.balance,
     0,
   );
   const startForm = (type, item = null) => {
@@ -119,9 +125,15 @@ export default function MoneyView({
               }))
             : undefined;
         const override = draft.custom ? draft.customAllocations : savedRules;
-        const split = override
+        let split = override
           ? allocateAmount(amount, finance.buckets, override)
           : allocateAmount(amount, finance.buckets);
+        let nextFinance = finance;
+        if (!editing) {
+          const applied = applyBucketLoanRepayment(split, finance);
+          split = applied.split;
+          nextFinance = applied.finance;
+        }
         if (editing) {
           const updated = {
             ...editing,
@@ -141,7 +153,7 @@ export default function MoneyView({
           onSave({
             ...data,
             finance: {
-              ...finance,
+              ...nextFinance,
               manualIncome: finance.manualIncome.map((x) =>
                 x.id === editing.id ? updated : x,
               ),
@@ -164,7 +176,7 @@ export default function MoneyView({
           onSave({
             ...data,
             finance: {
-              ...finance,
+              ...nextFinance,
               manualIncome: [...finance.manualIncome, income],
             },
           });
@@ -368,6 +380,37 @@ export default function MoneyView({
         ),
       },
     });
+  const saveBucketBorrow = (event) => {
+    event.preventDefault();
+    const amount = Math.round(Number(borrowAmount));
+    const available = totals.buckets[borrowFrom]?.balance || 0;
+    if (!(amount > 0))
+      return setBorrowError("Enter an amount greater than zero.");
+    if (amount > available)
+      return setBorrowError(
+        "The selected bucket does not have enough available money.",
+      );
+    const loan = {
+      id: uid(),
+      borrowerId: borrowBucket.id,
+      lenderId: borrowFrom,
+      amount,
+      repaid: 0,
+      note: borrowNote.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    onSave({
+      ...data,
+      finance: {
+        ...finance,
+        bucketLoans: [...(finance.bucketLoans || []), loan],
+      },
+    });
+    setBorrowBucket(null);
+    setBorrowAmount("");
+    setBorrowNote("");
+    setBorrowError("");
+  };
   const setPaymentAccount = (transaction, accountId) => {
     const entry = Object.entries(data.clients).find(([, clients]) =>
       clients.some((c) => c.id === transaction.clientId),
@@ -526,7 +569,7 @@ export default function MoneyView({
                       allocated: 0,
                       spent: 0,
                     };
-                    const available = v.allocated - v.spent;
+                    const available = v.balance;
                     return (
                       <article className="m-bucket" key={b.id}>
                         <div className="m-bucket-name">
@@ -535,6 +578,12 @@ export default function MoneyView({
                         </div>
                         <strong>{money(available)}</strong>
                         <span className="m-muted">available</span>
+                        {v.borrowed > 0 && (
+                          <span className="m-muted">
+                            Borrowed balance: -{money(v.borrowed)} · repaid from
+                            future allocations
+                          </span>
+                        )}
                         <div className="m-progress">
                           <i
                             style={{
@@ -555,6 +604,23 @@ export default function MoneyView({
                           </span>
                         </div>
                         <div className="m-row-actions">
+                          <button
+                            className="m-quiet"
+                            onClick={() => {
+                              const lenders = activeBuckets.filter(
+                                (item) =>
+                                  item.id !== b.id &&
+                                  (totals.buckets[item.id]?.balance || 0) > 0,
+                              );
+                              setBorrowFrom(lenders[0]?.id || "");
+                              setBorrowBucket(b);
+                              setBorrowAmount("");
+                              setBorrowNote("");
+                              setBorrowError("");
+                            }}
+                          >
+                            Borrow from another bucket
+                          </button>
                           <button
                             className="m-quiet"
                             onClick={() => startForm("bucket", b)}
@@ -767,11 +833,13 @@ export default function MoneyView({
                     <div className="m-rule-main">
                       <strong>{b.name}</strong>
                       <div className="m-muted">
-                        {money(
-                          (totals.buckets[b.id]?.allocated || 0) -
-                            (totals.buckets[b.id]?.spent || 0),
-                        )}{" "}
-                        available
+                        {money(totals.buckets[b.id]?.balance || 0)} available
+                        {totals.buckets[b.id]?.borrowed > 0 && (
+                          <span>
+                            {" "}
+                            · Debt -{money(totals.buckets[b.id].borrowed)}
+                          </span>
+                        )}
                         {b.target ? ` · Goal ${money(b.target)}` : ""}
                       </div>
                     </div>
@@ -1325,6 +1393,69 @@ export default function MoneyView({
                 Cancel
               </button>
               <button className="m-primary">Continue</button>
+            </div>
+          </form>
+        </div>
+      )}
+      {borrowBucket && (
+        <div
+          className="m-overlay"
+          onMouseDown={(event) =>
+            event.target === event.currentTarget && setBorrowBucket(null)
+          }
+        >
+          <form className="m-dialog" onSubmit={saveBucketBorrow}>
+            <h2>Borrow into {borrowBucket.name}</h2>
+            <p>
+              The lender's available balance goes down. Future allocations to
+              {` ${borrowBucket.name} `}repay this amount first.
+            </p>
+            <label>
+              Take from
+              <select
+                value={borrowFrom}
+                onChange={(event) => setBorrowFrom(event.target.value)}
+                required
+              >
+                {activeBuckets
+                  .filter((bucket) => bucket.id !== borrowBucket.id)
+                  .map((bucket) => (
+                    <option key={bucket.id} value={bucket.id}>
+                      {bucket.name} ·{" "}
+                      {money(totals.buckets[bucket.id]?.balance || 0)} available
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Amount (UGX)
+              <input
+                type="number"
+                inputMode="numeric"
+                min="1"
+                step="1"
+                value={borrowAmount}
+                onChange={(event) => setBorrowAmount(event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Note
+              <input
+                value={borrowNote}
+                onChange={(event) => setBorrowNote(event.target.value)}
+              />
+            </label>
+            {borrowError && <p className="m-error">{borrowError}</p>}
+            <div className="m-dialog-actions">
+              <button
+                type="button"
+                className="m-secondary"
+                onClick={() => setBorrowBucket(null)}
+              >
+                Cancel
+              </button>
+              <button className="m-primary">Borrow funds</button>
             </div>
           </form>
         </div>

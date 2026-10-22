@@ -156,6 +156,9 @@ export function normalizeData(d) {
     bucketResets: Array.isArray(financeSource.bucketResets)
       ? financeSource.bucketResets
       : [],
+    bucketLoans: Array.isArray(financeSource.bucketLoans)
+      ? financeSource.bucketLoans
+      : [],
   };
   // Snapshots written by the first Money migration had no origin marker and
   // applied today's rules to pre-existing receipts. Treat those as legacy cash.

@@ -1,10 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { allocateAmount, DEFAULT_BUCKETS, DEFAULT_FINANCE, getBalances, getTransactions } from "../src/money.js";
+import {
+  allocateAmount,
+  applyBucketLoanRepayment,
+  DEFAULT_BUCKETS,
+  DEFAULT_FINANCE,
+  getBalances,
+  getTransactions,
+} from "../src/money.js";
 import { chooseSnapshot, hasSavedContent } from "../src/sync.js";
 
 test("reference allocation splits UGX 1,000,000 as configured", () => {
-  const { allocations, unallocated } = allocateAmount(1_000_000, DEFAULT_BUCKETS);
+  const { allocations, unallocated } = allocateAmount(
+    1_000_000,
+    DEFAULT_BUCKETS,
+  );
   assert.deepEqual(
     allocations.map((x) => x.amount),
     [300_000, 250_000, 200_000, 100_000, 100_000, 50_000],
@@ -19,7 +29,11 @@ test("reference allocation splits UGX 1,000,000 as configured", () => {
 test("allocation snapshots keep historical rules while future income uses new rules", () => {
   const oldRules = [{ id: "living", percentage: 25 }];
   const snapshot = allocateAmount(1_000_000, [], oldRules);
-  const future = allocateAmount(1_000_000, [], [{ id: "living", percentage: 30 }]);
+  const future = allocateAmount(
+    1_000_000,
+    [],
+    [{ id: "living", percentage: 30 }],
+  );
   assert.equal(snapshot.allocations[0].amount, 250_000);
   assert.equal(future.allocations[0].amount, 300_000);
   assert.equal(snapshot.allocations[0].amount, 250_000);
@@ -35,8 +49,14 @@ test("amount rounding always reconciles and over-allocation is rejected", () => 
     split.allocations.reduce((n, x) => n + x.amount, split.unallocated),
     101,
   );
-  assert.throws(() => allocateAmount(100, [{ id: "a", percentage: 101 }]), /exceed 100/);
-  assert.equal(allocateAmount(100, [{ id: "a", percentage: 75 }]).unallocated, 25);
+  assert.throws(
+    () => allocateAmount(100, [{ id: "a", percentage: 101 }]),
+    /exceed 100/,
+  );
+  assert.equal(
+    allocateAmount(100, [{ id: "a", percentage: 75 }]).unallocated,
+    25,
+  );
 });
 
 test("client payment ID appears once, alongside independent manual income and expense", () => {
@@ -54,14 +74,32 @@ test("client payment ID appears once, alongside independent manual income and ex
       },
     ],
     paymentSnapshots: {
-      p1: { allocations: [{ bucketId: "living", percentage: 100, amount: 80_000 }], unallocated: 0 },
+      p1: {
+        allocations: [{ bucketId: "living", percentage: 100, amount: 80_000 }],
+        unallocated: 0,
+      },
     },
   };
   const data = {
     finance,
-    expenses: [{ id: "e1", amount: 10_000, date: "2026-10-06", note: "Travel", bucketId: "living", accountId: "bank" }],
+    expenses: [
+      {
+        id: "e1",
+        amount: 10_000,
+        date: "2026-10-06",
+        note: "Travel",
+        bucketId: "living",
+        accountId: "bank",
+      },
+    ],
     clients: {
-      "2026-10-06": [{ id: "c1", name: "Client", payments: [{ id: "p1", amount: 80_000, date: "2026-10-06" }] }],
+      "2026-10-06": [
+        {
+          id: "c1",
+          name: "Client",
+          payments: [{ id: "p1", amount: 80_000, date: "2026-10-06" }],
+        },
+      ],
     },
   };
   const ledger = getTransactions(data);
@@ -80,9 +118,15 @@ test("repeated client payment IDs never duplicate a ledger income entry", () => 
   const data = {
     finance: DEFAULT_FINANCE,
     expenses: [],
-    clients: { one: [{ id: "c1", payments: [payment] }], two: [{ id: "c2", payments: [payment] }] },
+    clients: {
+      one: [{ id: "c1", payments: [payment] }],
+      two: [{ id: "c2", payments: [payment] }],
+    },
   };
-  assert.equal(getTransactions(data).filter((t) => t.paymentId === "same-id").length, 1);
+  assert.equal(
+    getTransactions(data).filter((t) => t.paymentId === "same-id").length,
+    1,
+  );
 });
 
 test("a fresh device loads existing remote state despite its new local timestamp", () => {
@@ -107,13 +151,20 @@ test("money-only and settings-only local data count as saved content", () => {
     expenses: [],
     finance: { ...DEFAULT_FINANCE, manualIncome: [{ id: "i1", amount: 100 }] },
   };
-  const expense = { clients: {}, expenses: [{ id: "e1", amount: 50 }], finance: DEFAULT_FINANCE };
+  const expense = {
+    clients: {},
+    expenses: [{ id: "e1", amount: 50 }],
+    finance: DEFAULT_FINANCE,
+  };
   const custom = {
     clients: {},
     expenses: [],
     finance: {
       ...DEFAULT_FINANCE,
-      buckets: [...DEFAULT_FINANCE.buckets, { id: "laptop", name: "Laptop", percentage: 0 }],
+      buckets: [
+        ...DEFAULT_FINANCE.buckets,
+        { id: "laptop", name: "Laptop", percentage: 0 },
+      ],
     },
   };
   assert.ok(hasSavedContent(manual));
@@ -122,7 +173,12 @@ test("money-only and settings-only local data count as saved content", () => {
   assert.equal(
     chooseSnapshot(
       { ...manual, meta: { updatedAt: "2026-10-06T12:00:00Z" } },
-      { clients: {}, expenses: [], finance: DEFAULT_FINANCE, meta: { updatedAt: "1970-01-01" } },
+      {
+        clients: {},
+        expenses: [],
+        finance: DEFAULT_FINANCE,
+        meta: { updatedAt: "1970-01-01" },
+      },
     ),
     "local",
   );
@@ -135,7 +191,12 @@ test("a newer empty remote state is kept from hiding local data unless marked as
     finance: DEFAULT_FINANCE,
     meta: { updatedAt: "2026-10-01T12:00:00Z" },
   };
-  const remote = { clients: {}, expenses: [], finance: DEFAULT_FINANCE, meta: { updatedAt: "2026-10-06T12:00:00Z" } };
+  const remote = {
+    clients: {},
+    expenses: [],
+    finance: DEFAULT_FINANCE,
+    meta: { updatedAt: "2026-10-06T12:00:00Z" },
+  };
   assert.equal(chooseSnapshot(local, remote), "local");
   remote.meta.emptyStateResetAt = "2026-10-07T12:00:00Z";
   assert.equal(chooseSnapshot(local, remote), "remote");
@@ -144,12 +205,20 @@ test("a newer empty remote state is kept from hiding local data unless marked as
 test("bucket reset zeroes the old balance without changing available money", () => {
   const finance = {
     ...DEFAULT_FINANCE,
-    buckets: [{ id: "living", name: "Living", percentage: 100, status: "active" }],
-    bucketResets: [{ id: "r1", bucketId: "living", allocated: 100, spent: 30, opening: 0 }],
+    buckets: [
+      { id: "living", name: "Living", percentage: 100, status: "active" },
+    ],
+    bucketResets: [
+      { id: "r1", bucketId: "living", allocated: 100, spent: 30, opening: 0 },
+    ],
   };
   const balances = getBalances(
     [
-      { type: "income", amount: 100, allocations: [{ bucketId: "living", amount: 100 }] },
+      {
+        type: "income",
+        amount: 100,
+        allocations: [{ bucketId: "living", amount: 100 }],
+      },
       { type: "expense", amount: 30, bucketId: "living" },
     ],
     finance,
@@ -162,14 +231,26 @@ test("bucket reset zeroes the old balance without changing available money", () 
 test("new income after a bucket reset counts from zero", () => {
   const finance = {
     ...DEFAULT_FINANCE,
-    buckets: [{ id: "living", name: "Living", percentage: 100, status: "active" }],
-    bucketResets: [{ id: "r1", bucketId: "living", allocated: 100, spent: 30, opening: 0 }],
+    buckets: [
+      { id: "living", name: "Living", percentage: 100, status: "active" },
+    ],
+    bucketResets: [
+      { id: "r1", bucketId: "living", allocated: 100, spent: 30, opening: 0 },
+    ],
   };
   const balances = getBalances(
     [
-      { type: "income", amount: 100, allocations: [{ bucketId: "living", amount: 100 }] },
+      {
+        type: "income",
+        amount: 100,
+        allocations: [{ bucketId: "living", amount: 100 }],
+      },
       { type: "expense", amount: 30, bucketId: "living" },
-      { type: "income", amount: 40, allocations: [{ bucketId: "living", amount: 40 }] },
+      {
+        type: "income",
+        amount: 40,
+        allocations: [{ bucketId: "living", amount: 40 }],
+      },
     ],
     finance,
   );
@@ -180,25 +261,147 @@ test("new income after a bucket reset counts from zero", () => {
 
 test("bucket reset opening balance is added while undo restores the previous count", () => {
   const baseTransactions = [
-    { type: "income", amount: 100, allocations: [{ bucketId: "living", amount: 100 }] },
+    {
+      type: "income",
+      amount: 100,
+      allocations: [{ bucketId: "living", amount: 100 }],
+    },
     { type: "expense", amount: 30, bucketId: "living" },
   ];
-  const reset = { id: "r1", bucketId: "living", allocated: 100, spent: 30, opening: 15 };
+  const reset = {
+    id: "r1",
+    bucketId: "living",
+    allocated: 100,
+    spent: 30,
+    opening: 15,
+  };
   const finance = { ...DEFAULT_FINANCE, bucketResets: [reset] };
   const after = getBalances(baseTransactions, finance);
   assert.equal(after.buckets.living.allocated, 15);
   assert.equal(after.buckets.living.spent, 0);
   assert.equal(after.available, 70);
-  const undone = getBalances(baseTransactions, { ...finance, bucketResets: [] });
-  assert.equal(undone.buckets.living.allocated - undone.buckets.living.spent, 70);
+  const undone = getBalances(baseTransactions, {
+    ...finance,
+    bucketResets: [],
+  });
+  assert.equal(
+    undone.buckets.living.allocated - undone.buckets.living.spent,
+    70,
+  );
 });
 
 test("receipt group metadata never changes Money ledger transactions", () => {
-  const payment = { id: "p1", amount: 100, date: "2026-10-21", serviceId: "s1" };
-  const base = { clients: { day: [{ id: "c1", payments: [payment] }] }, expenses: [], finance: DEFAULT_FINANCE };
+  const payment = {
+    id: "p1",
+    amount: 100,
+    date: "2026-10-21",
+    serviceId: "s1",
+  };
+  const base = {
+    clients: { day: [{ id: "c1", payments: [payment] }] },
+    expenses: [],
+    finance: DEFAULT_FINANCE,
+  };
   const grouped = {
     ...base,
-    clients: { day: [{ ...base.clients.day[0], receiptGroups: [{ id: "g1", paymentIds: ["p1", "p2"] }] }] },
+    clients: {
+      day: [
+        {
+          ...base.clients.day[0],
+          receiptGroups: [{ id: "g1", paymentIds: ["p1", "p2"] }],
+        },
+      ],
+    },
   };
   assert.deepEqual(getTransactions(grouped), getTransactions(base));
+});
+
+test("borrowed money reduces the lender balance and shows as negative debt", () => {
+  const finance = {
+    ...DEFAULT_FINANCE,
+    buckets: [
+      { id: "needs", name: "Needs", percentage: 50 },
+      { id: "reserve", name: "Reserve", percentage: 50 },
+    ],
+    bucketLoans: [
+      {
+        id: "loan-1",
+        borrowerId: "needs",
+        lenderId: "reserve",
+        amount: 60_000,
+        repaid: 0,
+      },
+    ],
+  };
+  const balances = getBalances(
+    [
+      {
+        type: "income",
+        amount: 200_000,
+        allocations: [
+          { bucketId: "needs", amount: 100_000 },
+          { bucketId: "reserve", amount: 100_000 },
+        ],
+      },
+    ],
+    finance,
+  );
+  assert.equal(balances.buckets.reserve.balance, 40_000);
+  assert.equal(balances.buckets.needs.borrowed, 60_000);
+  assert.equal(balances.available, 200_000);
+});
+
+test("future allocations to a borrower repay lenders before crediting the borrower", () => {
+  const finance = {
+    ...DEFAULT_FINANCE,
+    buckets: [
+      { id: "needs", name: "Needs", percentage: 50 },
+      { id: "reserve", name: "Reserve", percentage: 50 },
+    ],
+    bucketLoans: [
+      {
+        id: "loan-1",
+        borrowerId: "needs",
+        lenderId: "reserve",
+        amount: 60_000,
+        repaid: 0,
+      },
+    ],
+  };
+  const first = applyBucketLoanRepayment(
+    {
+      allocations: [{ bucketId: "needs", percentage: 100, amount: 40_000 }],
+      unallocated: 0,
+    },
+    finance,
+  );
+  assert.deepEqual(first.split.allocations, [
+    { bucketId: "reserve", percentage: 0, amount: 40_000 },
+  ]);
+  assert.equal(first.finance.bucketLoans[0].repaid, 40_000);
+
+  const second = applyBucketLoanRepayment(
+    {
+      allocations: [{ bucketId: "needs", percentage: 100, amount: 40_000 }],
+      unallocated: 0,
+    },
+    first.finance,
+  );
+  assert.deepEqual(second.split.allocations, [
+    { bucketId: "needs", percentage: 100, amount: 20_000 },
+    { bucketId: "reserve", percentage: 0, amount: 20_000 },
+  ]);
+  assert.equal(second.finance.bucketLoans[0].repaid, 60_000);
+  assert.equal(second.finance.bucketLoans[0].amount, 60_000);
+  const balances = getBalances(
+    [
+      { type: "income", amount: 40_000, allocations: first.split.allocations },
+      { type: "income", amount: 40_000, allocations: second.split.allocations },
+    ],
+    second.finance,
+  );
+  assert.equal(balances.buckets.reserve.balance, 0);
+  assert.equal(balances.buckets.needs.balance, 20_000);
+  assert.equal(balances.buckets.needs.borrowed, 0);
+  assert.equal(balances.available, 80_000);
 });

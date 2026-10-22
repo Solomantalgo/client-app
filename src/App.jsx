@@ -11,7 +11,11 @@ import { createClient } from "@supabase/supabase-js";
 import MoneyView from "./money/MoneyView.jsx";
 import AppShell from "./AppShell.jsx";
 import "./AppShell.css";
-import { DEFAULT_FINANCE, allocateAmount } from "./money.js";
+import {
+  DEFAULT_FINANCE,
+  allocateAmount,
+  applyBucketLoanRepayment,
+} from "./money.js";
 import { chooseSnapshot, hasSavedContent } from "./sync.js";
 import {
   mergeServices,
@@ -30,7 +34,13 @@ import { buildIndex, resolveSearchTarget, runSearch } from "./search.js";
 import { PrintDialogProvider, usePrintDialog } from "./PrintDialog.jsx";
 import { Back, Close, Icon } from "./components/Icon.jsx";
 import BusinessProfile from "./settings/BusinessProfile.jsx";
-import { addDays, fmtDate, fmtUGX, todayStr, toWaNumber } from "./lib/format.js";
+import {
+  addDays,
+  fmtDate,
+  fmtUGX,
+  todayStr,
+  toWaNumber,
+} from "./lib/format.js";
 
 const ClientActions = createContext(null);
 let logoDataUriRequest;
@@ -941,6 +951,9 @@ function AppBody() {
     const finance = {
       ...(data.finance || DEFAULT_FINANCE),
       paymentSnapshots: { ...(data.finance?.paymentSnapshots || {}) },
+      bucketLoans: (data.finance?.bucketLoans || []).map((loan) => ({
+        ...loan,
+      })),
     };
     const currentIds = new Set((updated.payments || []).map((p) => p.id));
     const previousIds = new Set((previous?.payments || []).map((p) => p.id));
@@ -959,8 +972,11 @@ function AppBody() {
           };
         } else {
           try {
+            const split = allocateAmount(p.amount, finance.buckets);
+            const applied = applyBucketLoanRepayment(split, finance);
+            finance.bucketLoans = applied.finance.bucketLoans;
             finance.paymentSnapshots[p.id] = {
-              ...allocateAmount(p.amount, finance.buckets),
+              ...applied.split,
               accountId: p.accountId || "",
               origin: "current",
             };
@@ -3707,7 +3723,10 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
         servicesToOffer: packageMatch.services,
         quotedPrice: packageMatch.price,
       });
-    else actions?.showBanner?.("No exact match found based on their business type.");
+    else
+      actions?.showBanner?.(
+        "No exact match found based on their business type.",
+      );
   };
   return (
     <div className="cs">
@@ -4626,7 +4645,9 @@ function ClientForm({ onAdd, onClose, onError, initialValues }) {
         quotedPrice: match.price,
       }));
     } else {
-      onError("No exact match found. You can enter services and price manually.");
+      onError(
+        "No exact match found. You can enter services and price manually.",
+      );
     }
   };
 
