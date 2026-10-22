@@ -4,10 +4,10 @@ import {
   allocateAmount,
   getBalances,
   getTransactions,
-} from "./money.js";
-import { outstandingBalances, pausedBalances } from "./clients.js";
-import { useConfirm } from "./Confirm.jsx";
-import { Icon } from "./icons.jsx";
+} from "../money.js";
+import { outstandingBalances, pausedBalances } from "../clients.js";
+import { useConfirm } from "../Confirm.jsx";
+import { Icon } from "../icons.jsx";
 
 const money = (n) => `UGX ${Math.round(n || 0).toLocaleString("en-UG")}`;
 const uid = () => `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;

@@ -8,7 +8,7 @@ import {
   useMemo,
 } from "react";
 import { createClient } from "@supabase/supabase-js";
-import MoneyView from "./MoneyView.jsx";
+import MoneyView from "./money/MoneyView.jsx";
 import AppShell from "./AppShell.jsx";
 import "./AppShell.css";
 import { DEFAULT_FINANCE, allocateAmount } from "./money.js";
