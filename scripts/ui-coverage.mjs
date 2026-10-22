@@ -57,7 +57,7 @@ for (const relative of required) {
 
 const emoji = /\p{Extended_Pictographic}/u;
 const legacyPalette = /aaff00|080808/i;
-const hexColor = /#[0-9a-fA-F]{3,8}\b/;
+const hexColor = /(?:^|[;{}])\s*(?:color|background(?:-color)?|border(?:-[\w-]+)?|fill|stroke)\s*:\s*#[0-9a-fA-F]{3,8}\b/im;
 const unsafeDialog = /\b(?:confirm|prompt|alert)\s*\(/;
 const smallFont = /fontSize\s*:\s*(\d+(?:\.\d+)?)\s*(?:,|})/g;
 const uppercaseTransform = /text-transform\s*:\s*uppercase/i;

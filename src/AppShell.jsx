@@ -48,8 +48,12 @@ export default function AppShell({
   onSearch,
   onExportBackup,
   searchPanel,
+  onQuickLead,
+  onQuickIncome,
+  onQuickExpense,
 }) {
   const [more, setMore] = useState(false);
+  const [quickAdd, setQuickAdd] = useState(false);
   const [lastPipeline, setLastPipeline] = useState("followups");
   const [logoFailed, setLogoFailed] = useState(false);
   const pipeline = ["outreach", "followups", "ongoing"].includes(tab);
@@ -72,6 +76,7 @@ export default function AppShell({
   const navItems = [
     ["today", "Today", "Today"],
     ["pipeline", "Pipeline", "Pipeline"],
+    ["quick-add", "Add", "Plus"],
     ["payments", "Money", "Money"],
     ["more", "More", "More"],
   ];
@@ -88,6 +93,12 @@ export default function AppShell({
         <div className="os-brand">
           {logoFailed ? <b className="os-wordmark">Solo Sales OS</b> : logo}
         </div>
+        <button
+          className="btn btn-primary os-new-button"
+          onClick={() => setQuickAdd(true)}
+        >
+          <Icon name="Plus" size={19} /> New
+        </button>
         <nav>
           {views.map((group) => (
             <section key={group.group}>
@@ -207,12 +218,13 @@ export default function AppShell({
               key={key}
               className={active ? "active" : ""}
               onClick={() => {
-                if (key === "pipeline") select(lastPipeline);
+                if (key === "quick-add") setQuickAdd(true);
+                else if (key === "pipeline") select(lastPipeline);
                 else if (key === "more") setMore((value) => !value);
                 else select(key);
               }}
             >
-              <span className="os-nav-icon">
+              <span className={`os-nav-icon${key === "quick-add" ? " raised" : ""}`}>
                 <Icon name={icon} size={22} />
                 {key === "pipeline" && pendingCount > 0 && (
                   <i>{pendingCount}</i>
@@ -223,6 +235,68 @@ export default function AppShell({
           );
         })}
       </nav>
+      {quickAdd && (
+        <div className="os-quick-overlay" role="presentation">
+          <button
+            className="os-quick-backdrop"
+            aria-label="Close quick add"
+            onClick={() => setQuickAdd(false)}
+          />
+          <section
+            className="os-quick-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="quick-add-title"
+          >
+            <header>
+              <div>
+                <p className="label">Quick add</p>
+                <h2 id="quick-add-title">What would you like to add?</h2>
+              </div>
+              <button
+                className="iconbtn"
+                aria-label="Close quick add"
+                onClick={() => setQuickAdd(false)}
+              >
+                <Icon name="Close" size={19} />
+              </button>
+            </header>
+            <button
+              className="os-quick-option lead"
+              onClick={() => {
+                setQuickAdd(false);
+                onQuickLead?.();
+              }}
+            >
+              <span className="os-quick-icon"><Icon name="Plus" /></span>
+              <span><b>New lead</b><small>Save a new prospect from today</small></span>
+              <Icon name="ChevronRight" size={18} />
+            </button>
+            <button
+              className="os-quick-option income"
+              onClick={() => {
+                setQuickAdd(false);
+                onQuickIncome?.();
+              }}
+            >
+              <span className="os-quick-icon"><Icon name="Money" /></span>
+              <span><b>Log income</b><small>Record money received</small></span>
+              <Icon name="ChevronRight" size={18} />
+            </button>
+            <button
+              className="os-quick-option expense"
+              onClick={() => {
+                setQuickAdd(false);
+                onQuickExpense?.();
+              }}
+            >
+              <span className="os-quick-icon"><Icon name="Money" /></span>
+              <span><b>Add expense</b><small>Track a business expense</small></span>
+              <Icon name="ChevronRight" size={18} />
+            </button>
+          </section>
+        </div>
+      )}
       {more && (
         <>
           <button

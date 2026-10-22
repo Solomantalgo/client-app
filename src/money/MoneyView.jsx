@@ -23,11 +23,12 @@ export default function MoneyView({
   onDeleteIncome,
   query = "",
   initialTab = "Income",
+  initialForm = "",
 }) {
   const ask = useConfirm();
   const finance = data.finance || DEFAULT_FINANCE;
   const [tab, setTab] = useState(initialTab);
-  const [form, setForm] = useState("");
+  const [form, setForm] = useState(initialForm);
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState("All");
   const [searchText, setSearchText] = useState(query);

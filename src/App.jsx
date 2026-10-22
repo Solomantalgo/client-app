@@ -81,7 +81,7 @@ const FONT = "var(--font-mono)";
 const PACKAGE_TEMPLATES = [
   {
     match: /rest(?:aurant)?|cafe|eatery|food|bar|diner/i,
-    name: "🍔 Restaurant Setup",
+    name: "Restaurant Setup",
     services:
       "Website Menu, QR Ordering, WhatsApp Ordering, Promo Flyer, Hosting Setup",
     price: "250k - 450k UGX",
@@ -89,7 +89,7 @@ const PACKAGE_TEMPLATES = [
   },
   {
     match: /saloon|salon|spa|beauty|hair|nails/i,
-    name: "💇 Salon / Spa Setup",
+    name: "Salon / Spa Setup",
     services:
       "Service Showcase, Gallery, WhatsApp Booking, Contact/Location, Social Links",
     price: "200k - 400k UGX",
@@ -97,7 +97,7 @@ const PACKAGE_TEMPLATES = [
   },
   {
     match: /hotel|apart|motel|lodge|bnb|guest/i,
-    name: "🏨 Hotel / Apartment Setup",
+    name: "Hotel / Apartment Setup",
     services:
       "Rooms Showcase, Inquiry Form, Google Maps, WhatsApp Chat, Photo Gallery",
     price: "350k - 700k UGX",
@@ -105,21 +105,21 @@ const PACKAGE_TEMPLATES = [
   },
   {
     match: /laundry|wash|dry|clean/i,
-    name: "🧺 Laundry Setup",
+    name: "Laundry Setup",
     services: "Service Menu, Pickup Request, WhatsApp Contact, Pricing Guide",
     price: "180k - 350k UGX",
     color: "var(--blue)",
   },
   {
     match: /clinic|pharmacy|hospital|medical|dental/i,
-    name: "🏥 Clinic / Pharmacy Setup",
+    name: "Clinic / Pharmacy Setup",
     services: "Services List, Appointment Booking, Google Maps, WhatsApp Chat",
     price: "250k - 500k UGX",
     color: "var(--danger)",
   },
   {
     match: /shop|store|retail|supermarket|boutique|sell|ecommerce|market/i,
-    name: "🛍️ E-commerce / Retail Shop",
+    name: "E-commerce / Retail Shop",
     services:
       "WhatsApp Catalog, Online Store, Mobile Money Payment, Inventory Setup, Promo Flyers",
     price: "400k - 800k UGX",
@@ -127,7 +127,7 @@ const PACKAGE_TEMPLATES = [
   },
   {
     match: /school|college|uni|academy|educat|class|teach/i,
-    name: "🏫 School / Institution Setup",
+    name: "School / Institution Setup",
     services:
       "School Website, Online Admission Form, Contact/Map, Term Calendar, Gallery",
     price: "500k - 1M UGX",
@@ -135,7 +135,7 @@ const PACKAGE_TEMPLATES = [
   },
   {
     match: /real|estate|broker|house|land|plot|rent|agent/i,
-    name: "🏢 Real Estate / Brokerage",
+    name: "Real Estate / Brokerage",
     services:
       "Property Showcase, WhatsApp Inquiries, Agent Bio, Filter Search, Map Listings",
     price: "450k - 900k UGX",
@@ -143,7 +143,7 @@ const PACKAGE_TEMPLATES = [
   },
   {
     match: /tour|travel|safari|trip|guide|agency|agencies/i,
-    name: "🦁 Tourism & Travel Setup",
+    name: "Tourism & Travel Setup",
     services:
       "Safari Packages, Itinerary Builder, Booking Form, Google Maps, Reviews",
     price: "500k - 950k UGX",
@@ -151,7 +151,7 @@ const PACKAGE_TEMPLATES = [
   },
   {
     match: /gym|fitness|crossfit|workout|train|health/i,
-    name: "💪 Gym & Fitness Center",
+    name: "Gym & Fitness Center",
     services:
       "Workout Schedule, Membership Packages, Trainer Profiles, WhatsApp Booking",
     price: "300k - 600k UGX",
@@ -750,7 +750,7 @@ function AppBody() {
       const p = getPending(base.clients);
       if (p.length)
         setBanner(
-          `⚡ ${p.length} client${p.length !== 1 ? "s" : ""} still need follow-up`,
+          `${p.length} client${p.length !== 1 ? "s" : ""} still need follow-up`,
         );
 
       if (!cloudConfig) {
@@ -1230,7 +1230,7 @@ function AppBody() {
 
     if (lapOccurred) {
       setBanner(
-        `🎉 Outreach Lap ${nextLaps} Completed! Both tracks have wrapped back to their starting positions.`,
+        `Outreach lap ${nextLaps} completed. Both tracks have wrapped back to their starting positions.`,
       );
     } else {
       setBanner(
@@ -1367,6 +1367,15 @@ function AppBody() {
     if (next === "payments") url.searchParams.set("view", "money");
     else url.searchParams.delete("view");
     window.history.replaceState({}, "", url);
+  };
+  const openQuickLead = () => setShowForm(true);
+  const openQuickIncome = () => {
+    setMoneyRoute({ tab: "Income", query: "", form: "income" });
+    selectTab("payments");
+  };
+  const openQuickExpense = () => {
+    setMoneyRoute({ tab: "Expenses", query: "", form: "expense" });
+    selectTab("payments");
   };
   const openClientScreen = (date, id) => {
     listScroll.current = window.scrollY;
@@ -1590,6 +1599,9 @@ function AppBody() {
         onDismissBanner={() => setBanner(null)}
         onSync={syncNow}
         onSearch={openSearch}
+        onQuickLead={openQuickLead}
+        onQuickIncome={openQuickIncome}
+        onQuickExpense={openQuickExpense}
         searchPanel={searchPanel}
         onExportBackup={() => exportBackup(data)}
         onOpenCloud={() => setShowCloudSetup(true)}
@@ -1647,10 +1659,11 @@ function AppBody() {
         {tab === "ongoing" && <OngoingView clients={data.clients} />}
         {tab === "payments" && (
           <MoneyView
-            key={`${moneyRoute.tab}-${moneyRoute.query}`}
+            key={`${moneyRoute.tab}-${moneyRoute.query}-${moneyRoute.form || ""}`}
             data={data}
             query={moneyRoute.query}
             initialTab={moneyRoute.tab}
+            initialForm={moneyRoute.form || ""}
             onSave={save}
             onUpdateClient={updateClient}
             onAddExpense={addExpense}
@@ -1674,6 +1687,7 @@ function AppBody() {
         <ClientForm
           initialValues={formDefaults}
           onAdd={addClient}
+          onError={setBanner}
           onClose={() => {
             setShowForm(false);
             setFormDefaults(null);
@@ -1683,6 +1697,7 @@ function AppBody() {
       {showCloudSetup && (
         <CloudSetupModal
           onClose={() => setShowCloudSetup(false)}
+          onError={setBanner}
           onSaved={(config) => {
             setCloudConfig(config);
             setCloudStatus("Connecting...");
@@ -1908,7 +1923,7 @@ function TodayView({
                 transition: "all 0.15s",
               }}
             >
-              🚶 PHYSICAL (Seq #{physicalSeq})
+              Physical (Seq #{physicalSeq})
             </button>
             <button
               onClick={() => setActiveTrack("remote")}
@@ -1928,7 +1943,7 @@ function TodayView({
                 transition: "all 0.15s",
               }}
             >
-              📞 REMOTE (Seq #{remoteSeq})
+              Remote (Seq #{remoteSeq})
             </button>
           </div>
         </div>
@@ -1961,7 +1976,7 @@ function TodayView({
                   textTransform: "uppercase",
                 }}
               >
-                🚶 Physical Outreach — Today
+                Physical Outreach — Today
               </span>
               <span
                 style={{
@@ -2067,7 +2082,7 @@ function TodayView({
                   textTransform: "uppercase",
                 }}
               >
-                📞 Remote Outreach — Today
+                Remote Outreach — Today
               </span>
               <span
                 style={{
@@ -2413,7 +2428,7 @@ function OutreachView({
             }}
           >
             <span style={{ color: WARM_C, fontWeight: "bold" }}>
-              📞 Remote Track (Forward)
+              Remote Track (Forward)
             </span>
             <span style={{ color: DIM, fontFamily: FONT }}>
               {remoteSeq} / 120 ({remoteArea.area})
@@ -2449,7 +2464,7 @@ function OutreachView({
             }}
           >
             <span style={{ color: COLD_C, fontWeight: "bold" }}>
-              🚶 Physical Track (Backward)
+              Physical Track (Backward)
             </span>
             <span style={{ color: DIM, fontFamily: FONT }}>
               {121 - physicalSeq} / 120 ({physicalArea.area})
@@ -2497,7 +2512,7 @@ function OutreachView({
           <span
             style={{ fontSize: 11, fontWeight: "bold", color: "var(--text)" }}
           >
-            🗺️ View Full 120-Area Rotation Plan
+            View Full 120-Area Rotation Plan
           </span>
           <span style={{ color: LIME, fontSize: 11, fontFamily: FONT }}>
             {showMap ? "Hide ▲" : "Show ▼"}
@@ -2621,7 +2636,7 @@ function OutreachView({
             <span
               style={{ fontSize: 11, fontWeight: "bold", color: "var(--text)" }}
             >
-              📜 Outreach History Logs
+              Outreach History Logs
             </span>
             <span
               style={{
@@ -2754,10 +2769,10 @@ function OutreachView({
                             }}
                           >
                             {isLap
-                              ? "🎉 LAP EVENT"
+                              ? "Lap event"
                               : isRem
-                                ? "📞 REMOTE"
-                                : "🚶 PHYSICAL"}
+                                ? "Remote"
+                                : "Physical"}
                           </span>
                           <span
                             style={{
@@ -2900,7 +2915,7 @@ function HistoryView({ clients, sortedDates, today, selected, onSelect }) {
 // ── Follow-Ups View
 function FollowupsView({ pending }) {
   if (pending.length === 0)
-    return <Empty text="All caught up. No pending follow-ups 🎯" />;
+    return <Empty text="All caught up. No pending follow-ups." />;
 
   const today = todayStr();
   const overdue = pending.filter(
@@ -3043,10 +3058,11 @@ function printInvoice(
   assignNumber = null,
   profile = {},
   print = null,
+  notify = () => {},
 ) {
   const activeService = service || getClientServices(client)[0];
   if (!activeService) {
-    alert("Add a service before creating an invoice.");
+    notify("Add a service before creating an invoice.");
     return;
   }
   if (!print) return;
@@ -3113,12 +3129,13 @@ function printReceipt(
   assignNumber = null,
   profile = {},
   print = null,
+  notify = () => {},
 ) {
   const service =
     getClientServices(client).find((item) => item.id === payment.serviceId) ||
     getClientServices(client)[0];
   if (!service) {
-    alert("This payment has no service to include on a receipt.");
+    notify("This payment has no service to include on a receipt.");
     return;
   }
   if (!print) return;
@@ -3433,7 +3450,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
       setSelectedServices([]);
       setMergeTitle("");
     } catch (error) {
-      alert(error.message);
+      actions?.showBanner?.(error.message);
     }
   };
   const unmerge = async (service) => {
@@ -3525,7 +3542,10 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
   };
   const savePayment = () => {
     const amount = Number(paymentAmt) || 0;
-    if (amount <= 0) return alert("Please enter a valid payment amount.");
+    if (amount <= 0) {
+      actions?.showBanner?.("Please enter a valid payment amount.");
+      return;
+    }
     const serviceId = paymentServiceId || services[0]?.id || "";
     const payments = editingPaymentId
       ? (c.payments || []).map((payment) =>
@@ -3598,7 +3618,10 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
   const convert = () => {
     const price = Number(dealPrice) || 0;
     const paid = Number(deposit) || 0;
-    if (price <= 0) return alert("Please enter a valid agreed price.");
+    if (price <= 0) {
+      actions?.showBanner?.("Please enter a valid agreed price.");
+      return;
+    }
     const serviceId = newPaymentId();
     const service = {
       id: serviceId,
@@ -3633,7 +3656,10 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
     setIsWinForm(false);
   };
   const saveReschedule = () => {
-    if (!newFollowDate) return alert("Please select a date.");
+    if (!newFollowDate) {
+      actions?.showBanner?.("Please select a date.");
+      return;
+    }
     onUpdate(c.id, { followUp: "done", followUpDate: newFollowDate });
     setIsRescheduleForm(false);
   };
@@ -3670,16 +3696,18 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
     }
   };
   const suggest = () => {
-    if (!textToMatch)
-      return alert(
+    if (!textToMatch) {
+      actions?.showBanner?.(
         "This client needs a business name or type to auto-suggest.",
       );
+      return;
+    }
     if (packageMatch)
       onUpdate(c.id, {
         servicesToOffer: packageMatch.services,
         quotedPrice: packageMatch.price,
       });
-    else alert("No exact match found based on their business type.");
+    else actions?.showBanner?.("No exact match found based on their business type.");
   };
   return (
     <div className="cs">
@@ -3779,7 +3807,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
             {isLead ? (
               <>
                 <button onClick={markDone}>
-                  {c.followUp === "needed" ? "✓ Mark done" : "↩ Follow-up"}
+                  {c.followUp === "needed" ? "Mark done" : "Follow up"}
                 </button>
                 <button onClick={() => setIsRescheduleForm(true)}>
                   Timeline
@@ -4074,6 +4102,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                             actions?.assignDocumentNumber,
                             actions?.profile,
                             print,
+                            actions?.showBanner,
                           )
                         }
                       >
@@ -4184,6 +4213,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                               actions?.assignDocumentNumber,
                               actions?.profile,
                               print,
+                              actions?.showBanner,
                             )
                           }
                         >
@@ -4242,6 +4272,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                                   actions?.assignDocumentNumber,
                                   actions?.profile,
                                   print,
+                                  actions?.showBanner,
                                 )
                               }
                             >
@@ -4557,7 +4588,7 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
   );
 }
 
-function ClientForm({ onAdd, onClose, initialValues }) {
+function ClientForm({ onAdd, onClose, onError, initialValues }) {
   const [f, setF] = useState(() => ({
     name: "",
     business: "",
@@ -4583,7 +4614,10 @@ function ClientForm({ onAdd, onClose, initialValues }) {
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
 
   const autoSuggest = () => {
-    if (!f.businessType) return alert("Please enter a Business Type first.");
+    if (!f.businessType) {
+      onError("Please enter a business type first.");
+      return;
+    }
     const match = PACKAGE_TEMPLATES.find((p) => p.match.test(f.businessType));
     if (match) {
       setF((prev) => ({
@@ -4592,12 +4626,15 @@ function ClientForm({ onAdd, onClose, initialValues }) {
         quotedPrice: match.price,
       }));
     } else {
-      alert("No exact match found. You can enter services and price manually.");
+      onError("No exact match found. You can enter services and price manually.");
     }
   };
 
   const submit = () => {
-    if (!f.name.trim()) return alert("Client name is required.");
+    if (!f.name.trim()) {
+      onError("Client name is required.");
+      return;
+    }
     onAdd(f);
   };
 
@@ -4689,7 +4726,7 @@ function ClientForm({ onAdd, onClose, initialValues }) {
               fontWeight: "bold",
             }}
           >
-            ✨ Suggest
+            Suggest
           </button>
         </div>
 
@@ -4909,7 +4946,7 @@ function ClientForm({ onAdd, onClose, initialValues }) {
 }
 
 // ── Cloud Setup Modal
-function CloudSetupModal({ onClose, onSaved }) {
+function CloudSetupModal({ onClose, onSaved, onError }) {
   const [url, setUrl] = useState(
     localStorage.getItem(CLOUD_URL_KEY) || DEFAULT_SUPABASE_URL,
   );
@@ -4920,8 +4957,10 @@ function CloudSetupModal({ onClose, onSaved }) {
   const save = () => {
     const cleanUrl = normalizeSupabaseUrl(url);
     const cleanKey = key.trim();
-    if (!cleanUrl || !cleanKey)
-      return alert("Add your Supabase URL and anon key first.");
+    if (!cleanUrl || !cleanKey) {
+      onError("Add your Supabase URL and anon key first.");
+      return;
+    }
     localStorage.setItem(CLOUD_URL_KEY, cleanUrl);
     localStorage.setItem(CLOUD_KEY_KEY, cleanKey);
     onSaved({ url: cleanUrl, key: cleanKey });
@@ -5041,7 +5080,7 @@ const TempBadge = ({ temp }) => (
       letterSpacing: 0.5,
     }}
   >
-    {temp === "warm" ? "🔥 WARM" : "❄️ COLD"}
+    {temp === "warm" ? "WARM" : "COLD"}
   </span>
 );
 
@@ -5236,7 +5275,7 @@ function SystemFlowView() {
               marginBottom: 6,
             }}
           >
-            🚀 Client Flow
+            Client Flow
           </div>
           <ol
             style={{
@@ -5265,7 +5304,7 @@ function SystemFlowView() {
               marginBottom: 6,
             }}
           >
-            📦 My Packages (Examples)
+            My Packages (Examples)
           </div>
           <ul
             style={{
@@ -5295,7 +5334,7 @@ function SystemFlowView() {
               marginBottom: 6,
             }}
           >
-            ♻️ Reusable Assets (Time Savers)
+            Reusable Assets (Time Savers)
           </div>
           <div
             style={{ fontSize: 11, color: "var(--text-2)", lineHeight: 1.6 }}
@@ -5314,7 +5353,7 @@ function SystemFlowView() {
               marginBottom: 6,
             }}
           >
-            💬 Communication Style
+            Communication Style
           </div>
           <ul
             style={{
@@ -5402,7 +5441,7 @@ function SystemFlowView() {
               marginBottom: 6,
             }}
           >
-            🔄 Monthly Support
+            Monthly Support
           </div>
           <div
             style={{
@@ -5436,7 +5475,7 @@ function OngoingView({ clients }) {
 
   if (ongoing.length === 0) {
     return (
-      <Empty text="No ongoing projects yet. Win some deals to move them here! 🏆" />
+      <Empty text="No ongoing projects yet. Win some deals to move them here." />
     );
   }
 
