@@ -25,7 +25,7 @@
 .cs-card { min-width:0; padding:14px; border:1px solid var(--line); border-radius:var(--r-card); background:var(--s1); }
 .cs-card>header,.cs-service-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }.cs-card h3 { margin:0; font:600 16px var(--font-ui); }
 .cs-card dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:12px 0 0; }
-.cs-card dt,.cs-totals small { color:var(--text-3); font:11px var(--font-mono); text-transform:uppercase; }
+.cs-card dt,.cs-totals small { color:var(--text-3); font:11px var(--font-mono); }
 .cs-card dd { margin:4px 0 0; overflow-wrap:anywhere; font-size:13px; }.cs-tags { margin-top:10px; }.cs-tags span { color:var(--lime); }
 .cs-notes { color:var(--text-2); font-size:13px; line-height:1.55; white-space:pre-wrap; }.cs-totals { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:11px; }
 .cs-totals div { display:flex; min-width:0; flex-direction:column; gap:5px; padding:9px; border-radius:var(--r-ctl); background:var(--s2); }
