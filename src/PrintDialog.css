@@ -1,0 +1,25 @@
+.print-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+  padding: 16px; overflow: auto; background: rgba(0,0,0,.78); }
+.print-dialog { display: flex; width: min(720px, 100%); max-height: calc(100dvh - 32px); flex-direction: column;
+  gap: 12px; overflow: auto; padding: 18px; border: 1px solid var(--line-2); border-radius: var(--r-card);
+  background: var(--s1); color: var(--text); }
+.print-dialog header, .print-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.print-dialog h2 { margin: 0; font-size: 18px; }
+.print-format { display: flex; flex-direction: column; gap: 7px; }
+.print-stage { min-height: 300px; display: flex; justify-content: center; overflow: auto; padding: 14px;
+  background: #d7dbda; border-radius: var(--r-ctl); }
+.print-preview { width: 100%; min-height: 300px; }
+.print-preview iframe { display: block; width: 100%; height: 420px; border: 0; background: #fff; }
+.print-stage.thermal58 .print-preview { width: 220px; flex: none; }
+.print-stage.thermal58 iframe { height: 470px; }
+.print-stage.a4 .print-preview { min-width: 500px; }
+.print-dialog p { margin: 0; color: var(--text-2); }
+.print-dialog > a { min-height: 44px; display: flex; align-items: center; color: var(--blue); }
+.print-dialog footer { justify-content: flex-end; }
+@media (max-width: 899px) {
+  .print-overlay { align-items: flex-end; padding: 0; }
+  .print-dialog { width: 100%; max-height: 94dvh; padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0; }
+  .print-preview iframe { height: 300px; }
+  .print-stage.a4 .print-preview { min-width: 400px; }
+}

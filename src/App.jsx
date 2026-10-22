@@ -13,6 +13,7 @@ import "./ClientCard.css";
 import { ConfirmProvider, useConfirm } from "./Confirm.jsx";
 import { buildInvoiceHtml, buildReceiptHtml } from "./documents.js";
 import { buildIndex, runSearch } from "./search.js";
+import { PrintDialogProvider, usePrintDialog } from "./PrintDialog.jsx";
 
 const ClientActions = createContext(null);
 
@@ -1052,7 +1053,15 @@ function AppBody() {
   ) : null;
   return (
     <ClientActions.Provider
-      value={{ deleteClient, openClientScreen, closeClientScreen, assignDocumentNumber, openId: current?.id || null }}
+      value={{
+        deleteClient,
+        openClientScreen,
+        closeClientScreen,
+        assignDocumentNumber,
+        profile: data.settings?.business || {},
+        accounts: data.finance?.accounts || [],
+        openId: current?.id || null,
+      }}
     >
       <AppShell
         tab={tab}
@@ -1165,7 +1174,9 @@ function AppBody() {
 export default function App() {
   return (
     <ConfirmProvider>
-      <AppBody />
+      <PrintDialogProvider>
+        <AppBody />
+      </PrintDialogProvider>
     </ConfirmProvider>
   );
 }
@@ -2000,39 +2011,13 @@ function clientTotals(client) {
   const paid = (client.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
   return { total, paid, balance: total - paid };
 }
-function choosePrintFormat() {
-  let last = "a4";
-  try {
-    last = localStorage.getItem("solo-print-format") || "a4";
-  } catch {
-    // Printing remains available when browser storage is disabled.
-  }
-  const choice = prompt("Print format: type a4 for A4 / PDF or thermal58 for 58mm", last);
-  if (!choice) return null;
-  const format = choice.trim().toLowerCase() === "thermal58" ? "thermal58" : "a4";
-  try {
-    localStorage.setItem("solo-print-format", format);
-  } catch {
-    // Remembering the format is optional.
-  }
-  return format;
-}
-
-function openPrintDocument(html, width = 720) {
-  const win = window.open("", "_blank", `width=${width},height=900`);
-  if (!win) return;
-  win.document.write(html);
-  win.document.close();
-}
-
-function printInvoice(client, service = null, assignNumber = null) {
+function printInvoice(client, service = null, assignNumber = null, profile = {}, print = null) {
   const activeService = service || getClientServices(client)[0];
   if (!activeService) {
     alert("Add a service before creating an invoice.");
     return;
   }
-  const format = choosePrintFormat();
-  if (!format) return;
+  if (!print) return;
   const number =
     activeService.invoiceNo ||
     assignNumber?.(client.date, client.id, "invoice", activeService.id) ||
@@ -2046,8 +2031,7 @@ function printInvoice(client, service = null, assignNumber = null) {
     title: item.title,
     amount: Number(item.price) > 0 ? Number(item.price) : sourceItems.length === 1 ? total : 0,
   }));
-  const html = buildInvoiceHtml(
-    {
+  const model = {
       number,
       date: activeService.createdAt || client.date || todayStr(),
       clientName: client.name,
@@ -2057,25 +2041,21 @@ function printInvoice(client, service = null, assignNumber = null) {
       paid,
       balance: total - paid,
       stamp: paid <= 0 ? "AWAITING PAYMENT" : paid >= total ? "PAID IN FULL" : "PARTIAL PAYMENT",
-    },
-    format,
-  );
-  openPrintDocument(html, format === "thermal58" ? 360 : 720);
+  };
+  print({ docType: "Invoice", profile, build: (format, business) => buildInvoiceHtml(model, format, business) });
 }
 
-function printReceipt(client, payment, assignNumber = null) {
+function printReceipt(client, payment, assignNumber = null, profile = {}, print = null) {
   const service =
     getClientServices(client).find((item) => item.id === payment.serviceId) || getClientServices(client)[0];
   if (!service) {
     alert("This payment has no service to include on a receipt.");
     return;
   }
-  const format = choosePrintFormat();
-  if (!format) return;
+  if (!print) return;
   const number =
     payment.receiptNo || assignNumber?.(client.date, client.id, "receipt", payment.id) || getReceiptNum(payment);
-  const html = buildReceiptHtml(
-    {
+  const model = {
       number,
       date: payment.date || client.date || todayStr(),
       clientName: client.name,
@@ -2083,45 +2063,44 @@ function printReceipt(client, payment, assignNumber = null) {
       lines: [{ title: payment.note || service.title || "Payment", amount: payment.amount }],
       total: payment.amount,
       stamp: "PAYMENT RECEIVED",
-    },
-    format,
-  );
-  openPrintDocument(html, format === "thermal58" ? 360 : 640);
+      method: payment.accountName || profile.accounts?.find((account) => account.id === payment.accountId)?.name || payment.accountId,
+    };
+  print({ docType: "Receipt", profile, build: (format, business) => buildReceiptHtml(model, format, business) });
 }
 
-function printReceiptGroup(client, group, assignNumber) {
+function printReceiptGroup(client, group, assignNumber, profile = {}, print = null) {
   const payments = (client.payments || []).filter((payment) => group.paymentIds.includes(payment.id));
-  const format = choosePrintFormat();
-  if (!format || payments.length < 2) return;
+  if (!print || payments.length < 2) return;
   const number =
     group.receiptNo || assignNumber?.(client.date, client.id, "receiptGroup", group.id) || getReceiptNum(group);
   const total = payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
-  const html = buildReceiptHtml(
-    {
+  const model = {
       number,
       date: group.createdAt?.slice(0, 10) || todayStr(),
       clientName: client.name,
       business: client.business || "",
       lines: payments.map((payment) => ({ title: payment.note || "Payment", amount: payment.amount })),
       total,
-    },
-    format,
-  );
-  openPrintDocument(html, format === "thermal58" ? 360 : 640);
+      received: total,
+      payments: payments.map((payment) => ({
+        date: payment.date || "",
+        method: payment.accountName || profile.accounts?.find((account) => account.id === payment.accountId)?.name || payment.accountId,
+        amount: payment.amount,
+      })),
+    };
+  print({ docType: "Receipt", profile, build: (format, business) => buildReceiptHtml(model, format, business) });
 }
 
-function printCombinedInvoice(client, services, assignNumber) {
+function printCombinedInvoice(client, services, assignNumber, profile = {}, print = null) {
   if (services.length < 2) return;
-  const format = choosePrintFormat();
-  if (!format) return;
+  if (!print) return;
   const number =
     services[0].invoiceNo ||
     assignNumber?.(client.date, client.id, "invoice", services[0].id) ||
     getInvoiceNum(client, services[0]);
   const total = services.reduce((sum, service) => sum + serviceTotal(service, client), 0);
   const paid = services.reduce((sum, service) => sum + servicePaid(client, service.id), 0);
-  const html = buildInvoiceHtml(
-    {
+  const model = {
       number,
       date: todayStr(),
       clientName: client.name,
@@ -2131,10 +2110,8 @@ function printCombinedInvoice(client, services, assignNumber) {
       paid,
       balance: total - paid,
       stamp: paid >= total ? "PAID IN FULL" : paid > 0 ? "PARTIAL PAYMENT" : "AWAITING PAYMENT",
-    },
-    format,
-  );
-  openPrintDocument(html, format === "thermal58" ? 360 : 720);
+  };
+  print({ docType: "Invoice", profile, build: (format, business) => buildInvoiceHtml(model, format, business) });
 }
 // ── Client Card
 function ClientRow({ client: c, date, highlight }) {
@@ -2199,6 +2176,7 @@ function ClientRow({ client: c, date, highlight }) {
 
 function ClientScreen({ client: c, date, onUpdate, onBack }) {
   const actions = useContext(ClientActions);
+  const print = usePrintDialog();
   const ask = useConfirm();
   const [infoOpen, setInfoOpen] = useState(false);
   const [svcEditor, setSvcEditor] = useState(null);
@@ -2633,6 +2611,8 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                         { ...c, date },
                         services.filter((service) => selectedServices.includes(service.id)),
                         actions?.assignDocumentNumber,
+                        actions?.profile,
+                        print,
                       )
                     }
                   >
@@ -2650,7 +2630,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                       <strong>
                         Receipt {group.receiptNo || getReceiptNum(group)} · {grouped.length} payments · {fmtUGX(total)}
                       </strong>
-                      <button onClick={() => printReceiptGroup({ ...c, date }, group, actions?.assignDocumentNumber)}>
+                      <button onClick={() => printReceiptGroup(
+                        { ...c, date }, group, actions?.assignDocumentNumber, actions?.profile, print,
+                      )}>
                         Print
                       </button>
                       <button
@@ -2750,7 +2732,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                     <div className="cs-service-actions">
                       <button onClick={() => openPaymentForm(service.id)}>Record payment</button>
                       <button onClick={() => setSvcEditor({ service })}>Edit</button>
-                      <button onClick={() => printInvoice({ ...c, date }, service, actions?.assignDocumentNumber)}>
+                      <button onClick={() => printInvoice(
+                        { ...c, date }, service, actions?.assignDocumentNumber, actions?.profile, print,
+                      )}>
                         Invoice
                       </button>
                       <button className="danger" onClick={() => deleteService(service)}>
@@ -2772,7 +2756,9 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                           <button className="danger" onClick={() => deleteClientPayment(payment)}>
                             Delete
                           </button>
-                          <button onClick={() => printReceipt({ ...c, date }, payment, actions?.assignDocumentNumber)}>
+                          <button onClick={() => printReceipt(
+                            { ...c, date }, payment, actions?.assignDocumentNumber, actions?.profile, print,
+                          )}>
                             Receipt
                           </button>
                         </div>

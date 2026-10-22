@@ -15,6 +15,22 @@ import {
 } from "../src/clients.js";
 import { normalizeData } from "../src/data.js";
 
+test("business settings round-trip through normalizeData", () => {
+  const settings = {
+    business: {
+      brandName: "Example Studio",
+      bankAccountNo: "",
+      momoNumber: "",
+      invoiceDueDays: 21,
+      termsText: "Net 21",
+    },
+  };
+  const normalized = normalizeData({ settings });
+  assert.equal(normalized.settings.business.brandName, "Example Studio");
+  assert.equal(normalized.settings.business.invoiceDueDays, 21);
+  assert.equal(normalized.settings.business.termsText, "Net 21");
+});
+
 test("deleting the last service stays empty after normalizeData", () => {
   const client = {
     id: "c1",

@@ -177,6 +177,28 @@ export function normalizeData(d) {
   }
   return {
     ...source,
+    settings: {
+      ...(source.settings || {}),
+      business: {
+        brandName: "Solomantalgo",
+        tagline: "Web Design",
+        location: "Kampala, Uganda",
+        website: "solomantalgo.com",
+        ownerName: "Solomon Kisense",
+        ownerTitle: "Owner, Solomantalgo Web Design",
+        bankName: "",
+        bankAccountName: "",
+        bankAccountNo: "",
+        momoNumber: "",
+        momoName: "",
+        qrUrl: "",
+        showLogoA4: true,
+        showLogoThermal: false,
+        invoiceDueDays: 14,
+        termsText: "",
+        ...(source.settings?.business || {}),
+      },
+    },
     finance,
     clients: normalizedClients,
     target: source.target ?? 5,
