@@ -41,6 +41,31 @@
 - [ ] Client screen: inspect a client -> payments are separate from services; checkboxes appear only after entering a merge mode.
 - [ ] Phone and desktop: use 375x800 and 1280x800 -> no horizontal overflow and dialogs use bottom sheets on phone.
 
+## Screen-by-screen layout checks
+
+For each item, repeat the steps at **375x800** and **1280x800**. Check horizontal overflow, named icon buttons,
+palette and text contrast. On every list, inspect empty, loading, and error states using an empty account and a failed
+save where available.
+
+- [ ] S1 App shell: navigate through every tab and open each sheet -> shell stays within the viewport; Back closes the topmost layer first.
+- [ ] S2 Quick add: open the centre add action and try New lead, Log income, Add expense -> each matching form opens and remains reachable by thumb.
+- [ ] S3 Search: open search, type a query, use arrows/Enter, Back, Escape and X -> results route to the correct record and Back closes layers in order.
+- [ ] S4 Today: inspect session, next stop, attention and money snapshot -> desktop columns fit and phone content stacks without overflow.
+- [ ] S5 Outreach: inspect today's session, rotation plan and logs -> lists, plan and sheets fit both widths.
+- [ ] S6 Due: inspect overdue, today and upcoming rows -> dates and actions remain readable and reachable.
+- [ ] S7 Ongoing: switch Owing, Paused, Paid up and All -> summary and row balances remain legible.
+- [ ] S8 History: open a month and a day -> Back returns to the list and preserves its place.
+- [ ] S9 ClientRow: inspect lead, paused and ongoing rows -> row tap area and separate icon buttons have accessible names.
+- [ ] S10 Client screen: open a client, edit details, inspect services and payments -> payments stay separate and merge controls appear only in merge mode.
+- [ ] S11 Forms: open lead, client, service, income and expense forms -> labels, validation, keyboard and sticky actions work at both widths.
+- [ ] S12 Money: inspect Overview, Income, Expenses, Purposes, Accounts and Clients -> transaction rows, filters and account assignment fit.
+- [ ] S13 Stats: change each period and inspect empty data -> KPIs and charts remain readable without clipping.
+- [ ] S14 Playbook: inspect rules, steps and setup checklist -> text and controls fit and checklist stays local.
+- [ ] S15 More and Settings: open Business profile, Cloud sync, backup and reset -> Back and save states work at both widths.
+- [ ] S16 Dialogs and sheets: open confirmation, editor and print dialogs -> phone uses sheets and desktop uses centered dialogs; Escape and Back close the top layer.
+- [ ] S17 States and feedback: trigger loading, empty, error and success states on every list -> each state explains what happened and provides a usable next step.
+- [ ] Cross-screen polish: inspect all screens -> no emoji remain, palette matches the tokens, and every icon-only control has an accessible name.
+
 ## NOT VERIFIED BY THE AGENT
 
 - [ ] Browser screenshot and interaction checks at 375x800 and 1280x800 were not run in this session.

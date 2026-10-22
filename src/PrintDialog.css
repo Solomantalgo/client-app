@@ -7,9 +7,9 @@
 .print-dialog h2 { margin: 0; font-size: 18px; }
 .print-format { display: flex; flex-direction: column; gap: 7px; }
 .print-stage { min-height: 300px; display: flex; justify-content: center; overflow: auto; padding: 14px;
-  background: #d7dbda; border-radius: var(--r-ctl); }
+  background: var(--s3); border-radius: var(--r-ctl); }
 .print-preview { width: 100%; min-height: 300px; }
-.print-preview iframe { display: block; width: 100%; height: 420px; border: 0; background: #fff; }
+.print-preview iframe { display: block; width: 100%; height: 420px; border: 0; background: var(--text); }
 .print-stage.thermal58 .print-preview { width: 220px; flex: none; }
 .print-stage.thermal58 iframe { height: 470px; }
 .print-stage.a4 .print-preview { min-width: 500px; }

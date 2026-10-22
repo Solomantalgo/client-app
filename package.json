@@ -8,6 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "test": "node --test",
+    "check:ui": "node scripts/ui-coverage.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "./theme.css";
+import "./styles/theme.css";
 import "./ui.css";
 import "@fontsource/dm-mono/400.css";
 import "@fontsource/dm-mono/500.css";
