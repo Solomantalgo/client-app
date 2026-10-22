@@ -29,7 +29,7 @@ import { buildInvoiceHtml, buildReceiptHtml } from "./documents.js";
 import { buildIndex, resolveSearchTarget, runSearch } from "./search.js";
 import { PrintDialogProvider, usePrintDialog } from "./PrintDialog.jsx";
 import { Back, Close, Icon } from "./components/Icon.jsx";
-import BusinessProfile from "./BusinessProfile.jsx";
+import BusinessProfile from "./settings/BusinessProfile.jsx";
 import { addDays, fmtDate, fmtUGX, todayStr, toWaNumber } from "./lib/format.js";
 
 const ClientActions = createContext(null);

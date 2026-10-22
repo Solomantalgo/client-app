@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Close } from "./components/Icon.jsx";
+import { Close } from "../components/Icon.jsx";
 
 const fields = [
   ["brandName", "Brand name"],
