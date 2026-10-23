@@ -38,8 +38,8 @@
 .os-detail-empty h2 { margin:0; color:var(--text-2); font:600 18px var(--font-ui); }
 .os-content.has-detail .os-detail { position:sticky; top:80px; max-height:calc(100vh - 96px); overflow-y:auto; }
 .os-banner { display:flex; min-height:44px; align-items:center; justify-content:space-between; gap:12px; padding:4px 16px;
-  background:var(--lime); color:var(--on-lime); font-weight:600; }
-.os-banner button { min-width:44px; min-height:44px; border:0; background:transparent; color:var(--on-lime); font-size:20px; }
+  border-bottom:1px solid var(--line); background:var(--s2); color:var(--text); font-weight:600; }
+.os-banner button { min-width:44px; min-height:44px; border:0; background:transparent; color:var(--lime); font-size:20px; }
 .os-segments,.os-mobile-nav,.os-sheet-backdrop,.os-more-sheet { display:none; }
 .os-quick-overlay { position:fixed; z-index:70; inset:0; display:grid; place-items:center; padding:20px; }
 .os-quick-backdrop { position:absolute; inset:0; border:0; background:rgba(0,0,0,.72); }
@@ -95,11 +95,13 @@
 .profile-sheet h2 { margin:0; font:600 20px var(--font-ui); }.profile-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:16px 0; }
 .profile-grid label { display:grid; gap:6px; }.profile-grid .field { width:100%; }.profile-check { display:flex!important; align-items:center; min-height:44px; }
 .profile-sheet footer { justify-content:flex-end; }
+.profile-sheet footer { position:sticky; bottom:-18px; z-index:2; padding:10px 0 2px; border-top:1px solid var(--line); background:var(--s1); }
 .ce-overlay { position:fixed; z-index:80; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; background:rgba(0,0,0,.78); }
 .ce-dialog { width:min(560px,92vw); max-height:92vh; overflow:auto; padding:18px; border:1px solid var(--line-2);
   border-radius:var(--r-card); background:var(--s1); color:var(--text); }.ce-dialog header,.ce-dialog footer { display:flex; align-items:center;
   justify-content:space-between; gap:10px; }.ce-dialog h2 { font:600 20px var(--font-ui); }.ce-dialog h3 { font:11px var(--font-mono); color:var(--text-3); }
 .ce-dialog button { min-height:44px; border-radius:var(--r-ctl); border:1px solid var(--line); background:var(--s2); color:var(--text); padding:8px 12px; }
+.ce-dialog footer { position:sticky; bottom:-18px; z-index:2; padding:10px 0 2px; border-top:1px solid var(--line); background:var(--s1); }
 .ce-dialog button.primary { background:var(--lime); color:var(--on-lime); border-color:var(--lime); }
 .ce-dialog input,.ce-dialog select,.ce-dialog textarea { width:100%; min-height:44px; border:1px solid var(--line-2); border-radius:var(--r-ctl);
   background:var(--s2); color:var(--text); padding:9px 11px; }.ce-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
@@ -110,11 +112,11 @@
 .cs-title { flex:1; min-width:0; }.cs-title h2 { overflow:hidden; margin:0; font:600 20px var(--font-ui); text-overflow:ellipsis; white-space:nowrap; }
 .cs-title p { overflow:hidden; margin:3px 0 0; color:var(--text-2); font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
 .cs-grid,.cs-col { display:grid; min-width:0; gap:12px; }.cs-grid { margin-top:14px; }.cs-chips,.cs-tags,.cs-totals { display:flex; flex-wrap:wrap; gap:7px; }
-.cs-chips span,.cs-tags span { padding:6px 8px; border:1px solid var(--line); border-radius:var(--r-pill); background:var(--s2); color:var(--text-2); font:11px var(--font-mono); }
+.cs-chips span,.cs-tags span { padding:6px 8px; border:1px solid var(--line); border-radius:var(--r-pill); background:var(--s2); color:var(--text-2); font:12px var(--font-mono); }
 .cs-chips span:first-child,.cs-tags span { color:var(--lime); }.cs-contact,.cs-actions { margin-top:10px; }.cs-actions .primary,.cs button.primary { border-color:var(--lime); background:var(--lime); color:var(--on-lime); }
 .cs-card { min-width:0; padding:14px; border:1px solid var(--line); border-radius:var(--r-card); background:var(--s1); }
 .cs-card>header,.cs-service-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }.cs-card h3,.cs-card h4 { margin:0; font:600 16px var(--font-ui); }
-.cs-card dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:12px 0 0; }.cs-card dt,.cs-totals small { color:var(--text-3); font:11px var(--font-mono); }
+.cs-card dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:12px 0 0; }.cs-card dt,.cs-totals small { color:var(--text-3); font:12px var(--font-mono); }
 .cs-card dd { margin:4px 0 0; overflow-wrap:anywhere; font-size:13px; }.cs-tags { margin-top:10px; }.cs-notes { color:var(--text-2); font-size:13px; line-height:1.55; white-space:pre-wrap; }
 .cs-totals { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:11px; }.cs-totals div { display:flex; min-width:0; flex-direction:column; gap:5px; padding:9px; border-radius:var(--r-ctl); background:var(--s2); }
 .cs-totals b { overflow-wrap:anywhere; font:600 13px var(--font-mono); font-variant-numeric:tabular-nums; }.cs-service { margin-top:10px; padding:12px; border:1px solid var(--line); border-radius:var(--r-card); background:var(--s1); }
@@ -146,8 +148,8 @@
     border:3px solid var(--s1); border-radius:50%; background:var(--lime); color:var(--on-lime); }
   .os-mobile-nav button:has(.raised) { justify-content:flex-start; padding-top:0; }
   .os-mobile-nav button:has(.raised)::before { display:none; }
-  .os-mobile-nav small { font-size:11px; }.os-nav-icon { position:relative; height:25px; }
-  .os-mobile-nav i { position:absolute; top:-5px; right:-11px; padding:1px 5px; font-size:10px; }
+  .os-mobile-nav small { font-size:12px; }.os-nav-icon { position:relative; height:25px; }
+  .os-mobile-nav i { position:absolute; top:-5px; right:-11px; padding:1px 5px; font-size:12px; }
   .os-sheet-backdrop { position:fixed; z-index:39; inset:0; display:block; border:0; background:rgba(0,0,0,.68); }
   .os-more-sheet { position:fixed; z-index:40; right:10px; bottom:calc(68px + env(safe-area-inset-bottom)); left:10px; display:flex; flex-direction:column;
     padding:14px; border:1px solid var(--line); border-radius:var(--r-card); background:var(--s1); box-shadow:0 10px 40px rgba(0,0,0,.6); }

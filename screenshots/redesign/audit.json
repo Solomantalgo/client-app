@@ -1,0 +1,87 @@
+{
+  "today": "2026-10-22",
+  "reports": [
+    {
+      "width": 375,
+      "screen": "Today",
+      "overflow": false
+    },
+    {
+      "width": 375,
+      "screen": "Pipeline",
+      "overflow": false
+    },
+    {
+      "width": 375,
+      "screen": "Client details",
+      "overflow": false
+    },
+    {
+      "width": 375,
+      "screen": "Money",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "screen": "Today",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "screen": "Pipeline",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "screen": "Client details",
+      "overflow": false
+    },
+    {
+      "width": 768,
+      "screen": "Money",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "screen": "Today",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "screen": "Pipeline",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "screen": "Client details",
+      "overflow": false
+    },
+    {
+      "width": 1280,
+      "screen": "Money",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "screen": "Today",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "screen": "Pipeline",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "screen": "Client details",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "screen": "Money",
+      "overflow": false
+    }
+  ],
+  "errors": [],
+  "failedRequests": []
+}

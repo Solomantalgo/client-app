@@ -281,3 +281,23 @@ per S1–S17: file, done/partial/skipped, changes, unverified. Do not mark done 
 
 `VERIFY.md` must provide per-screen manual steps at 375px and 1280px: no horizontal overflow, named icon buttons,
 Back layer order, no emoji, correct palette, and empty/loading/error states for every list.
+
+## Visual QA refinements
+
+The current responsive audit uses isolated Playwright contexts with synthetic records. It checks Today, Pipeline,
+Client details, and Money at 375px, 768px, 1280px, and 1440px, recording page-level horizontal overflow, console
+errors, and failed requests. The audit caught two presentation issues that were corrected: Today’s Mark done
+button now uses the primary lime token, and Client details renders one Services section with payment rows only
+in the separate Payments & receipts section. The screen modules and remaining `check:ui` findings are still
+tracked as partial in `docs/UI-COVERAGE.md`.
+
+The separately run borrowing browser verification submitted an expense above the selected bucket balance, confirmed
+even lender distribution and nonnegative balances, blocked an expense when combined funds were insufficient,
+repaid lenders over several later allocations with unequal outstanding amounts, deleted the expense and checked
+loan cleanup, then reloaded to verify persistence. The browser used synthetic-only local data and intercepted cloud
+requests, so the user's saved records were not read or changed.
+
+The latest visual pass additionally captured Outreach, Due, Ongoing, Stats, History, Playbook, Search, Quick add,
+More, and Business profile at 375, 768, 1280, and 1440px. The automated audit found no page-level horizontal
+overflow, console errors, or failed requests. `ClientRow`, `QuickAdd`, `SearchPanel`, and `PlaybookView` are now
+real extracted components; remaining screen modules are still marked partial.

@@ -1,3 +1,24 @@
+import { makeServiceFromClient } from "./data.js";
+
+export function getClientServices(client) {
+  return Array.isArray(client?.services)
+    ? client.services
+    : [makeServiceFromClient(client).service];
+}
+
+export function clientTotals(client) {
+  const services = getClientServices(client);
+  const total = services.reduce(
+    (sum, service) => sum + serviceTotal(service, client),
+    0,
+  );
+  const paid = (client?.payments || []).reduce(
+    (sum, payment) => sum + (Number(payment.amount) || 0),
+    0,
+  );
+  return { total, paid, balance: total - paid };
+}
+
 export function servicesFor(client, legacyService) {
   return Array.isArray(client?.services)
     ? client.services

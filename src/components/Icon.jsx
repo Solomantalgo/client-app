@@ -109,6 +109,28 @@ const paths = {
       <path d="M12 20V5M6 11l6-6 6 6" />
     </>
   ),
+  Chart: (
+    <>
+      <path d="M4 19V5M4 19h16M8 15v-4M13 15V7M18 15V9" />
+    </>
+  ),
+  History: (
+    <>
+      <path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" />
+      <path d="M3 3v5h5M12 7v5l3 2" />
+    </>
+  ),
+  Book: (
+    <>
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v17H6.5A2.5 2.5 0 0 0 4 22z" />
+      <path d="M4 5.5v14A2.5 2.5 0 0 1 6.5 17H20" />
+    </>
+  ),
+  Download: (
+    <>
+      <path d="M12 3v12m-5-5 5 5 5-5M4 18v3h16v-3" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 24, ...props }) {

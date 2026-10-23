@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Icon } from "./components/Icon.jsx";
+import QuickAdd from "./QuickAdd.jsx";
+import MoreView from "./views/MoreView.jsx";
 
 const views = [
   {
@@ -17,7 +19,7 @@ const views = [
     items: [
       ["stats", "Stats", "More"],
       ["history", "History", "More"],
-      ["flow", "Guide", "More"],
+      ["flow", "Playbook", "Book"],
     ],
   },
 ];
@@ -29,7 +31,7 @@ const titles = {
   payments: "Money",
   stats: "Performance Stats",
   history: "History",
-  flow: "System Flow",
+  flow: "Playbook",
 };
 
 export default function AppShell({
@@ -236,130 +238,48 @@ export default function AppShell({
         })}
       </nav>
       {quickAdd && (
-        <div className="os-quick-overlay" role="presentation">
-          <button
-            className="os-quick-backdrop"
-            aria-label="Close quick add"
-            onClick={() => setQuickAdd(false)}
-          />
-          <section
-            className="os-quick-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="quick-add-title"
-          >
-            <header>
-              <div>
-                <p className="label">Quick add</p>
-                <h2 id="quick-add-title">What would you like to add?</h2>
-              </div>
-              <button
-                className="iconbtn"
-                aria-label="Close quick add"
-                onClick={() => setQuickAdd(false)}
-              >
-                <Icon name="Close" size={19} />
-              </button>
-            </header>
-            <button
-              className="os-quick-option lead"
-              onClick={() => {
-                setQuickAdd(false);
-                onQuickLead?.();
-              }}
-            >
-              <span className="os-quick-icon"><Icon name="Plus" /></span>
-              <span><b>New lead</b><small>Save a new prospect from today</small></span>
-              <Icon name="ChevronRight" size={18} />
-            </button>
-            <button
-              className="os-quick-option income"
-              onClick={() => {
-                setQuickAdd(false);
-                onQuickIncome?.();
-              }}
-            >
-              <span className="os-quick-icon"><Icon name="Money" /></span>
-              <span><b>Log income</b><small>Record money received</small></span>
-              <Icon name="ChevronRight" size={18} />
-            </button>
-            <button
-              className="os-quick-option expense"
-              onClick={() => {
-                setQuickAdd(false);
-                onQuickExpense?.();
-              }}
-            >
-              <span className="os-quick-icon"><Icon name="Money" /></span>
-              <span><b>Add expense</b><small>Track a business expense</small></span>
-              <Icon name="ChevronRight" size={18} />
-            </button>
-          </section>
-        </div>
+        <QuickAdd
+          onClose={() => setQuickAdd(false)}
+          onLead={() => {
+            setQuickAdd(false);
+            onQuickLead?.();
+          }}
+          onIncome={() => {
+            setQuickAdd(false);
+            onQuickIncome?.();
+          }}
+          onExpense={() => {
+            setQuickAdd(false);
+            onQuickExpense?.();
+          }}
+        />
       )}
       {more && (
-        <>
-          <button
-            className="os-sheet-backdrop"
-            aria-label="Close menu"
-            onClick={() => setMore(false)}
-          />
-          <section className="os-more-sheet">
-            <h2>More</h2>
-            {[
-              ["stats", "Stats", "More"],
-              ["history", "History", "More"],
-              ["flow", "Guide", "More"],
-            ].map(([key, label, icon]) => (
-              <button key={key} onClick={() => select(key)}>
-                <Icon name={icon} size={20} />
-                {label}
-              </button>
-            ))}
-            <button
-              onClick={() => {
-                setMore(false);
-                onSync();
-              }}
-            >
-              <Icon name="Sync" size={20} />
-              Sync now <small>{cloudStatus}</small>
-            </button>
-            <button
-              onClick={() => {
-                setMore(false);
-                onOpenProfile();
-              }}
-            >
-              Business profile
-            </button>
-            <button
-              onClick={() => {
-                setMore(false);
-                onExportBackup();
-              }}
-            >
-              Export backup
-            </button>
-            <button
-              onClick={() => {
-                setMore(false);
-                onOpenCloud();
-              }}
-            >
-              Cloud settings
-            </button>
-            <button
-              className="danger"
-              onClick={() => {
-                setMore(false);
-                onReset();
-              }}
-            >
-              Reset data
-            </button>
-          </section>
-        </>
+        <MoreView
+          cloudStatus={cloudStatus}
+          onClose={() => setMore(false)}
+          onNavigate={select}
+          onSync={() => {
+            setMore(false);
+            onSync();
+          }}
+          onOpenProfile={() => {
+            setMore(false);
+            onOpenProfile();
+          }}
+          onExportBackup={() => {
+            setMore(false);
+            onExportBackup();
+          }}
+          onOpenCloud={() => {
+            setMore(false);
+            onOpenCloud();
+          }}
+          onReset={() => {
+            setMore(false);
+            onReset();
+          }}
+        />
       )}
     </div>
   );

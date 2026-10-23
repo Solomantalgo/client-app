@@ -6,22 +6,22 @@ required module imports shared components and `npm run check:ui` passes.
 | Screen | File | Status | What changed | Not verified |
 | --- | --- | --- | --- | --- |
 | S1 App shell | `src/AppShell.jsx` | partial | Existing responsive shell retained; shared icon moved into components. | Error boundary, global toast stack, keyboard navigation, screen-reader pass. |
-| S2 Quick add | `src/AppShell.jsx` | partial | Existing navigation remains available. | Center plus menu and all three quick-add flows. |
-| S3 Search | `src/App.jsx`, `src/search.js` | partial | Existing search and routing remain in the monolith. | Search module extraction, keyboard and history-layer behavior. |
-| S4 Today | `src/App.jsx` | partial | Existing Today view remains in the monolith. | Full S4 layout and 375px/1280px attention panel. |
+| S2 Quick add | `src/QuickAdd.jsx`, `src/AppShell.jsx` | partial | Quick add sheet is extracted and wired to the existing lead, income, and expense flows. | All three save paths and keyboard focus handling. |
+| S3 Search | `src/SearchPanel.jsx`, `src/App.jsx`, `src/search.js` | partial | Search dialog is extracted with recent queries, type filters, highlighted results, and keyboard selection. | Browser history layer, focus restoration, and result routing across every type. |
+| S4 Today | `src/App.jsx` | partial | Existing Today view remains in the monolith; primary Mark done action now uses lime. | Full S4 layout and screen-module extraction. Visual audit passed at 375, 768, 1280, and 1440px using synthetic data. |
 | S5 Outreach | `src/App.jsx` | partial | Existing Outreach view remains in the monolith. | Scheduler sheets, responsive arrangement, keyboard flow. |
-| S6 Due | `src/App.jsx` | partial | Existing follow-up view remains in the monolith. | Required grouped list and row overflow actions. |
+| S6 Due | `src/App.jsx` | partial | Existing follow-up view remains in the monolith. | Required grouped list and row overflow actions. Visual audit passed at 375, 768, 1280, and 1440px using synthetic data. |
 | S7 Ongoing | `src/App.jsx` | partial | Existing Ongoing view remains in the monolith. | Owing/Paused/Paid up/All segments and row state. |
 | S8 History | `src/App.jsx` | partial | Existing History view remains in the monolith. | Sticky month groups and drilled-in day layout. |
-| S9 ClientRow | `src/App.jsx` | partial | Existing ClientRow remains in the monolith. | All list contexts, icon actions, and accessibility. |
-| S10 Client screen | `src/App.jsx` | partial | Existing ClientScreen remains in the monolith. | Full S10 interactions and responsive layout. |
+| S9 ClientRow | `src/clients/ClientRow.jsx` | partial | ClientRow is extracted and uses the shared client action context and icon component. | Every list context and assistive technology interaction. |
+| S10 Client screen | `src/App.jsx` | partial | Removed duplicate Services section and repeated payment rows; payments now appear only in Payments & receipts. | Full S10 interactions and screen-module extraction. Screenshots at 375px and 1280px use synthetic data. |
 | S11 Forms | `src/ClientEditors.jsx`, `src/App.jsx` | partial | Existing editors retained. | Shared field system and all form flows. |
-| S12 Money | `src/money/MoneyView.jsx` | partial | MoneyView moved without behavior changes. | Six extracted tabs and responsive visual audit. |
+| S12 Money | `src/money/MoneyView.jsx` | partial | MoneyView retained; expense shortfalls can borrow evenly from funded buckets and future allocations repay them. | Six extracted tabs and complete money workflows. Visual audit passed at 375, 768, 1280, and 1440px using synthetic data. |
 | S13 Stats | `src/App.jsx` | partial | Existing Stats view remains in the monolith. | Period selector, KPI/funnel layout, readability. |
-| S14 Playbook | `src/App.jsx` | partial | Existing guide/system-flow view remains in the monolith. | New setup segmented controls and local checklist. |
-| S15 More and Settings | `src/AppShell.jsx`, `src/BusinessProfile.jsx` | partial | Existing More sheet and Business profile remain. | Settings pages and complete sync/reset flows. |
+| S14 Playbook | `src/views/PlaybookView.jsx` | partial | Playbook content is extracted with rules, six steps, setup checklist, and reusable pricing references. Navigation label is Playbook. | At-a-glance readability and all setup checklists at every viewport. |
+| S15 More and Settings | `src/views/MoreView.jsx`, `src/settings/BusinessProfile.jsx` | partial | More navigation is grouped into Records, Settings, and Danger Zone; profile fields use the existing settings shape. | Cloud sync redesign and all settings/save states. |
 | S16 Dialogs and sheets | `src/Confirm.jsx`, `src/PrintDialog.jsx` | partial | Existing confirmation and print providers retained. | Focus trap, full Back behavior, manual printer checks. |
 | S17 States and feedback | `src/App.jsx`, `src/AppShell.jsx` | partial | Existing loading/banner/empty patterns retained. | Global toast, error boundary, every list state. |
 
-The coverage script is wired as `npm run check:ui`. It intentionally reports missing extracted modules and legacy
-style violations until the remaining screens are migrated; this matrix does not represent a passing coverage gate.
+The coverage script is wired as `npm run check:ui`. It reports 14 required view modules that have not yet been
+extracted from App.jsx and MoneyView.jsx. The checker is unchanged; the remaining monolith screens are marked partial.

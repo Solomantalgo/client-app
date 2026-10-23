@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   allocateAmount,
   applyBucketLoanRepayment,
+  createBucketLoans,
   DEFAULT_BUCKETS,
   DEFAULT_FINANCE,
   getBalances,
@@ -343,27 +344,108 @@ test("borrowed money reduces the lender balance and shows as negative debt", () 
           { bucketId: "reserve", amount: 100_000 },
         ],
       },
+      { type: "expense", amount: 160_000, bucketId: "needs" },
     ],
     finance,
   );
   assert.equal(balances.buckets.reserve.balance, 40_000);
+  assert.equal(balances.buckets.needs.balance, 0);
   assert.equal(balances.buckets.needs.borrowed, 60_000);
-  assert.equal(balances.available, 200_000);
+  assert.equal(balances.available, 40_000);
 });
 
-test("future allocations to a borrower repay lenders before crediting the borrower", () => {
+test("expense shortfalls split evenly across all available buckets", () => {
   const finance = {
     ...DEFAULT_FINANCE,
     buckets: [
       { id: "needs", name: "Needs", percentage: 50 },
-      { id: "reserve", name: "Reserve", percentage: 50 },
+      { id: "a", name: "A", percentage: 20 },
+      { id: "b", name: "B", percentage: 20 },
+      { id: "c", name: "C", percentage: 10 },
+    ],
+  };
+  let nextId = 0;
+  const loans = createBucketLoans(
+    finance,
+    "needs",
+    100,
+    {
+      a: { balance: 100 },
+      b: { balance: 100 },
+      c: { balance: 100 },
+    },
+    () => `loan-${++nextId}`,
+    "expense-1",
+  );
+  assert.deepEqual(
+    loans.map((loan) => [loan.lenderId, loan.amount]),
+    [
+      ["a", 34],
+      ["b", 33],
+      ["c", 33],
+    ],
+  );
+  assert.ok(loans.every((loan) => loan.expenseId === "expense-1"));
+});
+
+test("shortfall distribution respects donor capacity and rejects insufficient funds", () => {
+  const finance = {
+    ...DEFAULT_FINANCE,
+    buckets: [
+      { id: "needs", name: "Needs", percentage: 50 },
+      { id: "a", name: "A", percentage: 25 },
+      { id: "b", name: "B", percentage: 25 },
+    ],
+  };
+  let nextId = 0;
+  const loans = createBucketLoans(
+    finance,
+    "needs",
+    100,
+    { a: { balance: 10 }, b: { balance: 100 } },
+    () => `capacity-${++nextId}`,
+  );
+  assert.deepEqual(
+    loans.map((loan) => [loan.lenderId, loan.amount]),
+    [
+      ["a", 10],
+      ["b", 90],
+    ],
+  );
+  assert.throws(
+    () =>
+      createBucketLoans(
+        finance,
+        "needs",
+        111,
+        { a: { balance: 10 }, b: { balance: 100 } },
+        () => "never-used",
+      ),
+    /not have enough available money/,
+  );
+});
+
+test("future allocations repay all lender buckets evenly", () => {
+  const finance = {
+    ...DEFAULT_FINANCE,
+    buckets: [
+      { id: "needs", name: "Needs", percentage: 50 },
+      { id: "reserve-a", name: "Reserve A", percentage: 25 },
+      { id: "reserve-b", name: "Reserve B", percentage: 25 },
     ],
     bucketLoans: [
       {
-        id: "loan-1",
+        id: "loan-a",
         borrowerId: "needs",
-        lenderId: "reserve",
-        amount: 60_000,
+        lenderId: "reserve-a",
+        amount: 30_000,
+        repaid: 0,
+      },
+      {
+        id: "loan-b",
+        borrowerId: "needs",
+        lenderId: "reserve-b",
+        amount: 30_000,
         repaid: 0,
       },
     ],
@@ -376,9 +458,12 @@ test("future allocations to a borrower repay lenders before crediting the borrow
     finance,
   );
   assert.deepEqual(first.split.allocations, [
-    { bucketId: "reserve", percentage: 0, amount: 40_000 },
+    { bucketId: "needs", percentage: 100, amount: 40_000 },
   ]);
-  assert.equal(first.finance.bucketLoans[0].repaid, 40_000);
+  assert.deepEqual(
+    first.finance.bucketLoans.map((loan) => loan.repaid),
+    [20_000, 20_000],
+  );
 
   const second = applyBucketLoanRepayment(
     {
@@ -388,20 +473,32 @@ test("future allocations to a borrower repay lenders before crediting the borrow
     first.finance,
   );
   assert.deepEqual(second.split.allocations, [
-    { bucketId: "needs", percentage: 100, amount: 20_000 },
-    { bucketId: "reserve", percentage: 0, amount: 20_000 },
+    { bucketId: "needs", percentage: 100, amount: 40_000 },
   ]);
-  assert.equal(second.finance.bucketLoans[0].repaid, 60_000);
-  assert.equal(second.finance.bucketLoans[0].amount, 60_000);
+  assert.deepEqual(
+    second.finance.bucketLoans.map((loan) => loan.repaid),
+    [30_000, 30_000],
+  );
   const balances = getBalances(
     [
+      {
+        type: "income",
+        amount: 200_000,
+        allocations: [
+          { bucketId: "needs", amount: 100_000 },
+          { bucketId: "reserve-a", amount: 50_000 },
+          { bucketId: "reserve-b", amount: 50_000 },
+        ],
+      },
+      { type: "expense", amount: 160_000, bucketId: "needs" },
       { type: "income", amount: 40_000, allocations: first.split.allocations },
       { type: "income", amount: 40_000, allocations: second.split.allocations },
     ],
     second.finance,
   );
-  assert.equal(balances.buckets.reserve.balance, 0);
+  assert.equal(balances.buckets["reserve-a"].balance, 50_000);
+  assert.equal(balances.buckets["reserve-b"].balance, 50_000);
   assert.equal(balances.buckets.needs.balance, 20_000);
   assert.equal(balances.buckets.needs.borrowed, 0);
-  assert.equal(balances.available, 80_000);
+  assert.equal(balances.available, 120_000);
 });

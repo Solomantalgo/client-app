@@ -3,12 +3,23 @@ import {
   DEFAULT_FINANCE,
   allocateAmount,
   applyBucketLoanRepayment,
+  createBucketLoans,
   getBalances,
   getTransactions,
 } from "../money.js";
 import { outstandingBalances, pausedBalances } from "../clients.js";
 import { useConfirm } from "../Confirm.jsx";
 import { Icon } from "../components/Icon.jsx";
+import "./MoneyView.css";
+
+const bucketIcons = {
+  "move-out": "ArrowDown",
+  living: "Money",
+  business: "Pipeline",
+  emergency: "Plus",
+  projects: "Edit",
+  giving: "Check",
+};
 
 const money = (n) => `UGX ${Math.round(n || 0).toLocaleString("en-UG")}`;
 const uid = () => `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -40,11 +51,7 @@ export default function MoneyView({
   const [resetBucket, setResetBucket] = useState(null);
   const [resetOpening, setResetOpening] = useState("0");
   const [resetNote, setResetNote] = useState("");
-  const [borrowBucket, setBorrowBucket] = useState(null);
-  const [borrowFrom, setBorrowFrom] = useState("");
-  const [borrowAmount, setBorrowAmount] = useState("");
-  const [borrowNote, setBorrowNote] = useState("");
-  const [borrowError, setBorrowError] = useState("");
+  const [borrowShortfall, setBorrowShortfall] = useState(false);
   const [draft, setDraft] = useState({
     date: today(),
     amount: "",
@@ -70,10 +77,30 @@ export default function MoneyView({
     (sum, bucket) => sum + bucket.balance,
     0,
   );
+  const expenseAmount = Math.round(Number(draft.amount) || 0);
+  const expenseBorrowingLocked =
+    form === "expense" &&
+    Boolean(editing?.rawId) &&
+    (finance.bucketLoans || []).some(
+      (loan) => loan.expenseId === editing.rawId,
+    );
+  const expenseBucketBalance = totals.buckets[draft.bucketId]?.balance || 0;
+  const expenseShortfall =
+    form === "expense" && !editing && draft.bucketId
+      ? Math.max(0, expenseAmount - expenseBucketBalance)
+      : 0;
+  const otherBucketFunds = activeBuckets
+    .filter((bucket) => bucket.id !== draft.bucketId)
+    .reduce(
+      (sum, bucket) =>
+        sum + Math.max(0, totals.buckets[bucket.id]?.balance || 0),
+      0,
+    );
   const startForm = (type, item = null) => {
     setEditing(item);
     setForm(type);
     setMessage("");
+    setBorrowShortfall(false);
     setDraft(
       item
         ? {
@@ -108,6 +135,7 @@ export default function MoneyView({
     setForm("");
     setEditing(null);
     setMessage("");
+    setBorrowShortfall(false);
   };
   const submit = () => {
     const amount = Math.round(Number(draft.amount));
@@ -186,7 +214,34 @@ export default function MoneyView({
         setMessage(e.message);
       }
     } else if (form === "expense") {
+      let loans = [];
+      const expenseId = editing?.rawId || uid();
+      if (expenseShortfall > 0) {
+        if (!borrowShortfall) {
+          return setMessage(
+            `This bucket is short by ${money(expenseShortfall)}. Choose even borrowing from other buckets to continue.`,
+          );
+        }
+        if (otherBucketFunds < expenseShortfall) {
+          return setMessage(
+            `Other buckets have ${money(otherBucketFunds)} available, which is not enough to cover this shortfall.`,
+          );
+        }
+        try {
+          loans = createBucketLoans(
+            finance,
+            draft.bucketId,
+            expenseShortfall,
+            totals.buckets,
+            uid,
+            expenseId,
+          );
+        } catch (error) {
+          return setMessage(error.message);
+        }
+      }
       const fields = {
+        id: expenseId,
         amount,
         date: draft.date,
         note: draft.description.trim(),
@@ -196,7 +251,7 @@ export default function MoneyView({
         notes: draft.note || "",
       };
       if (editing) onUpdateExpense(editing.rawId, fields);
-      else onAddExpense(fields);
+      else onAddExpense(fields, loans);
       closeForm();
     } else if (form === "bucket") {
       if (!draft.name?.trim()) return setMessage("Enter a bucket name.");
@@ -380,37 +435,6 @@ export default function MoneyView({
         ),
       },
     });
-  const saveBucketBorrow = (event) => {
-    event.preventDefault();
-    const amount = Math.round(Number(borrowAmount));
-    const available = totals.buckets[borrowFrom]?.balance || 0;
-    if (!(amount > 0))
-      return setBorrowError("Enter an amount greater than zero.");
-    if (amount > available)
-      return setBorrowError(
-        "The selected bucket does not have enough available money.",
-      );
-    const loan = {
-      id: uid(),
-      borrowerId: borrowBucket.id,
-      lenderId: borrowFrom,
-      amount,
-      repaid: 0,
-      note: borrowNote.trim(),
-      createdAt: new Date().toISOString(),
-    };
-    onSave({
-      ...data,
-      finance: {
-        ...finance,
-        bucketLoans: [...(finance.bucketLoans || []), loan],
-      },
-    });
-    setBorrowBucket(null);
-    setBorrowAmount("");
-    setBorrowNote("");
-    setBorrowError("");
-  };
   const setPaymentAccount = (transaction, accountId) => {
     const entry = Object.entries(data.clients).find(([, clients]) =>
       clients.some((c) => c.id === transaction.clientId),
@@ -573,7 +597,9 @@ export default function MoneyView({
                     return (
                       <article className="m-bucket" key={b.id}>
                         <div className="m-bucket-name">
-                          <span className="m-icon">{b.icon || "◇"}</span>
+                          <span className="m-icon">
+                            <Icon name={bucketIcons[b.id] || "Money"} size={20} />
+                          </span>
                           <span>{b.name}</span>
                         </div>
                         <strong>{money(available)}</strong>
@@ -604,23 +630,6 @@ export default function MoneyView({
                           </span>
                         </div>
                         <div className="m-row-actions">
-                          <button
-                            className="m-quiet"
-                            onClick={() => {
-                              const lenders = activeBuckets.filter(
-                                (item) =>
-                                  item.id !== b.id &&
-                                  (totals.buckets[item.id]?.balance || 0) > 0,
-                              );
-                              setBorrowFrom(lenders[0]?.id || "");
-                              setBorrowBucket(b);
-                              setBorrowAmount("");
-                              setBorrowNote("");
-                              setBorrowError("");
-                            }}
-                          >
-                            Borrow from another bucket
-                          </button>
                           <button
                             className="m-quiet"
                             onClick={() => startForm("bucket", b)}
@@ -829,7 +838,9 @@ export default function MoneyView({
                     className={`m-rule ${b.status === "archived" ? "archived" : ""}`}
                     key={b.id}
                   >
-                    <span className="m-icon">{b.icon || "◇"}</span>
+                    <span className="m-icon">
+                      <Icon name={bucketIcons[b.id] || "Money"} size={20} />
+                    </span>
                     <div className="m-rule-main">
                       <strong>{b.name}</strong>
                       <div className="m-muted">
@@ -1092,12 +1103,19 @@ export default function MoneyView({
                     min="1"
                     type="number"
                     inputMode="numeric"
+                    disabled={expenseBorrowingLocked}
                     value={draft.amount}
                     onChange={(e) =>
                       setDraft({ ...draft, amount: e.target.value })
                     }
                     placeholder="e.g. 250000"
                   />
+                  {form === "expense" && expenseBorrowingLocked && (
+                    <small className="m-muted">
+                      Borrowed expenses keep their amount and bucket fixed.
+                      Delete and re-enter this expense to recalculate the split.
+                    </small>
+                  )}
                 </label>
                 <label>
                   {form === "income"
@@ -1146,6 +1164,7 @@ export default function MoneyView({
                       Bucket
                       <select
                         value={draft.bucketId || ""}
+                      disabled={expenseBorrowingLocked}
                         onChange={(e) =>
                           setDraft({ ...draft, bucketId: e.target.value })
                         }
@@ -1167,6 +1186,40 @@ export default function MoneyView({
                     </label>
                   )}
                 </div>
+                {form === "expense" && expenseShortfall > 0 && (
+                  <div className="m-borrow-prompt">
+                    <strong>Bucket short by {money(expenseShortfall)}</strong>
+                    <p>
+                      Cover the shortfall evenly from{" "}
+                      {
+                        activeBuckets.filter(
+                          (bucket) =>
+                            bucket.id !== draft.bucketId &&
+                            (totals.buckets[bucket.id]?.balance || 0) > 0,
+                        ).length
+                      }{" "}
+                      other buckets with available funds. Future money allocated
+                      to this bucket will repay them evenly.
+                    </p>
+                    {otherBucketFunds < expenseShortfall && (
+                      <p className="m-error">
+                        Other buckets only have {money(otherBucketFunds)}{" "}
+                        available.
+                      </p>
+                    )}
+                    <label className="m-borrow-choice">
+                      <input
+                        type="checkbox"
+                        checked={borrowShortfall}
+                        disabled={otherBucketFunds < expenseShortfall}
+                        onChange={(event) =>
+                          setBorrowShortfall(event.target.checked)
+                        }
+                      />
+                      Borrow the shortfall
+                    </label>
+                  </div>
+                )}
                 <label>
                   Account
                   <select
@@ -1393,69 +1446,6 @@ export default function MoneyView({
                 Cancel
               </button>
               <button className="m-primary">Continue</button>
-            </div>
-          </form>
-        </div>
-      )}
-      {borrowBucket && (
-        <div
-          className="m-overlay"
-          onMouseDown={(event) =>
-            event.target === event.currentTarget && setBorrowBucket(null)
-          }
-        >
-          <form className="m-dialog" onSubmit={saveBucketBorrow}>
-            <h2>Borrow into {borrowBucket.name}</h2>
-            <p>
-              The lender's available balance goes down. Future allocations to
-              {` ${borrowBucket.name} `}repay this amount first.
-            </p>
-            <label>
-              Take from
-              <select
-                value={borrowFrom}
-                onChange={(event) => setBorrowFrom(event.target.value)}
-                required
-              >
-                {activeBuckets
-                  .filter((bucket) => bucket.id !== borrowBucket.id)
-                  .map((bucket) => (
-                    <option key={bucket.id} value={bucket.id}>
-                      {bucket.name} ·{" "}
-                      {money(totals.buckets[bucket.id]?.balance || 0)} available
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label>
-              Amount (UGX)
-              <input
-                type="number"
-                inputMode="numeric"
-                min="1"
-                step="1"
-                value={borrowAmount}
-                onChange={(event) => setBorrowAmount(event.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Note
-              <input
-                value={borrowNote}
-                onChange={(event) => setBorrowNote(event.target.value)}
-              />
-            </label>
-            {borrowError && <p className="m-error">{borrowError}</p>}
-            <div className="m-dialog-actions">
-              <button
-                type="button"
-                className="m-secondary"
-                onClick={() => setBorrowBucket(null)}
-              >
-                Cancel
-              </button>
-              <button className="m-primary">Borrow funds</button>
             </div>
           </form>
         </div>

@@ -1,0 +1,34 @@
+.m-borrow-prompt {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--warn);
+  border-radius: 10px;
+  background: var(--warn-soft);
+}
+
+.m-borrow-prompt strong {
+  color: var(--warn);
+  font-size: 14px;
+}
+
+.m-borrow-prompt p {
+  margin: 8px 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.m-borrow-choice {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.m-borrow-choice input {
+  width: 20px;
+  min-height: 20px !important;
+  accent-color: var(--lime);
+}

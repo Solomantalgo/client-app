@@ -2,7 +2,7 @@ export const DEFAULT_BUCKETS = [
   {
     id: "move-out",
     name: "Move-out Fund",
-    icon: "⌂",
+    icon: "home",
     percentage: 30,
     target: 0,
     status: "active",
@@ -11,7 +11,7 @@ export const DEFAULT_BUCKETS = [
   {
     id: "living",
     name: "Living & Basics",
-    icon: "◉",
+    icon: "living",
     percentage: 25,
     target: 0,
     status: "active",
@@ -20,7 +20,7 @@ export const DEFAULT_BUCKETS = [
   {
     id: "business",
     name: "Business Growth",
-    icon: "↗",
+    icon: "growth",
     percentage: 20,
     target: 0,
     status: "active",
@@ -29,7 +29,7 @@ export const DEFAULT_BUCKETS = [
   {
     id: "emergency",
     name: "Emergency",
-    icon: "＋",
+    icon: "emergency",
     percentage: 10,
     target: 0,
     status: "active",
@@ -38,7 +38,7 @@ export const DEFAULT_BUCKETS = [
   {
     id: "projects",
     name: "Projects",
-    icon: "◇",
+    icon: "projects",
     percentage: 10,
     target: 0,
     status: "active",
@@ -47,7 +47,7 @@ export const DEFAULT_BUCKETS = [
   {
     id: "giving",
     name: "Giving",
-    icon: "♡",
+    icon: "giving",
     percentage: 5,
     target: 0,
     status: "active",
@@ -83,50 +83,103 @@ export const DEFAULT_FINANCE = {
   bucketLoans: [],
 };
 
-/** Divert allocations for indebted buckets to their lenders before new money is credited. */
+function distributeEvenly(amount, recipients, capacityFor) {
+  let remaining = Math.max(0, Math.round(Number(amount) || 0));
+  const result = new Map(recipients.map((item) => [item.id, 0]));
+  let open = recipients.filter((item) => capacityFor(item) > 0);
+
+  while (remaining > 0 && open.length) {
+    const evenShare = Math.floor(remaining / open.length);
+    const remainder = remaining % open.length;
+    let assigned = 0;
+    const nextOpen = [];
+
+    open.forEach((item, index) => {
+      const requested = evenShare + (index < remainder ? 1 : 0);
+      const room = Math.max(0, capacityFor(item) - result.get(item.id));
+      const share = Math.min(requested, room);
+      result.set(item.id, result.get(item.id) + share);
+      assigned += share;
+      if (room > share) nextOpen.push(item);
+    });
+
+    if (!assigned) break;
+    remaining -= assigned;
+    open = nextOpen;
+  }
+
+  return { shares: result, unassigned: remaining };
+}
+
+/** Create an even, capacity-limited loan split from all other funded buckets. */
+export function createBucketLoans(
+  finance,
+  borrowerId,
+  amount,
+  balances,
+  makeId,
+  expenseId,
+) {
+  const lenders = (finance.buckets || [])
+    .filter(
+      (bucket) => bucket.status !== "archived" && bucket.id !== borrowerId,
+    )
+    .filter((bucket) => (balances[bucket.id]?.balance || 0) > 0);
+  const plan = distributeEvenly(amount, lenders, (bucket) =>
+    Math.floor(balances[bucket.id]?.balance || 0),
+  );
+
+  if (plan.unassigned > 0) {
+    throw new Error(
+      "Other buckets do not have enough available money to cover this shortfall.",
+    );
+  }
+
+  const loans = lenders
+    .map((bucket) => ({ bucket, amount: plan.shares.get(bucket.id) || 0 }))
+    .filter((item) => item.amount > 0)
+    .map(({ bucket, amount: share }) => ({
+      id: makeId(),
+      expenseId,
+      borrowerId,
+      lenderId: bucket.id,
+      amount: share,
+      repaid: 0,
+      createdAt: new Date().toISOString(),
+    }));
+
+  return loans;
+}
+
+/** Apply future allocations to a bucket evenly across its outstanding loans. */
 export function applyBucketLoanRepayment(split, finance) {
   const loans = (finance.bucketLoans || []).map((loan) => ({ ...loan }));
-  const allocations = (split.allocations || []).map((allocation) => ({
-    ...allocation,
-  }));
   const repayments = [];
 
-  for (const allocation of allocations) {
-    let available = Math.max(0, Number(allocation.amount) || 0);
-    const borrowerLoans = loans.filter(
-      (loan) =>
-        loan.borrowerId === allocation.bucketId &&
-        (Number(loan.amount) || 0) > (Number(loan.repaid) || 0),
+  for (const allocation of split.allocations || []) {
+    const borrowerLoans = loans
+      .filter(
+        (loan) =>
+          loan.borrowerId === allocation.bucketId &&
+          (Number(loan.amount) || 0) > (Number(loan.repaid) || 0),
+      )
+      .map((loan) => ({ ...loan, id: loan.id }));
+    const plan = distributeEvenly(
+      allocation.amount,
+      borrowerLoans,
+      (loan) => (Number(loan.amount) || 0) - (Number(loan.repaid) || 0),
     );
     for (const loan of borrowerLoans) {
-      if (!available) break;
-      const outstanding = Math.max(
-        0,
-        (Number(loan.amount) || 0) - (Number(loan.repaid) || 0),
-      );
-      const repaid = Math.min(available, outstanding);
-      loan.repaid = (Number(loan.repaid) || 0) + repaid;
-      allocation.amount -= repaid;
-      available -= repaid;
-      const lenderAllocation = allocations.find(
-        (item) => item.bucketId === loan.lenderId,
-      );
-      if (lenderAllocation) lenderAllocation.amount += repaid;
-      else
-        allocations.push({
-          bucketId: loan.lenderId,
-          percentage: 0,
-          amount: repaid,
-        });
+      const repaid = plan.shares.get(loan.id) || 0;
+      if (!repaid) continue;
+      const stored = loans.find((item) => item.id === loan.id);
+      stored.repaid = (Number(stored.repaid) || 0) + repaid;
       repayments.push({ loanId: loan.id, amount: repaid });
     }
   }
 
   return {
-    split: {
-      ...split,
-      allocations: allocations.filter((item) => item.amount > 0),
-    },
+    split,
     finance: { ...finance, bucketLoans: loans },
     repayments,
   };
@@ -265,18 +318,22 @@ export function getBalances(transactions, finance) {
     const amount = Math.max(0, Number(loan.amount) || 0);
     const repaid = Math.min(amount, Math.max(0, Number(loan.repaid) || 0));
     const outstanding = amount - repaid;
-    if (buckets[loan.lenderId])
+    if (buckets[loan.lenderId]) {
       buckets[loan.lenderId].loaned =
-        (buckets[loan.lenderId].loaned || 0) + amount;
+        (buckets[loan.lenderId].loaned || 0) + outstanding;
+    }
     if (borrowed[loan.borrowerId] !== undefined)
       borrowed[loan.borrowerId] += outstanding;
   }
   for (const bucket of Object.values(buckets)) {
     bucket.borrowed = 0;
-    bucket.balance = bucket.allocated - bucket.spent - (bucket.loaned || 0);
   }
   for (const [bucketId, amount] of Object.entries(borrowed))
     buckets[bucketId].borrowed = amount;
+  for (const bucket of Object.values(buckets)) {
+    bucket.balance =
+      bucket.allocated - bucket.spent + bucket.borrowed - (bucket.loaned || 0);
+  }
   return {
     income,
     expenses,

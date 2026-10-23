@@ -68,6 +68,14 @@ save where available.
 
 ## NOT VERIFIED BY THE AGENT
 
-- [ ] Browser screenshot and interaction checks at 375x800 and 1280x800 were not run in this session.
+- [ ] Full manual workflows for every listed screen and form were not exercised; Playwright used synthetic records for visual navigation only.
+- [x] Expense borrowing was submitted in isolated Playwright contexts with synthetic data: even split and rounding,
+  insufficient total funds, lender repayment over several future allocations, delete reconciliation, and reload persistence.
 - [ ] A physical 58mm printer and operating-system Save as PDF output were not available for verification.
 - [ ] The supplied A4 reference files were not visible in the workspace, so visual comparison against them was not run.
+- [ ] `npm run check:ui` remains failing because the existing view functions in App.jsx and MoneyView.jsx have not all
+  been extracted into the required screen modules. The checker was not weakened.
+- [ ] Playwright captured Today, Pipeline, client details, Money, Outreach, Due, Ongoing, Stats, History, Playbook,
+  Search, Quick add, More, and Business profile at 375, 768, 1280, and 1440px using isolated synthetic records. Page
+  overflow, console errors, and failed requests were checked automatically. Manual image inspection covered Today,
+  Due, client details, Money, Search, Business profile, More, and Playbook; other captures were not manually inspected.

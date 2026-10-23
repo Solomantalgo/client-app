@@ -2,13 +2,13 @@ import {
   useState,
   useEffect,
   useCallback,
-  createContext,
   useContext,
   useRef,
   useMemo,
 } from "react";
 import { createClient } from "@supabase/supabase-js";
 import MoneyView from "./money/MoneyView.jsx";
+import PlaybookView from "./views/PlaybookView.jsx";
 import AppShell from "./AppShell.jsx";
 import "./AppShell.css";
 import {
@@ -18,13 +18,17 @@ import {
 } from "./money.js";
 import { chooseSnapshot, hasSavedContent } from "./sync.js";
 import {
+  clientTotals,
+  getClientServices,
   mergeServices,
   outstandingBalances,
   removeClientFromData,
   serviceTotal,
   unmergeService,
 } from "./clients.js";
-import { normalizeData, touchData, makeServiceFromClient } from "./data.js";
+import ClientRow from "./clients/ClientRow.jsx";
+import { ClientActions } from "./clients/ClientActions.js";
+import { normalizeData, touchData } from "./data.js";
 import { upsertService, removeService, paymentsForService } from "./clients.js";
 import { ClientInfoEditor, ServiceEditor } from "./ClientEditors.jsx";
 import "./ClientCard.css";
@@ -32,8 +36,8 @@ import { ConfirmProvider, useConfirm } from "./Confirm.jsx";
 import { buildInvoiceHtml, buildReceiptHtml } from "./documents.js";
 import { buildIndex, resolveSearchTarget, runSearch } from "./search.js";
 import { PrintDialogProvider, usePrintDialog } from "./PrintDialog.jsx";
-import { Back, Close, Icon } from "./components/Icon.jsx";
 import BusinessProfile from "./settings/BusinessProfile.jsx";
+import SearchPanel from "./SearchPanel.jsx";
 import {
   addDays,
   fmtDate,
@@ -42,7 +46,6 @@ import {
   toWaNumber,
 } from "./lib/format.js";
 
-const ClientActions = createContext(null);
 let logoDataUriRequest;
 
 function loadLogoDataUri() {
@@ -1114,12 +1117,16 @@ function AppBody() {
     return number;
   };
 
-  const addExpense = (exp) => {
+  const addExpense = (exp, bucketLoans = []) => {
     const next = {
       ...data,
+      finance: {
+        ...(data.finance || DEFAULT_FINANCE),
+        bucketLoans: [...(data.finance?.bucketLoans || []), ...bucketLoans],
+      },
       expenses: [
         ...(data.expenses || []),
-        { id: Date.now().toString(), date: todayStr(), ...exp },
+        { id: exp.id || Date.now().toString(), date: todayStr(), ...exp },
       ],
     };
     void save(next);
@@ -1143,6 +1150,12 @@ function AppBody() {
     void saveUndoable(`Deleted ${expense?.note || "expense"}`, {
       ...data,
       expenses: (data.expenses || []).filter((e) => e.id !== id),
+      finance: {
+        ...data.finance,
+        bucketLoans: (data.finance?.bucketLoans || []).filter(
+          (loan) => loan.expenseId !== id,
+        ),
+      },
     });
   };
   const deleteIncome = async (id) => {
@@ -1353,7 +1366,7 @@ function AppBody() {
           justifyContent: "center",
           color: LIME,
           fontFamily: FONT,
-          fontSize: 11,
+          fontSize: 12,
           letterSpacing: 4,
         }}
       >
@@ -1441,154 +1454,31 @@ function AppBody() {
     setMoneyRoute(target);
     selectTab("payments");
   };
-  const highlightResult = (value) => {
-    const text = String(value || "");
-    const tokens = searchQuery.trim().split(/\s+/).filter(Boolean);
-    const normalizedText = text
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase();
-    const match = tokens
-      .map((token) => {
-        const normalizedToken = token
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .toLowerCase();
-        return { token, at: normalizedText.indexOf(normalizedToken) };
-      })
-      .filter((entry) => entry.at >= 0)
-      .sort((a, b) => a.at - b.at)[0];
-    if (!match) return text;
-    return (
-      <>
-        {text.slice(0, match.at)}
-        <mark>{text.slice(match.at, match.at + match.token.length)}</mark>
-        {text.slice(match.at + match.token.length)}
-      </>
-    );
+  const clearRecentSearches = () => {
+    setRecentSearches([]);
+    try {
+      localStorage.removeItem("solo-recent-searches");
+    } catch {
+      /* optional */
+    }
   };
-  const searchPanel = searchOpen ? (
-    <div
-      className="os-search-overlay"
-      onMouseDown={(event) =>
-        event.target === event.currentTarget && closeSearch()
-      }
-    >
-      <section
-        className="os-search-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Search"
-      >
-        <header className="search-panel-head">
-          <button className="iconbtn" onClick={closeSearch} aria-label="Back">
-            <Back />
-          </button>
-          <input
-            ref={searchFocus}
-            autoFocus
-            inputMode="search"
-            placeholder="Search clients, services, payments…"
-            value={searchQuery}
-            onChange={(event) => {
-              setSearchQuery(event.target.value);
-              setSearchHighlight(0);
-            }}
-            aria-activedescendant={
-              results[searchHighlight]
-                ? `search-result-${searchHighlight}`
-                : undefined
-            }
-            onKeyDown={(event) => {
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                setSearchHighlight((index) =>
-                  Math.min(results.length - 1, index + 1),
-                );
-              } else if (event.key === "ArrowUp") {
-                event.preventDefault();
-                setSearchHighlight((index) => Math.max(0, index - 1));
-              } else if (event.key === "Enter" && results[searchHighlight]) {
-                event.preventDefault();
-                chooseSearchResult(results[searchHighlight]);
-              }
-            }}
-          />
-          {searchQuery && (
-            <button
-              className="iconbtn"
-              onClick={() => setSearchQuery("")}
-              aria-label="Clear"
-            >
-              <Close />
-            </button>
-          )}
-          <button
-            className="iconbtn search-desktop-close"
-            onClick={closeSearch}
-            aria-label="Close"
-          >
-            <Close />
-          </button>
-        </header>
-        <nav className="os-search-types">
-          {["All", "Clients", "Services", "Payments", "Money"].map((type) => (
-            <button
-              className={searchType === type ? "active" : ""}
-              key={type}
-              onClick={() => setSearchType(type)}
-            >
-              {type}
-            </button>
-          ))}
-        </nav>
-        <div className="os-search-results">
-          {searchQuery &&
-            results.map((item, index) => (
-              <button
-                id={`search-result-${index}`}
-                aria-selected={searchHighlight === index}
-                className={searchHighlight === index ? "selected" : ""}
-                key={`${item.type}-${item.id}-${item.clientId || ""}`}
-                onClick={() => chooseSearchResult(item)}
-              >
-                <small>{item.type}</small>
-                <b>{highlightResult(item.title)}</b>
-                <span>{highlightResult(item.subtitle)}</span>
-              </button>
-            ))}
-          {searchQuery && !results.length && <p>No results found.</p>}
-          {!searchQuery && recentSearches.length > 0 && (
-            <div className="search-recents">
-              <header>
-                <b>Recent searches</b>
-                <button
-                  onClick={() => {
-                    setRecentSearches([]);
-                    try {
-                      localStorage.removeItem("solo-recent-searches");
-                    } catch {
-                      /* optional */
-                    }
-                  }}
-                >
-                  Clear
-                </button>
-              </header>
-              {recentSearches.map((query) => (
-                <button key={query} onClick={() => setSearchQuery(query)}>
-                  {query}
-                </button>
-              ))}
-            </div>
-          )}
-          {!searchQuery && !recentSearches.length && (
-            <p>Search by client, service, amount, note, or number.</p>
-          )}
-        </div>
-      </section>
-    </div>
-  ) : null;
+  const searchPanel = (
+    <SearchPanel
+      open={searchOpen}
+      close={closeSearch}
+      inputRef={searchFocus}
+      query={searchQuery}
+      setQuery={setSearchQuery}
+      type={searchType}
+      setType={setSearchType}
+      results={results}
+      highlightIndex={searchHighlight}
+      setHighlightIndex={setSearchHighlight}
+      onChoose={chooseSearchResult}
+      recent={recentSearches}
+      clearRecent={clearRecentSearches}
+    />
+  );
   return (
     <ClientActions.Provider
       value={{
@@ -1691,7 +1581,7 @@ function AppBody() {
         {tab === "stats" && (
           <StatsView clients={data.clients} target={data.target} />
         )}
-        {tab === "flow" && <SystemFlowView />}
+        {tab === "flow" && <PlaybookView packageTemplates={PACKAGE_TEMPLATES} />}
       </AppShell>
       {undoEntry && (
         <div className="os-undo-toast" role="status">
@@ -1748,7 +1638,7 @@ function TargetCtrl({ target, onChange }) {
   return (
     <div style={{ textAlign: "right" }}>
       <div
-        style={{ color: DIM, fontSize: 9, letterSpacing: 2, marginBottom: 4 }}
+        style={{ color: DIM, fontSize: 12, letterSpacing: 2, marginBottom: 4 }}
       >
         DAILY TARGET
       </div>
@@ -1850,7 +1740,7 @@ function TodayView({
           >
             <span
               style={{
-                fontSize: 10,
+                fontSize: 12,
                 color: LIME,
                 letterSpacing: 1,
                 fontWeight: "bold",
@@ -1910,7 +1800,7 @@ function TodayView({
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div
             style={{
-              fontSize: 10,
+              fontSize: 12,
               color: DIM,
               letterSpacing: 1,
               fontWeight: "bold",
@@ -1928,7 +1818,7 @@ function TodayView({
                 borderRadius: 8,
                 cursor: "pointer",
                 fontFamily: FONT,
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: "bold",
                 background: activeTrack === "physical" ? COLD_C + "22" : SURF2,
                 border:
@@ -1948,7 +1838,7 @@ function TodayView({
                 borderRadius: 8,
                 cursor: "pointer",
                 fontFamily: FONT,
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: "bold",
                 background: activeTrack === "remote" ? WARM_C + "22" : SURF2,
                 border:
@@ -1985,7 +1875,7 @@ function TodayView({
             >
               <span
                 style={{
-                  fontSize: 9,
+                  fontSize: 12,
                   color: COLD_C,
                   fontWeight: "bold",
                   letterSpacing: 1,
@@ -1996,7 +1886,7 @@ function TodayView({
               </span>
               <span
                 style={{
-                  fontSize: 9,
+                  fontSize: 12,
                   color: DIM,
                   fontFamily: FONT,
                   background: SURF2,
@@ -2038,12 +1928,12 @@ function TodayView({
                 onClick={() => onMarkDone("physical")}
                 style={{
                   flex: 1,
-                  background: COLD_C,
+                  background: "var(--lime)",
                   color: "var(--on-lime)",
                   border: "none",
                   borderRadius: 8,
                   padding: "11px 14px",
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: "bold",
                   cursor: "pointer",
                   fontFamily: FONT,
@@ -2060,7 +1950,7 @@ function TodayView({
                   color: "var(--text)",
                   borderRadius: 8,
                   padding: "11px 12px",
-                  fontSize: 10,
+                  fontSize: 12,
                   cursor: "pointer",
                   fontFamily: FONT,
                 }}
@@ -2091,7 +1981,7 @@ function TodayView({
             >
               <span
                 style={{
-                  fontSize: 9,
+                  fontSize: 12,
                   color: WARM_C,
                   fontWeight: "bold",
                   letterSpacing: 1,
@@ -2102,7 +1992,7 @@ function TodayView({
               </span>
               <span
                 style={{
-                  fontSize: 9,
+                  fontSize: 12,
                   color: DIM,
                   fontFamily: FONT,
                   background: SURF2,
@@ -2144,12 +2034,12 @@ function TodayView({
                 onClick={() => onMarkDone("remote")}
                 style={{
                   flex: 1,
-                  background: WARM_C,
+                  background: "var(--lime)",
                   color: "var(--on-lime)",
                   border: "none",
                   borderRadius: 8,
                   padding: "11px 14px",
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: "bold",
                   cursor: "pointer",
                   fontFamily: FONT,
@@ -2166,7 +2056,7 @@ function TodayView({
                   color: "var(--text)",
                   borderRadius: 8,
                   padding: "11px 12px",
-                  fontSize: 10,
+                  fontSize: 12,
                   cursor: "pointer",
                   fontFamily: FONT,
                 }}
@@ -2288,7 +2178,7 @@ function OutreachView({
         >
           <span
             style={{
-              fontSize: 10,
+              fontSize: 12,
               color: LIME,
               letterSpacing: 1,
               fontWeight: "bold",
@@ -2357,7 +2247,7 @@ function OutreachView({
               border: "none",
               borderRadius: 6,
               padding: "6px 12px",
-              fontSize: 10,
+              fontSize: 12,
               fontWeight: "bold",
               fontFamily: FONT,
               cursor: "pointer",
@@ -2399,7 +2289,7 @@ function OutreachView({
           <div>
             <div
               style={{
-                fontSize: 9,
+                fontSize: 12,
                 color: LIME,
                 letterSpacing: 2,
                 fontWeight: "bold",
@@ -2420,7 +2310,7 @@ function OutreachView({
           </div>
           <span
             style={{
-              fontSize: 10,
+              fontSize: 12,
               background: LIME + "22",
               color: LIME,
               padding: "4px 10px",
@@ -2439,7 +2329,7 @@ function OutreachView({
             style={{
               display: "flex",
               justifyContent: "space-between",
-              fontSize: 10,
+              fontSize: 12,
               marginBottom: 4,
             }}
           >
@@ -2475,7 +2365,7 @@ function OutreachView({
             style={{
               display: "flex",
               justifyContent: "space-between",
-              fontSize: 10,
+              fontSize: 12,
               marginBottom: 4,
             }}
           >
@@ -2526,11 +2416,11 @@ function OutreachView({
           }}
         >
           <span
-            style={{ fontSize: 11, fontWeight: "bold", color: "var(--text)" }}
+            style={{ fontSize: 12, fontWeight: "bold", color: "var(--text)" }}
           >
             View Full 120-Area Rotation Plan
           </span>
-          <span style={{ color: LIME, fontSize: 11, fontFamily: FONT }}>
+          <span style={{ color: LIME, fontSize: 12, fontFamily: FONT }}>
             {showMap ? "Hide ▲" : "Show ▼"}
           </span>
         </div>
@@ -2544,7 +2434,7 @@ function OutreachView({
               overflowY: "auto",
             }}
           >
-            <div style={{ fontSize: 9, color: DIM, marginBottom: 10 }}>
+            <div style={{ fontSize: 12, color: DIM, marginBottom: 10 }}>
               Master sequence 1–120. Active track positions are highlighted.
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -2571,7 +2461,7 @@ function OutreachView({
                               : `1px solid transparent`,
                       padding: "6px 8px",
                       borderRadius: 6,
-                      fontSize: 10,
+                      fontSize: 12,
                     }}
                   >
                     <span style={{ color: DIM, fontFamily: FONT }}>
@@ -2587,7 +2477,7 @@ function OutreachView({
                       >
                         {a.area}
                       </span>
-                      <span style={{ color: DIM, fontSize: 9, marginLeft: 6 }}>
+                      <span style={{ color: DIM, fontSize: 12, marginLeft: 6 }}>
                         ({a.division})
                       </span>
                     </div>
@@ -2597,7 +2487,7 @@ function OutreachView({
                           style={{
                             background: WARM_C,
                             color: "var(--on-lime)",
-                            fontSize: 8,
+                            fontSize: 12,
                             padding: "1px 5px",
                             borderRadius: 4,
                             fontWeight: "bold",
@@ -2611,7 +2501,7 @@ function OutreachView({
                           style={{
                             background: COLD_C,
                             color: "var(--on-lime)",
-                            fontSize: 8,
+                            fontSize: 12,
                             padding: "1px 5px",
                             borderRadius: 4,
                             fontWeight: "bold",
@@ -2650,13 +2540,13 @@ function OutreachView({
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span
-              style={{ fontSize: 11, fontWeight: "bold", color: "var(--text)" }}
+              style={{ fontSize: 12, fontWeight: "bold", color: "var(--text)" }}
             >
               Outreach History Logs
             </span>
             <span
               style={{
-                fontSize: 9,
+                fontSize: 12,
                 background: SURF2,
                 color: LIME,
                 padding: "2px 7px",
@@ -2668,7 +2558,7 @@ function OutreachView({
               {logs.length}
             </span>
           </div>
-          <span style={{ color: LIME, fontSize: 11, fontFamily: FONT }}>
+          <span style={{ color: LIME, fontSize: 12, fontFamily: FONT }}>
             {showLogs ? "Hide Logs ▲" : "Show Logs ▼"}
           </span>
         </div>
@@ -2690,7 +2580,7 @@ function OutreachView({
                 gap: 8,
               }}
             >
-              <div style={{ fontSize: 9, color: DIM, letterSpacing: 1 }}>
+              <div style={{ fontSize: 12, color: DIM, letterSpacing: 1 }}>
                 FILTER LOG TRACK:
               </div>
               <div style={{ display: "flex", gap: 4 }}>
@@ -2708,7 +2598,7 @@ function OutreachView({
                     }}
                     style={{
                       padding: "4px 8px",
-                      fontSize: 9,
+                      fontSize: 12,
                       fontFamily: FONT,
                       borderRadius: 4,
                       cursor: "pointer",
@@ -2775,7 +2665,7 @@ function OutreachView({
                         >
                           <span
                             style={{
-                              fontSize: 8,
+                              fontSize: 12,
                               background: col + "22",
                               color: col,
                               padding: "2px 6px",
@@ -2792,7 +2682,7 @@ function OutreachView({
                           </span>
                           <span
                             style={{
-                              fontSize: 11,
+                              fontSize: 12,
                               fontWeight: "bold",
                               color: "var(--text)",
                             }}
@@ -2800,14 +2690,14 @@ function OutreachView({
                             {log.area}
                           </span>
                         </div>
-                        <div style={{ fontSize: 9, color: DIM }}>
+                        <div style={{ fontSize: 12, color: DIM }}>
                           {log.division && `${log.division} Division • `}
                           {log.sequence ? `Seq #${log.sequence} • ` : ""}
                           {dateStr}
                         </div>
                         {log.note && (
                           <div
-                            style={{ fontSize: 9, color: LIME, marginTop: 3 }}
+                            style={{ fontSize: 12, color: LIME, marginTop: 3 }}
                           >
                             {log.note}
                           </div>
@@ -2823,7 +2713,7 @@ function OutreachView({
                             color: DIM,
                             borderRadius: 4,
                             padding: "4px 8px",
-                            fontSize: 9,
+                            fontSize: 12,
                             cursor: "pointer",
                             fontFamily: FONT,
                           }}
@@ -2857,7 +2747,7 @@ function HistoryView({ clients, sortedDates, today, selected, onSelect }) {
             border: "none",
             color: LIME,
             fontFamily: FONT,
-            fontSize: 11,
+            fontSize: 12,
             cursor: "pointer",
             letterSpacing: 1,
             padding: 0,
@@ -2912,7 +2802,7 @@ function HistoryView({ clients, sortedDates, today, selected, onSelect }) {
               >
                 {fmtDate(date)}
               </div>
-              <div style={{ fontSize: 10, color: DIM }}>
+              <div style={{ fontSize: 12, color: DIM }}>
                 {dc.length} client{dc.length !== 1 ? "s" : ""}
               </div>
             </div>
@@ -2948,7 +2838,7 @@ function FollowupsView({ pending }) {
         <div style={{ marginBottom: 20 }}>
           <div
             style={{
-              fontSize: 10,
+              fontSize: 12,
               color: WARM_C,
               letterSpacing: 2,
               marginBottom: 12,
@@ -2978,7 +2868,7 @@ function FollowupsView({ pending }) {
         <div>
           <div
             style={{
-              fontSize: 10,
+              fontSize: 12,
               color: LIME,
               letterSpacing: 2,
               marginBottom: 12,
@@ -3030,11 +2920,6 @@ function getReceiptNum(payment) {
   const seq = String(payment.id).slice(-3).replace(/\D/g, "0").padStart(3, "0");
   return `RCP-${year}-${seq}`;
 }
-function getClientServices(client) {
-  return Array.isArray(client.services)
-    ? client.services
-    : [makeServiceFromClient(client).service];
-}
 function servicePayments(client, serviceId) {
   const payments = client.payments || [];
   return serviceId
@@ -3050,18 +2935,6 @@ function servicePaid(client, serviceId) {
     (sum, p) => sum + (Number(p.amount) || 0),
     0,
   );
-}
-function clientTotals(client) {
-  const services = getClientServices(client);
-  const total = services.reduce(
-    (sum, service) => sum + serviceTotal(service, client),
-    0,
-  );
-  const paid = (client.payments || []).reduce(
-    (sum, p) => sum + (Number(p.amount) || 0),
-    0,
-  );
-  return { total, paid, balance: total - paid };
 }
 function documentDueDate(issueDate, days = 14) {
   const date = new Date(`${issueDate}T00:00:00`);
@@ -3303,115 +3176,6 @@ function printCombinedInvoice(
   });
 }
 // ── Client Card
-function ClientRow({ client: c, date, highlight }) {
-  const actions = useContext(ClientActions);
-  const isLead = c.status !== "ongoing";
-  const today = todayStr();
-  const hot =
-    highlight &&
-    isLead &&
-    (c.followUp === "needed" ||
-      (c.followUp === "done" && c.followUpDate && today >= c.followUpDate));
-  const balance = isLead ? 0 : clientTotals(c).balance;
-  const excludedBalance = c.paused && !isLead ? balance : 0;
-  const services = getClientServices(c);
-  const due = services
-    .map((service) => service.dueDate)
-    .filter(Boolean)
-    .sort()[0];
-  const overdueDays =
-    c.followUpDate && c.followUpDate < today
-      ? Math.floor(
-          (Date.parse(`${today}T00:00:00Z`) -
-            Date.parse(`${c.followUpDate}T00:00:00Z`)) /
-            86400000,
-        )
-      : 0;
-  return (
-    <article className={`cr${actions?.openId === c.id ? " selected" : ""}`}>
-      <button
-        type="button"
-        className="cr-main"
-        onClick={() => actions?.openClientScreen(date, c.id)}
-      >
-        <span
-          className={`cr-avatar${c.paused ? " paused" : ""}`}
-          aria-hidden="true"
-        >
-          {String(c.name || "?")
-            .trim()
-            .split(/\s+/)
-            .slice(0, 2)
-            .map((part) => part[0])
-            .join("")
-            .toUpperCase()}
-        </span>
-        <span className="cr-id">
-          <b>{c.name}</b>
-          <small>
-            {c.business || "No business"}
-            {c.businessType ? ` · ${c.businessType}` : ""}
-          </small>
-        </span>
-        <span className="cr-meta">
-          {c.paused && <em className="cr-paused">PAUSED</em>}
-          {isLead ? (
-            <>
-              <b className={c.temp === "warm" ? "warm" : "cold"}>
-                {c.temp || "warm"}
-              </b>
-              <small>
-                {overdueDays > 0
-                  ? `${overdueDays} days overdue`
-                  : c.followUpDate
-                    ? fmtDate(c.followUpDate)
-                    : "No timeline"}
-              </small>
-            </>
-          ) : (
-            <>
-              <b
-                className={
-                  c.paused ? "paused-balance" : balance > 0 ? "warm" : "lime"
-                }
-              >
-                {c.paused
-                  ? `${fmtUGX(excludedBalance)} excluded`
-                  : balance > 0
-                    ? fmtUGX(balance)
-                    : "Paid"}
-              </b>
-              <small>{due ? fmtDate(due) : "No due date"}</small>
-            </>
-          )}
-          {hot && !highlight && <em className="cr-due">FOLLOW-UP DUE</em>}
-        </span>
-        <span className="cr-chev" aria-hidden>
-          ›
-        </span>
-      </button>
-      {c.phone && (
-        <div className="cr-quick">
-          {c.hasWhatsApp !== "no" && (
-            <a
-              href={`https://wa.me/${toWaNumber(c.phone)}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Icon name="Message" size={18} />
-              <span>WhatsApp</span>
-            </a>
-          )}
-          <a href={`tel:${c.phone}`} aria-label={`Call ${c.name}`}>
-            <Icon name="Phone" size={18} />
-            <span>Call</span>
-          </a>
-        </div>
-      )}
-    </article>
-  );
-}
-
 function ClientScreen({ client: c, date, onUpdate, onBack }) {
   const actions = useContext(ClientActions);
   const print = usePrintDialog();
@@ -3937,67 +3701,19 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
           )}
           {!isLead && (
             <>
-              <section className="cs-card">
-                <header>
-                  <h3>Services ({services.length})</h3>
-                  <div className="cs-service-tools">
-                    <button onClick={() => setSvcEditor({ service: null })}>
-                      + Add service
-                    </button>
-                    {services.length > 1 && (
-                      <button
-                        onClick={() => {
-                          setMergeMode((value) => !value);
-                          setSelectedServices([]);
-                        }}
-                      >
-                        {mergeMode ? "Cancel select" : "Select"}
-                      </button>
-                    )}
-                    {(c.payments || []).length > 1 && (
-                      <button
-                        onClick={() => {
-                          setReceiptMergeMode((value) => !value);
-                          setSelectedPayments([]);
-                        }}
-                      >
-                        {receiptMergeMode
-                          ? "Cancel receipts"
-                          : "Merge receipts…"}
-                      </button>
-                    )}
-                  </div>
-                </header>
-                {mergeMode && (
-                  <div className="cs-merge-tools">
-                    <button
-                      disabled={selectedServices.length < 2}
-                      onClick={() => setMergeOpen(true)}
-                    >
-                      Merge ({selectedServices.length})
-                    </button>
-                    <button
-                      disabled={selectedServices.length < 2}
-                      onClick={() =>
-                        printCombinedInvoice(
-                          { ...c, date },
-                          services.filter((service) =>
-                            selectedServices.includes(service.id),
-                          ),
-                          actions?.assignDocumentNumber,
-                          actions?.profile,
-                          print,
-                        )
-                      }
-                    >
-                      Print combined invoice
-                    </button>
-                  </div>
-                )}
-              </section>
               <section className="cs-card cs-payments">
                 <header>
                   <h3>Payments &amp; receipts</h3>
+                  {(c.payments || []).length > 1 && (
+                    <button
+                      onClick={() => {
+                        setReceiptMergeMode((value) => !value);
+                        setSelectedPayments([]);
+                      }}
+                    >
+                      {receiptMergeMode ? "Cancel receipts" : "Merge receipts"}
+                    </button>
+                  )}
                 </header>
                 <div className="cs-receipt-groups">
                   {(c.receiptGroups || []).map((group) => {
@@ -4134,10 +3850,48 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
               <section className="cs-card cs-services">
                 <header>
                   <h3>Services ({services.length})</h3>
-                  <button onClick={() => setSvcEditor({ service: null })}>
-                    + Add service
-                  </button>
+                  <div className="cs-service-tools">
+                    <button onClick={() => setSvcEditor({ service: null })}>
+                      + Add service
+                    </button>
+                    {services.length > 1 && (
+                      <button
+                        onClick={() => {
+                          setMergeMode((value) => !value);
+                          setSelectedServices([]);
+                        }}
+                      >
+                        {mergeMode ? "Cancel select" : "Select"}
+                      </button>
+                    )}
+                  </div>
                 </header>
+                {mergeMode && (
+                  <div className="cs-merge-tools">
+                    <button
+                      disabled={selectedServices.length < 2}
+                      onClick={() => setMergeOpen(true)}
+                    >
+                      Merge ({selectedServices.length})
+                    </button>
+                    <button
+                      disabled={selectedServices.length < 2}
+                      onClick={() =>
+                        printCombinedInvoice(
+                          { ...c, date },
+                          services.filter((service) =>
+                            selectedServices.includes(service.id),
+                          ),
+                          actions?.assignDocumentNumber,
+                          actions?.profile,
+                          print,
+                        )
+                      }
+                    >
+                      Print combined invoice
+                    </button>
+                  </div>
+                )}
                 {services.length === 0 && (
                   <p className="cs-empty">No services yet. Add service.</p>
                 )}
@@ -4250,55 +4004,6 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
                           </button>
                         )}
                       </div>
-                      {servicePayments(c, service.id)
-                        .filter((payment) => {
-                          const group = (c.receiptGroups || []).find((item) =>
-                            item.paymentIds.includes(payment.id),
-                          );
-                          return (
-                            !group || expandedReceiptGroups.includes(group.id)
-                          );
-                        })
-                        .map((payment) => (
-                          <div
-                            className="cs-payment"
-                            data-payment-id={payment.id}
-                            key={payment.id}
-                          >
-                            <span>
-                              {payment.date || "Date unknown"} ·{" "}
-                              {payment.note || "Payment"} ·{" "}
-                              {fmtUGX(payment.amount)}
-                            </span>
-                            <button
-                              onClick={() =>
-                                openEditPaymentForm(payment, service.id)
-                              }
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className="danger"
-                              onClick={() => deleteClientPayment(payment)}
-                            >
-                              Delete
-                            </button>
-                            <button
-                              onClick={() =>
-                                printReceipt(
-                                  { ...c, date },
-                                  payment,
-                                  actions?.assignDocumentNumber,
-                                  actions?.profile,
-                                  print,
-                                  actions?.showBanner,
-                                )
-                              }
-                            >
-                              Receipt
-                            </button>
-                          </div>
-                        ))}
                     </article>
                   );
                 })}
@@ -4308,17 +4013,6 @@ function ClientScreen({ client: c, date, onUpdate, onBack }) {
         </div>
       </div>
       <section className="cs-danger">
-        {c.paused ? (
-          <button
-            onClick={() =>
-              onUpdate(c.id, { paused: false, pausedAt: "", pauseReason: "" })
-            }
-          >
-            Resume client
-          </button>
-        ) : !isLead ? (
-          <button onClick={() => setPauseOpen(true)}>Pause client</button>
-        ) : null}
         {!isLead && <button onClick={moveBack}>Move back to lead</button>}
         <button className="danger" onClick={deleteThisClient}>
           Delete client
@@ -4741,7 +4435,7 @@ function ClientForm({ onAdd, onClose, onError, initialValues }) {
               color: LIME,
               borderRadius: 8,
               padding: "0 12px",
-              fontSize: 10,
+              fontSize: 12,
               cursor: "pointer",
               fontFamily: FONT,
               fontWeight: "bold",
@@ -4770,7 +4464,7 @@ function ClientForm({ onAdd, onClose, onError, initialValues }) {
               >
                 <div
                   style={{
-                    fontSize: 9,
+                    fontSize: 12,
                     color: LIME,
                     letterSpacing: 1,
                     marginBottom: 6,
@@ -4802,7 +4496,7 @@ function ClientForm({ onAdd, onClose, onError, initialValues }) {
                         style={{
                           padding: "5px 9px",
                           borderRadius: 4,
-                          fontSize: 9,
+                          fontSize: 12,
                           cursor: "pointer",
                           fontFamily: FONT,
                           background: active ? LIME + "22" : SURF2,
@@ -5031,7 +4725,7 @@ function CloudSetupModal({ onClose, onSaved, onError }) {
         </div>
         <div
           style={{
-            fontSize: 10,
+            fontSize: 12,
             color: DIM,
             lineHeight: 1.6,
             marginBottom: 12,
@@ -5084,7 +4778,7 @@ const Pill = ({ label, count, color }) => (
     <div
       style={{ width: 6, height: 6, borderRadius: "50%", background: color }}
     />
-    <span style={{ fontSize: 9, color: DIM }}>{label}</span>
+    <span style={{ fontSize: 12, color: DIM }}>{label}</span>
     <span style={{ fontSize: 12, fontWeight: "bold", color }}>{count}</span>
   </div>
 );
@@ -5093,7 +4787,7 @@ const Pill = ({ label, count, color }) => (
 const TempBadge = ({ temp }) => (
   <span
     style={{
-      fontSize: 8,
+      fontSize: 12,
       padding: "2px 7px",
       borderRadius: 20,
       background: temp === "warm" ? WARM_C + "22" : COLD_C + "22",
@@ -5108,7 +4802,7 @@ const TempBadge = ({ temp }) => (
 const Bdg = ({ children, color }) => (
   <span
     style={{
-      fontSize: 9,
+      fontSize: 12,
       padding: "3px 8px",
       borderRadius: 20,
       background: color + "22",
@@ -5122,7 +4816,7 @@ const Bdg = ({ children, color }) => (
 const Chip = ({ children, style }) => (
   <span
     style={{
-      fontSize: 9,
+      fontSize: 12,
       padding: "3px 8px",
       borderRadius: 4,
       background: SURF2,
@@ -5145,7 +4839,7 @@ const ABtn = ({ children, onClick, color, tc }) => (
       border: "none",
       borderRadius: 6,
       padding: "7px 11px",
-      fontSize: 10,
+      fontSize: 12,
       fontWeight: "bold",
       cursor: "pointer",
       fontFamily: FONT,
@@ -5183,7 +4877,7 @@ const Lbl = ({ children }) => (
   <div
     style={{
       color: DIM,
-      fontSize: 9,
+      fontSize: 12,
       letterSpacing: 2,
       marginBottom: 5,
       marginTop: 13,
@@ -5227,7 +4921,7 @@ const Tog = ({ value, opts, onChange, colors = {} }) => (
           style={{
             padding: "7px 13px",
             borderRadius: 6,
-            fontSize: 11,
+            fontSize: 12,
             cursor: "pointer",
             fontFamily: FONT,
             background: active ? col + "22" : SURF2,
@@ -5249,7 +4943,7 @@ const Empty = ({ text }) => (
     style={{
       textAlign: "center",
       color: DIM,
-      fontSize: 11,
+      fontSize: 12,
       padding: "44px 0",
       letterSpacing: 0.5,
       lineHeight: 1.8,
@@ -5260,230 +4954,6 @@ const Empty = ({ text }) => (
 );
 
 // ── System Flow View
-function SystemFlowView() {
-  return (
-    <div style={{ paddingBottom: 20 }}>
-      {/* Business Design Flow */}
-      <div
-        style={{
-          marginBottom: 24,
-          background: SURF,
-          border: `1px solid ${BORDER}`,
-          borderRadius: 12,
-          padding: "16px",
-        }}
-      >
-        <h3
-          style={{
-            color: LIME,
-            fontSize: 12,
-            letterSpacing: 1,
-            textTransform: "uppercase",
-            borderBottom: `1px solid ${BORDER}`,
-            paddingBottom: 8,
-            marginTop: 0,
-          }}
-        >
-          My Business Design Flow
-        </h3>
-
-        <div style={{ marginTop: 12 }}>
-          <div
-            style={{
-              color: WARM_C,
-              fontSize: 11,
-              fontWeight: "bold",
-              marginBottom: 6,
-            }}
-          >
-            Client Flow
-          </div>
-          <ol
-            style={{
-              fontSize: 11,
-              color: "var(--text-2)",
-              paddingLeft: 20,
-              margin: 0,
-              lineHeight: 1.6,
-            }}
-          >
-            <li>Meet client & Understand problem</li>
-            <li>Show relevant demo</li>
-            <li>Collect details</li>
-            <li>Build/customize</li>
-            <li>Review with client & Launch</li>
-            <li>Offer monthly support</li>
-          </ol>
-        </div>
-
-        <div style={{ marginTop: 16 }}>
-          <div
-            style={{
-              color: COLD_C,
-              fontSize: 11,
-              fontWeight: "bold",
-              marginBottom: 6,
-            }}
-          >
-            My Packages (Examples)
-          </div>
-          <ul
-            style={{
-              fontSize: 11,
-              color: "var(--text-2)",
-              paddingLeft: 20,
-              margin: 0,
-              lineHeight: 1.6,
-            }}
-          >
-            <li>
-              <b>Restaurant Setup:</b> QR Menu, Whatsapp ordering, Flyer,
-              Hosting
-            </li>
-            <li>
-              <b>Salon Setup:</b> Booking, Whatsapp, Gallery
-            </li>
-          </ul>
-        </div>
-
-        <div style={{ marginTop: 16 }}>
-          <div
-            style={{
-              color: GREEN_WA,
-              fontSize: 11,
-              fontWeight: "bold",
-              marginBottom: 6,
-            }}
-          >
-            Reusable Assets (Time Savers)
-          </div>
-          <div
-            style={{ fontSize: 11, color: "var(--text-2)", lineHeight: 1.6 }}
-          >
-            Keep organized: demos, logos, QR templates, flyer templates, code
-            templates.
-          </div>
-        </div>
-
-        <div style={{ marginTop: 16 }}>
-          <div
-            style={{
-              color: LIME,
-              fontSize: 11,
-              fontWeight: "bold",
-              marginBottom: 6,
-            }}
-          >
-            Communication Style
-          </div>
-          <ul
-            style={{
-              fontSize: 11,
-              color: "var(--text-2)",
-              paddingLeft: 20,
-              margin: 0,
-              lineHeight: 1.6,
-            }}
-          >
-            <li>Don't pressure clients</li>
-            <li>Focus on business benefits</li>
-            <li>Guide confidently (Short followups)</li>
-          </ul>
-        </div>
-      </div>
-
-      {/* Recommended Pricing Structure */}
-      <div>
-        <h3
-          style={{
-            color: LIME,
-            fontSize: 12,
-            letterSpacing: 1,
-            textTransform: "uppercase",
-            borderBottom: `1px solid ${BORDER}`,
-            paddingBottom: 8,
-            marginLeft: 4,
-          }}
-        >
-          Recommended Pricing
-        </h3>
-
-        {PACKAGE_TEMPLATES.map((p, i) => (
-          <div
-            key={i}
-            style={{
-              background: SURF,
-              border: `1px solid ${BORDER}`,
-              borderRadius: 10,
-              padding: 14,
-              marginTop: 10,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: "bold",
-                color: "var(--text)",
-                marginBottom: 6,
-              }}
-            >
-              {p.name}
-            </div>
-            <div
-              style={{
-                fontSize: 11,
-                color: DIM,
-                marginBottom: 8,
-                lineHeight: 1.4,
-              }}
-            >
-              Includes: {p.services}
-            </div>
-            <div style={{ fontSize: 12, color: LIME, fontWeight: "bold" }}>
-              Charge: {p.price}
-            </div>
-          </div>
-        ))}
-
-        <div
-          style={{
-            background: SURF2,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 10,
-            padding: 14,
-            marginTop: 10,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: "bold",
-              color: "var(--text)",
-              marginBottom: 6,
-            }}
-          >
-            Monthly Support
-          </div>
-          <div
-            style={{
-              fontSize: 11,
-              color: DIM,
-              marginBottom: 8,
-              lineHeight: 1.4,
-            }}
-          >
-            Includes: updates, small edits, promo banners, monitoring/help
-          </div>
-          <div style={{ fontSize: 12, color: WARM_C, fontWeight: "bold" }}>
-            Charge: 50k - 150k/month (based on activity)
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Ongoing View
 function OngoingView({ clients }) {
   const [filter, setFilter] = useState("Active");
   const ongoing = Object.entries(clients).flatMap(([date, arr]) =>
@@ -5541,7 +5011,7 @@ function ServiceAccountList({ accounts, onUpdate, tone, label }) {
     <div style={{ marginBottom: 18 }}>
       <div
         style={{
-          fontSize: 10,
+          fontSize: 12,
           color: tone,
           letterSpacing: 2,
           marginBottom: 10,
@@ -5581,14 +5051,14 @@ function ServiceAccountList({ accounts, onUpdate, tone, label }) {
                   >
                     {client.name}
                   </div>
-                  <div style={{ fontSize: 10, color: DIM, marginTop: 2 }}>
+                  <div style={{ fontSize: 12, color: DIM, marginTop: 2 }}>
                     {client.business || "No business"} · {service.title}
                   </div>
                 </div>
                 <div
                   style={{
                     textAlign: "right",
-                    fontSize: 10,
+                    fontSize: 12,
                     color: balance > 0 ? WARM_C : LIME,
                     fontWeight: "bold",
                   }}
@@ -5601,7 +5071,7 @@ function ServiceAccountList({ accounts, onUpdate, tone, label }) {
                   display: "flex",
                   justifyContent: "space-between",
                   gap: 8,
-                  fontSize: 10,
+                  fontSize: 12,
                   color: DIM,
                 }}
               >
@@ -5634,7 +5104,7 @@ function ServiceAccountList({ accounts, onUpdate, tone, label }) {
                     color: WARM_C,
                     borderRadius: 5,
                     padding: "5px 8px",
-                    fontSize: 9,
+                    fontSize: 12,
                     cursor: "pointer",
                     fontFamily: FONT,
                   }}
@@ -5721,7 +5191,7 @@ function StatsView({ clients, target }) {
             marginBottom: 8,
           }}
         >
-          <span style={{ fontSize: 10, color: DIM, letterSpacing: 1 }}>
+          <span style={{ fontSize: 12, color: DIM, letterSpacing: 1 }}>
             TODAY'S OUTREACH TARGET
           </span>
           <span
@@ -5765,7 +5235,7 @@ function StatsView({ clients, target }) {
         >
           <div
             style={{
-              fontSize: 8,
+              fontSize: 12,
               color: DIM,
               letterSpacing: 1,
               marginBottom: 4,
@@ -5776,7 +5246,7 @@ function StatsView({ clients, target }) {
           <div style={{ fontSize: 20, fontWeight: "bold", color: LIME }}>
             {todayOutreaches}
           </div>
-          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: DIM, marginTop: 2 }}>
             Target: {target}
           </div>
         </div>
@@ -5790,7 +5260,7 @@ function StatsView({ clients, target }) {
         >
           <div
             style={{
-              fontSize: 8,
+              fontSize: 12,
               color: DIM,
               letterSpacing: 1,
               marginBottom: 4,
@@ -5803,7 +5273,7 @@ function StatsView({ clients, target }) {
           >
             {weekOutreaches}
           </div>
-          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: DIM, marginTop: 2 }}>
             Avg: {(weekOutreaches / 7).toFixed(1)}/day
           </div>
         </div>
@@ -5817,7 +5287,7 @@ function StatsView({ clients, target }) {
         >
           <div
             style={{
-              fontSize: 8,
+              fontSize: 12,
               color: DIM,
               letterSpacing: 1,
               marginBottom: 4,
@@ -5830,7 +5300,7 @@ function StatsView({ clients, target }) {
           >
             {monthOutreaches}
           </div>
-          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: DIM, marginTop: 2 }}>
             Avg: {(monthOutreaches / 30).toFixed(1)}/day
           </div>
         </div>
@@ -5844,7 +5314,7 @@ function StatsView({ clients, target }) {
         >
           <div
             style={{
-              fontSize: 8,
+              fontSize: 12,
               color: DIM,
               letterSpacing: 1,
               marginBottom: 4,
@@ -5857,7 +5327,7 @@ function StatsView({ clients, target }) {
           >
             {yearOutreaches}
           </div>
-          <div style={{ fontSize: 9, color: DIM, marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: DIM, marginTop: 2 }}>
             Total year pitches
           </div>
         </div>
@@ -5873,7 +5343,7 @@ function StatsView({ clients, target }) {
       >
         <div
           style={{
-            fontSize: 10,
+            fontSize: 12,
             color: DIM,
             letterSpacing: 1,
             marginBottom: 12,
@@ -5893,19 +5363,19 @@ function StatsView({ clients, target }) {
             <div style={{ fontSize: 24, fontWeight: "bold", color: LIME }}>
               {conversionRate}%
             </div>
-            <div style={{ fontSize: 9, color: DIM }}>LEADS TO ONGOING</div>
+            <div style={{ fontSize: 12, color: DIM }}>LEADS TO ONGOING</div>
           </div>
           <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 11, color: "var(--text-2)" }}>
+            <div style={{ fontSize: 12, color: "var(--text-2)" }}>
               <b>{totalOngoing}</b> Won Clients
             </div>
-            <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>
               <b>{totalLeads}</b> Active Leads
             </div>
-            <div style={{ fontSize: 10, color: DIM, marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: DIM, marginTop: 4 }}>
               Active balance due: {fmtUGX(activeOutstanding)}
             </div>
-            <div style={{ fontSize: 10, color: DIM, marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: DIM, marginTop: 4 }}>
               Out of {totalOutreaches} total pitches
             </div>
           </div>
@@ -5922,7 +5392,7 @@ function StatsView({ clients, target }) {
       >
         <div
           style={{
-            fontSize: 10,
+            fontSize: 12,
             color: DIM,
             letterSpacing: 1,
             marginBottom: 12,
@@ -5936,7 +5406,7 @@ function StatsView({ clients, target }) {
             style={{
               display: "flex",
               justifyContent: "space-between",
-              fontSize: 10,
+              fontSize: 12,
               marginBottom: 4,
             }}
           >
@@ -5974,7 +5444,7 @@ function StatsView({ clients, target }) {
             style={{
               display: "flex",
               justifyContent: "space-between",
-              fontSize: 10,
+              fontSize: 12,
               marginBottom: 4,
             }}
           >
@@ -6012,7 +5482,7 @@ function StatsView({ clients, target }) {
             style={{
               display: "flex",
               justifyContent: "space-between",
-              fontSize: 10,
+              fontSize: 12,
               marginBottom: 4,
             }}
           >
