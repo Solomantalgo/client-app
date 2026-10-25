@@ -748,6 +748,7 @@ function AppBody() {
   }, [openClient]);
 
   useEffect(() => {
+    syncReadyRef.current = false;
     if (
       !localStorage.getItem(CLOUD_URL_KEY) &&
       !localStorage.getItem(CLOUD_KEY_KEY)
