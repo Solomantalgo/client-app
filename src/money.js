@@ -230,12 +230,19 @@ export function getTransactions(data) {
           })
           .map((payment) => {
             const snap = snapshots[payment.id];
+            const hasReceivedDate = Boolean(payment.date);
             return {
               id: `payment:${payment.id}`,
               type: "income",
               sourceType: "client_payment",
               amount: Math.round(Number(payment.amount) || 0),
+              amountValid:
+                payment.amountValid ??
+                (Number.isSafeInteger(Number(payment.amount)) &&
+                  Number(payment.amount) > 0),
               date: payment.date || date,
+              dateInferred: !hasReceivedDate,
+              reportingClass: "earned",
               accountId: payment.accountId || snap?.accountId || "",
               clientId: client.id,
               clientName: client.business || client.name,
@@ -259,6 +266,10 @@ export function getTransactions(data) {
       id: `income:${income.id}`,
       type: "income",
       sourceType: income.sourceType || "Other",
+      reportingClass: income.reportingClass || "",
+      amountValid:
+        income.amountValid ??
+        (Number.isSafeInteger(Number(income.amount)) && Number(income.amount) > 0),
     });
   for (const expense of data.expenses || [])
     transactions.push({
@@ -266,6 +277,9 @@ export function getTransactions(data) {
       id: `expense:${expense.id}`,
       type: "expense",
       amount: Math.round(Number(expense.amount) || 0),
+      amountValid:
+        expense.amountValid ??
+        (Number.isSafeInteger(Number(expense.amount)) && Number(expense.amount) > 0),
       description: expense.note || expense.description || "Expense",
       bucketId: expense.bucketId || "",
       accountId: expense.accountId || "",

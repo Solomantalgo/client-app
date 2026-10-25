@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 const ConfirmContext = createContext(null);
 
@@ -12,8 +12,12 @@ export function useConfirm() {
 export function ConfirmProvider({ children }) {
   const [dialog, setDialog] = useState(null);
   const [typed, setTyped] = useState("");
+  const dialogRef = useRef(null);
+  const cancelRef = useRef(null);
+  const previousFocusRef = useRef(null);
   const ask = (options) =>
     new Promise((resolve) => {
+      previousFocusRef.current = document.activeElement;
       setTyped("");
       setDialog({ ...options, resolve });
     });
@@ -21,6 +25,43 @@ export function ConfirmProvider({ children }) {
     dialog?.resolve(result);
     setDialog(null);
   };
+
+  useEffect(() => {
+    if (!dialog) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    cancelRef.current?.focus();
+
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        dialog.resolve(false);
+        setDialog(null);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = dialogRef.current?.querySelectorAll(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]',
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      if (previousFocusRef.current?.isConnected) previousFocusRef.current.focus();
+    };
+  }, [dialog]);
 
   return (
     <ConfirmContext.Provider value={ask}>
@@ -30,7 +71,12 @@ export function ConfirmProvider({ children }) {
           className="ce-overlay confirm-overlay"
           onMouseDown={(event) => event.target === event.currentTarget && finish(false)}
         >
-          <section className="ce-dialog confirm-dialog" role="alertdialog" aria-modal="true">
+          <section
+            ref={dialogRef}
+            className="ce-dialog confirm-dialog"
+            role="alertdialog"
+            aria-modal="true"
+          >
             <h2>{dialog.title}</h2>
             <p>{dialog.body}</p>
             {dialog.requireText && (
@@ -40,7 +86,7 @@ export function ConfirmProvider({ children }) {
               </label>
             )}
             <footer>
-              <button autoFocus onClick={() => finish(false)}>
+              <button ref={cancelRef} onClick={() => finish(false)}>
                 Cancel
               </button>
               {dialog.altAction && (

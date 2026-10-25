@@ -89,6 +89,16 @@ const paths = {
       <path d="m9 18 6-6-6-6" />
     </>
   ),
+  ChevronLeft: (
+    <>
+      <path d="m15 18-6-6 6-6" />
+    </>
+  ),
+  ChevronDown: (
+    <>
+      <path d="m6 9 6 6 6-6" />
+    </>
+  ),
   Phone: (
     <>
       <path d="M5 3h4l2 5-3 2a14 14 0 0 0 6 6l2-3 5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2Z" />

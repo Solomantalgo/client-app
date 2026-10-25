@@ -31,6 +31,42 @@ test("business settings round-trip through normalizeData", () => {
   assert.equal(normalized.settings.business.termsText, "Net 21");
 });
 
+test("monthly earnings classifications and month targets round-trip", () => {
+  const normalized = normalizeData({
+    settings: { monthlyEarningsTargets: { "2026-10": 650000 } },
+    finance: {
+      manualIncome: [
+        {
+          id: "gift-1",
+          amount: 75000,
+          date: "2026-10-02",
+          sourceType: "Gift",
+          reportingClass: "other",
+          origin: "current",
+        },
+      ],
+    },
+  });
+  assert.equal(normalized.settings.monthlyEarningsTargets["2026-10"], 650000);
+  assert.equal(normalized.finance.manualIncome[0].reportingClass, "other");
+});
+
+test("monthly reporting metadata preserves existing income allocation records", () => {
+  const income = {
+    id: "income-1",
+    amount: 100,
+    date: "2026-10-02",
+    origin: "current",
+    allocations: [{ bucketId: "living", percentage: 60, amount: 60 }],
+    unallocated: 40,
+  };
+  const normalized = normalizeData({ finance: { manualIncome: [income] } });
+  const { amountValid, reportingClass, ...persisted } = normalized.finance.manualIncome[0];
+  assert.deepEqual(persisted, income);
+  assert.equal(amountValid, true);
+  assert.equal(reportingClass, "");
+});
+
 test("deleting the last service stays empty after normalizeData", () => {
   const client = {
     id: "c1",
@@ -282,6 +318,7 @@ test("paused clients are excluded from active balances and resume restores them"
     id: "c1",
     name: "Ada",
     status: "ongoing",
+    totalAgreedPrice: 100,
     services: [{ id: "s1", agreedPrice: 100, items: [] }],
     payments: [{ id: "p1", serviceId: "s1", amount: 20 }],
   };
@@ -299,6 +336,33 @@ test("paused clients are excluded from active balances and resume restores them"
     clients: { day: [{ ...paused, paused: false }] },
   });
   assert.equal(outstandingBalances(resumed.clients)[0].balance, 80);
+  assert.equal(resumed.clients.day[0].status, "ongoing");
+  assert.equal(resumed.clients.day[0].paused, false);
+  assert.deepEqual(
+    resumed.clients.day[0].services.map(({ id, agreedPrice, items }) => ({
+      id,
+      agreedPrice,
+      items,
+    })),
+    paused.services.map(({ id, agreedPrice, items }) => ({
+      id,
+      agreedPrice,
+      items,
+    })),
+  );
+  assert.deepEqual(
+    resumed.clients.day[0].payments.map(({ id, serviceId, amount }) => ({
+      id,
+      serviceId,
+      amount,
+    })),
+    paused.payments.map(({ id, serviceId, amount }) => ({
+      id,
+      serviceId,
+      amount,
+    })),
+  );
+  assert.equal(resumed.clients.day[0].totalAgreedPrice, paused.totalAgreedPrice);
 });
 
 test("merging and unmerging services restores service snapshots and payment assignments", () => {

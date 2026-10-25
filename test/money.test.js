@@ -9,7 +9,12 @@ import {
   getBalances,
   getTransactions,
 } from "../src/money.js";
-import { chooseSnapshot, hasSavedContent } from "../src/sync.js";
+import {
+  chooseSnapshot,
+  hasDrasticRemoteShrink,
+  hasSavedContent,
+  snapshotRecordCount,
+} from "../src/sync.js";
 
 test("reference allocation splits UGX 1,000,000 as configured", () => {
   const { allocations, unallocated } = allocateAmount(
@@ -201,6 +206,50 @@ test("a newer empty remote state is kept from hiding local data unless marked as
   assert.equal(chooseSnapshot(local, remote), "local");
   remote.meta.emptyStateResetAt = "2026-10-07T12:00:00Z";
   assert.equal(chooseSnapshot(local, remote), "remote");
+});
+
+test("a drastically smaller newer cloud snapshot requires a recovery choice", () => {
+  const local = {
+    clients: {
+      July: Array.from({ length: 20 }, (_, index) => ({
+        id: `client-${index}`,
+        services: [{ id: `service-${index}` }],
+        payments: [{ id: `payment-${index}` }],
+      })),
+    },
+    expenses: Array.from({ length: 12 }, (_, index) => ({ id: `expense-${index}` })),
+    finance: { manualIncome: [{ id: "income-1" }, { id: "income-2" }] },
+    outreach: { logs: Array.from({ length: 12 }, (_, index) => ({ id: `log-${index}` })) },
+    meta: { updatedAt: "2026-10-20T00:00:00.000Z" },
+  };
+  const remote = {
+    clients: { today: [{ id: "one-client", services: [], payments: [] }] },
+    expenses: [],
+    finance: { manualIncome: [] },
+    outreach: { logs: [] },
+    meta: { updatedAt: "2026-10-23T00:00:00.000Z" },
+  };
+
+  assert.equal(snapshotRecordCount(local), 86);
+  assert.equal(snapshotRecordCount(remote), 1);
+  assert.equal(hasDrasticRemoteShrink(local, remote), true);
+  assert.equal(hasDrasticRemoteShrink(local, local), false);
+  const emptyRemote = {
+    clients: {},
+    expenses: [],
+    finance: { manualIncome: [] },
+    outreach: { logs: [] },
+    meta: { updatedAt: "2026-10-23T00:00:00.000Z" },
+  };
+  assert.equal(
+    hasDrasticRemoteShrink(local, emptyRemote),
+    true,
+    "a newer empty cloud snapshot requires review instead of hiding local records",
+  );
+  emptyRemote.meta.emptyStateResetAt = "2026-10-24T00:00:00.000Z";
+  assert.equal(hasDrasticRemoteShrink(local, emptyRemote), false);
+  remote.meta.emptyStateResetAt = "2026-10-24T00:00:00.000Z";
+  assert.equal(hasDrasticRemoteShrink(local, remote), false);
 });
 
 test("bucket reset zeroes the old balance without changing available money", () => {

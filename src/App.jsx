@@ -1,14 +1,22 @@
-import {
+﻿import {
   useState,
   useEffect,
   useCallback,
-  useContext,
   useRef,
   useMemo,
 } from "react";
 import { createClient } from "@supabase/supabase-js";
 import MoneyView from "./money/MoneyView.jsx";
 import PlaybookView from "./views/PlaybookView.jsx";
+import TodayPage from "./views/TodayView.jsx";
+import OutreachPage from "./views/OutreachView.jsx";
+import DuePage from "./views/DueView.jsx";
+import OngoingPage from "./views/OngoingView.jsx";
+import HistoryPage from "./views/HistoryView.jsx";
+import StatsPage from "./views/StatsView.jsx";
+import ClientScreen from "./clients/ClientScreen.jsx";
+import ClientForm from "./clients/ClientForm.jsx";
+import { getInvoiceNum, getReceiptNum } from "./clients/documentNumbers.js";
 import AppShell from "./AppShell.jsx";
 import "./AppShell.css";
 import {
@@ -16,35 +24,26 @@ import {
   allocateAmount,
   applyBucketLoanRepayment,
 } from "./money.js";
-import { chooseSnapshot, hasSavedContent } from "./sync.js";
+import {
+  chooseSnapshot,
+  hasDrasticRemoteShrink,
+  hasSavedContent,
+  snapshotRecordCount,
+} from "./sync.js";
 import {
   clientTotals,
-  getClientServices,
-  mergeServices,
-  outstandingBalances,
   removeClientFromData,
-  serviceTotal,
-  unmergeService,
 } from "./clients.js";
-import ClientRow from "./clients/ClientRow.jsx";
 import { ClientActions } from "./clients/ClientActions.js";
 import { normalizeData, touchData } from "./data.js";
-import { upsertService, removeService, paymentsForService } from "./clients.js";
-import { ClientInfoEditor, ServiceEditor } from "./ClientEditors.jsx";
 import "./ClientCard.css";
 import { ConfirmProvider, useConfirm } from "./Confirm.jsx";
-import { buildInvoiceHtml, buildReceiptHtml } from "./documents.js";
 import { buildIndex, resolveSearchTarget, runSearch } from "./search.js";
-import { PrintDialogProvider, usePrintDialog } from "./PrintDialog.jsx";
+import { PrintDialogProvider } from "./PrintDialog.jsx";
 import BusinessProfile from "./settings/BusinessProfile.jsx";
+import CloudSync from "./settings/CloudSync.jsx";
 import SearchPanel from "./SearchPanel.jsx";
-import {
-  addDays,
-  fmtDate,
-  fmtUGX,
-  todayStr,
-  toWaNumber,
-} from "./lib/format.js";
+import { fmtUGX, todayStr } from "./lib/format.js";
 
 let logoDataUriRequest;
 
@@ -65,7 +64,6 @@ function loadLogoDataUri() {
   }
   return logoDataUriRequest;
 }
-
 // ── Storage Polyfill
 if (typeof window !== "undefined" && !window.storage) {
   window.storage = {
@@ -82,13 +80,6 @@ if (typeof window !== "undefined" && !window.storage) {
 // ── Design Tokens
 const LIME = "var(--lime)";
 const BG = "var(--bg)";
-const SURF = "var(--s1)";
-const SURF2 = "var(--s2)";
-const BORDER = "var(--line)";
-const DIM = "var(--text-3)";
-const WARM_C = "var(--warn)";
-const COLD_C = "var(--blue)";
-const GREEN_WA = "var(--lime)";
 const FONT = "var(--font-mono)";
 
 const PACKAGE_TEMPLATES = [
@@ -454,9 +445,6 @@ function getAreaBySequence(seq) {
 }
 
 // ── Helpers
-const newPaymentId = () =>
-  globalThis.crypto?.randomUUID?.() ||
-  `payment-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 const KEY = "solo-sales-os-v1";
 const CLOUD_CONFIG_KEY = "solo-sales-cloud-config";
 const CLOUD_URL_KEY = `${CLOUD_CONFIG_KEY}:url`;
@@ -602,6 +590,15 @@ async function persistBackup(data) {
     /* local storage may be unavailable */
   }
 }
+async function persistConflictCopy(data, label) {
+  const key = `${BACKUP_KEY}:conflict:${Date.now()}:${label}`;
+  try {
+    await window.storage.set(key, JSON.stringify(normalizeData(data)));
+    return key;
+  } catch {
+    return "";
+  }
+}
 
 function exportBackup(data) {
   const normalized = normalizeData(data);
@@ -658,6 +655,11 @@ function AppBody() {
     },
   );
   const [cloudStatus, setCloudStatus] = useState("Local only");
+  const [syncConflict, setSyncConflict] = useState(null);
+  const [syncConflictOpen, setSyncConflictOpen] = useState(false);
+  const [syncConflictBusy, setSyncConflictBusy] = useState(false);
+  const syncConflictRef = useRef(false);
+  const syncReadyRef = useRef(false);
   const today = todayStr();
   const searchIndex = useMemo(() => (data ? buildIndex(data) : []), [data]);
 
@@ -768,6 +770,7 @@ function AppBody() {
 
       if (!cloudConfig) {
         setCloudStatus("Cloud not configured");
+        syncReadyRef.current = true;
         return;
       }
 
@@ -775,6 +778,17 @@ function AppBody() {
       if (!alive) return;
       if (remoteResult.ok && remoteResult.data) {
         const remote = remoteResult.data;
+        if (hasDrasticRemoteShrink(base, remote)) {
+          syncConflictRef.current = true;
+          setSyncConflict({ local: base, remote });
+          setSyncConflictOpen(true);
+          setCloudStatus("Review data versions");
+          setBanner(
+            "Cloud has far fewer records. This device’s data is preserved until you choose a version.",
+          );
+          syncReadyRef.current = true;
+          return;
+        }
         const winner =
           chooseSnapshot(base, remote, local !== null) === "remote"
             ? remote
@@ -809,6 +823,7 @@ function AppBody() {
         if (remoteResult.reason)
           setBanner(`Cloud setup issue: ${remoteResult.reason}`);
       }
+      syncReadyRef.current = true;
     };
 
     init();
@@ -821,9 +836,21 @@ function AppBody() {
     if (!cloudConfig || !data) return;
 
     const autoSync = async () => {
+      if (!syncReadyRef.current || syncConflictRef.current) return;
       const remoteResult = await loadRemote(cloudConfig);
+      if (syncConflictRef.current) return;
       if (remoteResult.ok && remoteResult.data) {
         const remote = remoteResult.data;
+        if (hasDrasticRemoteShrink(data, remote)) {
+          syncConflictRef.current = true;
+          setSyncConflict({ local: data, remote });
+          setSyncConflictOpen(true);
+          setCloudStatus("Review data versions");
+          setBanner(
+            "Cloud has far fewer records. This device’s data is preserved until you choose a version.",
+          );
+          return;
+        }
         if (chooseSnapshot(data, remote) === "remote") {
           if (hasSavedContent(data)) await persistBackup(data);
           setData(remote);
@@ -861,6 +888,21 @@ function AppBody() {
       const normalized = touchData(next);
       setData(normalized);
       await persist(normalized);
+
+      if (syncConflictRef.current) {
+        setSyncConflict((conflict) =>
+          conflict ? { ...conflict, local: normalized } : conflict,
+        );
+        setCloudStatus("Cloud conflict needs review");
+        setBanner("Saved on this device. Review the cloud version before syncing.");
+        return normalized;
+      }
+
+      if (!syncReadyRef.current) {
+        setCloudStatus("Cloud connection checking");
+        setBanner("Saved on this device while cloud data is checked.");
+        return normalized;
+      }
 
       if (!cloudConfig) {
         setCloudStatus("Cloud not configured");
@@ -902,6 +944,14 @@ function AppBody() {
 
   const syncNow = useCallback(async () => {
     if (!data) return;
+    if (!syncReadyRef.current) {
+      setBanner("Cloud data is still loading. Try syncing again shortly.");
+      return;
+    }
+    if (syncConflictRef.current) {
+      setBanner("Choose a data version before syncing.");
+      return;
+    }
     const local = normalizeData(data);
     setBanner("Syncing...");
 
@@ -911,7 +961,19 @@ function AppBody() {
     }
 
     const remoteResult = await loadRemote(cloudConfig);
+    if (syncConflictRef.current) {
+      setBanner("Choose a data version before syncing.");
+      return;
+    }
     const remote = remoteResult.ok ? remoteResult.data : null;
+    if (remote && hasDrasticRemoteShrink(local, remote)) {
+      syncConflictRef.current = true;
+      setSyncConflict({ local, remote });
+      setSyncConflictOpen(true);
+      setCloudStatus("Review data versions");
+      setBanner("Cloud has far fewer records. This device’s data is preserved.");
+      return;
+    }
     const winner = chooseSnapshot(local, remote) === "remote" ? remote : local;
     if (winner === remote && hasSavedContent(local)) await persistBackup(local);
     setData(winner);
@@ -926,6 +988,69 @@ function AppBody() {
       setBanner(`Sync failed: ${result.reason}`);
     }
   }, [cloudConfig, data]);
+
+  const resolveSnapshotConflict = async (choice) => {
+    if (!syncConflict || syncConflictBusy) return;
+    const localCount = snapshotRecordCount(syncConflict.local);
+    const remoteCount = snapshotRecordCount(syncConflict.remote);
+    const useLocal = choice === "local";
+    const approved = await ask({
+      title: useLocal
+        ? "Restore this device’s records to cloud?"
+        : "Use the cloud records on this device?",
+      body: useLocal
+        ? `This replaces the smaller cloud snapshot (${remoteCount} records) with this device’s ${localCount} records.`
+        : `This replaces this device’s ${localCount} records with the smaller cloud snapshot (${remoteCount} records). A local copy will be kept first.`,
+      confirmLabel: useLocal ? "Restore local records" : "Use cloud records",
+      requireText: useLocal ? "RESTORE" : "USE CLOUD",
+    });
+    if (!approved) return;
+
+    setSyncConflictBusy(true);
+    try {
+      if (useLocal) {
+        const remoteCopyKey = await persistConflictCopy(
+          syncConflict.remote,
+          "remote",
+        );
+        if (!remoteCopyKey) {
+          setBanner("Could not preserve the cloud copy. No version was changed.");
+          return;
+        }
+        const recovered = touchData(syncConflict.local);
+        await persist(recovered);
+        setData(recovered);
+        setSyncConflict({ local: recovered, remote: syncConflict.remote });
+        const result = await persistRemote(cloudConfig, recovered);
+        if (!result.ok) {
+          setBanner(`Local records are preserved. Cloud restore failed: ${result.reason}`);
+          return;
+        }
+        syncConflictRef.current = false;
+        setSyncConflict(null);
+        setSyncConflictOpen(false);
+        setCloudStatus("Cloud synced");
+        setBanner("Local records restored to cloud. The previous cloud copy was saved on this device.");
+        return;
+      }
+
+      const localCopyKey = await persistConflictCopy(syncConflict.local, "local");
+      if (!localCopyKey) {
+        setBanner("Could not preserve the local copy. No version was changed.");
+        return;
+      }
+      const remote = normalizeData(syncConflict.remote);
+      await persist(remote);
+      setData(remote);
+      syncConflictRef.current = false;
+      setSyncConflict(null);
+      setSyncConflictOpen(false);
+      setCloudStatus("Cloud connected");
+      setBanner("Cloud records loaded. The previous local copy was saved on this device.");
+    } finally {
+      setSyncConflictBusy(false);
+    }
+  };
 
   const addClient = (fields) => {
     const client = {
@@ -1496,8 +1621,65 @@ function AppBody() {
         openId: current?.id || null,
       }}
     >
+      {syncConflict && !syncConflictOpen && (
+        <div className="sync-conflict-reminder" role="status">
+          <span>Cloud sync is paused until you review the two data versions.</span>
+          <button onClick={() => setSyncConflictOpen(true)}>
+            Review versions
+          </button>
+        </div>
+      )}
+      {syncConflict && syncConflictOpen && (
+        <div className="sync-conflict-overlay">
+          <section
+            className="sync-conflict-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="sync-conflict-title"
+          >
+            <p className="label">Recovery choice</p>
+            <h2 id="sync-conflict-title">This device and cloud have different records</h2>
+            <p>
+              This device has {snapshotRecordCount(syncConflict.local)} records.
+              The cloud has {snapshotRecordCount(syncConflict.remote)}. The
+              device version remains loaded and automatic sync is paused.
+            </p>
+            <p>
+              Choose which version to keep. The other version is copied to this
+              device before replacement.
+            </p>
+            <div className="sync-conflict-actions">
+              <button
+                className="btn btn-primary"
+                disabled={syncConflictBusy}
+                onClick={() => resolveSnapshotConflict("local")}
+              >
+                Restore local version to cloud
+              </button>
+              <button
+                className="btn btn-secondary"
+                disabled={syncConflictBusy}
+                onClick={() => resolveSnapshotConflict("remote")}
+              >
+                Use cloud version on this device
+              </button>
+              <button
+                className="btn btn-ghost"
+                disabled={syncConflictBusy}
+                onClick={() => setSyncConflictOpen(false)}
+              >
+                Decide later
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <AppShell
         tab={tab}
+        moneyTab={moneyRoute.tab}
+        onSelectMoneySection={(section) =>
+          setMoneyRoute({ ...moneyRoute, tab: section, query: "", form: "" })
+        }
         setTab={selectTab}
         pendingCount={pending.length}
         cloudStatus={cloudStatus}
@@ -1528,24 +1710,42 @@ function AppBody() {
         }
       >
         {tab === "today" && (
-          <TodayView
+          <TodayPage
             outreach={data.outreach}
             clients={data.clients}
+            data={data}
             target={data.target}
             today={today}
+            pendingCount={pending.length}
+            profile={data.settings?.business}
+            areas={OUTREACH_AREAS}
             onTargetChange={setTarget}
             onMarkDone={markOutreachDone}
             onAddLead={openAddLeadFromOutreach}
+            onLogLead={() =>
+              openAddLeadFromOutreach(
+                getAreaBySequence(data.outreach?.physicalPointer || 120),
+                "physical",
+              )
+            }
+            onOpenDue={() => setTab("followups")}
+            onOpenMoney={(section) => {
+              setMoneyRoute({ tab: section, query: "" });
+              setTab("payments");
+            }}
           />
         )}
         {tab === "outreach" && (
-          <OutreachView
+          <OutreachPage
             outreach={data.outreach}
             clients={data.clients}
             target={data.target}
             today={today}
+            areas={OUTREACH_AREAS}
             onUpdate={(id, u) => updateClient(today, id, u)}
             onUndoLog={undoOutreachLog}
+            onMarkDone={markOutreachDone}
+            onAddLead={openAddLeadFromOutreach}
             onOpenAddClient={() => {
               setFormDefaults(null);
               setShowForm(true);
@@ -1553,7 +1753,7 @@ function AppBody() {
           />
         )}
         {tab === "history" && (
-          <HistoryView
+          <HistoryPage
             clients={data.clients}
             sortedDates={sortedDates}
             today={today}
@@ -1561,15 +1761,22 @@ function AppBody() {
             onSelect={setHistSel}
           />
         )}
-        {tab === "followups" && <FollowupsView pending={pending} />}
-        {tab === "ongoing" && <OngoingView clients={data.clients} />}
+        {tab === "followups" && <DuePage clients={data.clients} today={today} />}
+        {tab === "ongoing" && <OngoingPage clients={data.clients} />}
         {tab === "payments" && (
           <MoneyView
-            key={`${moneyRoute.tab}-${moneyRoute.query}-${moneyRoute.form || ""}`}
+          key={`${moneyRoute.tab}-${moneyRoute.query}`}
             data={data}
             query={moneyRoute.query}
             initialTab={moneyRoute.tab}
             initialForm={moneyRoute.form || ""}
+            initialMonth={moneyRoute.month || ""}
+            onInitialFormConsumed={() =>
+              setMoneyRoute((current) => ({ ...current, form: "" }))
+            }
+            onSelectMoneySection={(section) =>
+              setMoneyRoute({ ...moneyRoute, tab: section, query: "", form: "" })
+            }
             onSave={save}
             onUpdateClient={updateClient}
             onAddExpense={addExpense}
@@ -1579,7 +1786,7 @@ function AppBody() {
           />
         )}
         {tab === "stats" && (
-          <StatsView clients={data.clients} target={data.target} />
+          <StatsPage clients={data.clients} target={data.target} />
         )}
         {tab === "flow" && <PlaybookView packageTemplates={PACKAGE_TEMPLATES} />}
       </AppShell>
@@ -1591,6 +1798,7 @@ function AppBody() {
       )}
       {showForm && (
         <ClientForm
+          packageTemplates={PACKAGE_TEMPLATES}
           initialValues={formDefaults}
           onAdd={addClient}
           onError={setBanner}
@@ -1603,6 +1811,8 @@ function AppBody() {
       {showCloudSetup && (
         <CloudSetupModal
           onClose={() => setShowCloudSetup(false)}
+          cloudStatus={cloudStatus}
+          onSync={syncNow}
           onError={setBanner}
           onSaved={(config) => {
             setCloudConfig(config);
@@ -1634,3887 +1844,22 @@ export default function App() {
   );
 }
 
-function TargetCtrl({ target, onChange }) {
-  return (
-    <div style={{ textAlign: "right" }}>
-      <div
-        style={{ color: DIM, fontSize: 12, letterSpacing: 2, marginBottom: 4 }}
-      >
-        DAILY TARGET
-      </div>
-      <div
-        style={{
-          display: "flex",
-          gap: 6,
-          alignItems: "center",
-          justifyContent: "flex-end",
-        }}
-      >
-        <SmBtn onClick={() => onChange(target - 1)}>−</SmBtn>
-        <span
-          style={{
-            color: LIME,
-            fontWeight: "bold",
-            fontSize: 22,
-            minWidth: 26,
-            textAlign: "center",
-          }}
-        >
-          {target}
-        </span>
-        <SmBtn onClick={() => onChange(target + 1)}>+</SmBtn>
-      </div>
-    </div>
-  );
-}
-
-// ── Today View
-function TodayView({
-  outreach,
-  clients,
-  target,
-  today,
-  onMarkDone,
-  onAddLead,
-  onTargetChange,
-}) {
-  const [activeTrack, setActiveTrack] = useState("physical");
-
-  const remoteSeq = outreach?.remotePointer || 1;
-  const physicalSeq = outreach?.physicalPointer || 120;
-
-  const remoteArea = getAreaBySequence(remoteSeq);
-  const physicalArea = getAreaBySequence(physicalSeq);
-
-  const todayClients = clients[today] || [];
-  const pct = Math.min(1, todayClients.length / target);
-  const hit = todayClients.length >= target;
-  const allClients = Object.entries(clients).flatMap(([date, entries]) =>
-    entries.map((client) => ({ ...client, date })),
-  );
-  const overdueLeads = allClients
-    .filter(
-      (client) =>
-        client.status !== "ongoing" &&
-        client.followUpDate &&
-        client.followUpDate < today &&
-        client.followUp !== "done" &&
-        !client.paused,
-    )
-    .map((client) => ({
-      ...client,
-      overdueDays: Math.floor(
-        (Date.parse(`${today}T00:00:00Z`) -
-          Date.parse(`${client.followUpDate}T00:00:00Z`)) /
-          86400000,
-      ),
-    }))
-    .sort((a, b) => b.overdueDays - a.overdueDays)
-    .slice(0, 5);
-  const biggestBalances = outstandingBalances(clients)
-    .sort((a, b) => b.balance - a.balance)
-    .slice(0, 3);
-
-  return (
-    <div className="today-layout">
-      <div
-        className="today-main"
-        style={{ display: "flex", flexDirection: "column", gap: 16 }}
-      >
-        {/* Today's Pitches & Leads Summary Card */}
-        <div
-          style={{
-            background: SURF,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 12,
-            padding: "14px 16px",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 8,
-            }}
-          >
-            <span
-              style={{
-                fontSize: 12,
-                color: LIME,
-                letterSpacing: 1,
-                fontWeight: "bold",
-              }}
-            >
-              TODAY'S PITCHES & LEADS
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              {todayClients.length} / {target} {hit ? "✓ HIT" : ""}
-              <TargetCtrl target={target} onChange={onTargetChange} />
-            </div>
-          </div>
-          <div
-            style={{
-              background: BORDER,
-              borderRadius: 4,
-              height: 5,
-              overflow: "hidden",
-              marginBottom: 12,
-            }}
-          >
-            <div
-              style={{
-                height: "100%",
-                borderRadius: 4,
-                background: LIME,
-                width: `${pct * 100}%`,
-                transition: "width 0.4s ease",
-              }}
-            />
-          </div>
-          <div style={{ display: "flex", gap: 16 }}>
-            <Pill
-              label="Warm"
-              count={todayClients.filter((c) => c.temp === "warm").length}
-              color={WARM_C}
-            />
-            <Pill
-              label="Cold"
-              count={todayClients.filter((c) => c.temp === "cold").length}
-              color={COLD_C}
-            />
-            <Pill
-              label="Pending"
-              count={todayClients.filter((c) => c.followUp === "needed").length}
-              color={LIME}
-            />
-            <Pill
-              label="Done"
-              count={todayClients.filter((c) => c.followUp === "done").length}
-              color={DIM}
-            />
-          </div>
-        </div>
-
-        {/* Track Navigation Sub-Tabs */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div
-            style={{
-              fontSize: 12,
-              color: DIM,
-              letterSpacing: 1,
-              fontWeight: "bold",
-            }}
-          >
-            OUTREACH TRACK TARGETS
-          </div>
-          <div
-            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}
-          >
-            <button
-              onClick={() => setActiveTrack("physical")}
-              style={{
-                padding: "10px 8px",
-                borderRadius: 8,
-                cursor: "pointer",
-                fontFamily: FONT,
-                fontSize: 12,
-                fontWeight: "bold",
-                background: activeTrack === "physical" ? COLD_C + "22" : SURF2,
-                border:
-                  activeTrack === "physical"
-                    ? `1px solid ${COLD_C}`
-                    : `1px solid ${BORDER}`,
-                color: activeTrack === "physical" ? COLD_C : DIM,
-                transition: "all 0.15s",
-              }}
-            >
-              Physical (Seq #{physicalSeq})
-            </button>
-            <button
-              onClick={() => setActiveTrack("remote")}
-              style={{
-                padding: "10px 8px",
-                borderRadius: 8,
-                cursor: "pointer",
-                fontFamily: FONT,
-                fontSize: 12,
-                fontWeight: "bold",
-                background: activeTrack === "remote" ? WARM_C + "22" : SURF2,
-                border:
-                  activeTrack === "remote"
-                    ? `1px solid ${WARM_C}`
-                    : `1px solid ${BORDER}`,
-                color: activeTrack === "remote" ? WARM_C : DIM,
-                transition: "all 0.15s",
-              }}
-            >
-              Remote (Seq #{remoteSeq})
-            </button>
-          </div>
-        </div>
-
-        {/* Single Active Card View */}
-        {activeTrack === "physical" && (
-          <div
-            style={{
-              background: SURF,
-              border: `1px solid ${COLD_C}44`,
-              borderTop: `3px solid ${COLD_C}`,
-              borderRadius: 12,
-              padding: "16px",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  color: COLD_C,
-                  fontWeight: "bold",
-                  letterSpacing: 1,
-                  textTransform: "uppercase",
-                }}
-              >
-                Physical Outreach — Today
-              </span>
-              <span
-                style={{
-                  fontSize: 12,
-                  color: DIM,
-                  fontFamily: FONT,
-                  background: SURF2,
-                  padding: "2px 6px",
-                  borderRadius: 4,
-                }}
-              >
-                Seq #{physicalSeq}
-              </span>
-            </div>
-
-            <div
-              style={{
-                fontSize: 22,
-                fontWeight: "bold",
-                color: "var(--text)",
-                marginBottom: 4,
-              }}
-            >
-              {physicalArea.area}
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                gap: 6,
-                flexWrap: "wrap",
-                marginBottom: 14,
-              }}
-            >
-              <Bdg color={COLD_C}>{physicalArea.division} Division</Bdg>
-              <Chip style={{ background: SURF2, color: "var(--text-2)" }}>
-                Month {physicalArea.month} · Week {physicalArea.week}
-              </Chip>
-            </div>
-
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                onClick={() => onMarkDone("physical")}
-                style={{
-                  flex: 1,
-                  background: "var(--lime)",
-                  color: "var(--on-lime)",
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "11px 14px",
-                  fontSize: 12,
-                  fontWeight: "bold",
-                  cursor: "pointer",
-                  fontFamily: FONT,
-                  letterSpacing: 0.5,
-                }}
-              >
-                ✓ MARK DONE
-              </button>
-              <button
-                onClick={() => onAddLead(physicalArea, "physical")}
-                style={{
-                  background: SURF2,
-                  border: `1px solid ${BORDER}`,
-                  color: "var(--text)",
-                  borderRadius: 8,
-                  padding: "11px 12px",
-                  fontSize: 12,
-                  cursor: "pointer",
-                  fontFamily: FONT,
-                }}
-              >
-                + Add Lead
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activeTrack === "remote" && (
-          <div
-            style={{
-              background: SURF,
-              border: `1px solid ${WARM_C}44`,
-              borderTop: `3px solid ${WARM_C}`,
-              borderRadius: 12,
-              padding: "16px",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  color: WARM_C,
-                  fontWeight: "bold",
-                  letterSpacing: 1,
-                  textTransform: "uppercase",
-                }}
-              >
-                Remote Outreach — Today
-              </span>
-              <span
-                style={{
-                  fontSize: 12,
-                  color: DIM,
-                  fontFamily: FONT,
-                  background: SURF2,
-                  padding: "2px 6px",
-                  borderRadius: 4,
-                }}
-              >
-                Seq #{remoteSeq}
-              </span>
-            </div>
-
-            <div
-              style={{
-                fontSize: 22,
-                fontWeight: "bold",
-                color: "var(--text)",
-                marginBottom: 4,
-              }}
-            >
-              {remoteArea.area}
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                gap: 6,
-                flexWrap: "wrap",
-                marginBottom: 14,
-              }}
-            >
-              <Bdg color={WARM_C}>{remoteArea.division} Division</Bdg>
-              <Chip style={{ background: SURF2, color: "var(--text-2)" }}>
-                Month {remoteArea.month} · Week {remoteArea.week}
-              </Chip>
-            </div>
-
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                onClick={() => onMarkDone("remote")}
-                style={{
-                  flex: 1,
-                  background: "var(--lime)",
-                  color: "var(--on-lime)",
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "11px 14px",
-                  fontSize: 12,
-                  fontWeight: "bold",
-                  cursor: "pointer",
-                  fontFamily: FONT,
-                  letterSpacing: 0.5,
-                }}
-              >
-                ✓ MARK DONE
-              </button>
-              <button
-                onClick={() => onAddLead(remoteArea, "remote")}
-                style={{
-                  background: SURF2,
-                  border: `1px solid ${BORDER}`,
-                  color: "var(--text)",
-                  borderRadius: 8,
-                  padding: "11px 12px",
-                  fontSize: 12,
-                  cursor: "pointer",
-                  fontFamily: FONT,
-                }}
-              >
-                + Add Lead
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-      <aside className="today-attention card">
-        <h2>Needs attention</h2>
-        <h3>Overdue follow-ups</h3>
-        {overdueLeads.length ? (
-          overdueLeads.map((client) => (
-            <div className="attention-row" key={client.id}>
-              <div>
-                <b>{client.name}</b>
-                <span className="chip chip-warn">{client.temp || "warm"}</span>
-                <small>{client.overdueDays} days overdue</small>
-              </div>
-              <div className="attention-links">
-                {client.phone && (
-                  <>
-                    {client.hasWhatsApp !== "no" && (
-                      <a
-                        aria-label={`WhatsApp ${client.name}`}
-                        href={`https://wa.me/${toWaNumber(client.phone)}`}
-                      >
-                        WA
-                      </a>
-                    )}
-                    <a
-                      aria-label={`Call ${client.name}`}
-                      href={`tel:${client.phone}`}
-                    >
-                      Call
-                    </a>
-                  </>
-                )}
-              </div>
-            </div>
-          ))
-        ) : (
-          <p>No overdue follow-ups.</p>
-        )}
-        <h3>Largest balances</h3>
-        {biggestBalances.length ? (
-          biggestBalances.map((balance) => (
-            <div className="attention-balance" key={balance.id}>
-              <span>
-                {balance.name}
-                <small>{balance.service}</small>
-              </span>
-              <b>{fmtUGX(balance.balance)}</b>
-            </div>
-          ))
-        ) : (
-          <p>No outstanding balances.</p>
-        )}
-      </aside>
-    </div>
-  );
-}
-
-// ── Outreach View
-function OutreachView({
-  outreach,
-  clients,
-  target,
-  today,
-  onUpdate,
-  onUndoLog,
-  onOpenAddClient,
-}) {
-  void onUpdate;
-  const [filterTrack, setFilterTrack] = useState("all");
-  const [showMap, setShowMap] = useState(false);
-  const [showLogs, setShowLogs] = useState(false);
-
-  const remoteSeq = outreach?.remotePointer || 1;
-  const physicalSeq = outreach?.physicalPointer || 120;
-  const logs = outreach?.logs || [];
-  const laps = outreach?.laps || 0;
-
-  const remoteArea = getAreaBySequence(remoteSeq);
-  const physicalArea = getAreaBySequence(physicalSeq);
-
-  const todayClients = clients[today] || [];
-  const pct = Math.min(1, todayClients.length / target);
-  const hit = todayClients.length >= target;
-
-  const filteredLogs = logs.filter((l) => {
-    if (filterTrack === "all") return true;
-    if (filterTrack === "physical") return l.track === "physical";
-    if (filterTrack === "remote") return l.track === "remote";
-    if (filterTrack === "laps") return l.track === "lap";
-    return true;
-  });
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Pitch & Clients Today Section */}
-      <div
-        style={{
-          background: SURF,
-          border: `1px solid ${BORDER}`,
-          borderRadius: 12,
-          padding: "14px 16px",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 8,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 12,
-              color: LIME,
-              letterSpacing: 1,
-              fontWeight: "bold",
-            }}
-          >
-            TODAY'S PITCHES & LEADS
-          </span>
-          <span
-            style={{
-              fontSize: 12,
-              color: hit ? LIME : "var(--text)",
-              fontWeight: "bold",
-            }}
-          >
-            {todayClients.length} / {target} {hit ? "✓ TARGET HIT" : ""}
-          </span>
-        </div>
-        <div
-          style={{
-            background: BORDER,
-            borderRadius: 4,
-            height: 5,
-            overflow: "hidden",
-            marginBottom: 12,
-          }}
-        >
-          <div
-            style={{
-              height: "100%",
-              borderRadius: 4,
-              background: LIME,
-              width: `${pct * 100}%`,
-              transition: "width 0.4s ease",
-            }}
-          />
-        </div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <div style={{ display: "flex", gap: 12 }}>
-            <Pill
-              label="Warm"
-              count={todayClients.filter((c) => c.temp === "warm").length}
-              color={WARM_C}
-            />
-            <Pill
-              label="Cold"
-              count={todayClients.filter((c) => c.temp === "cold").length}
-              color={COLD_C}
-            />
-            <Pill
-              label="Pending"
-              count={todayClients.filter((c) => c.followUp === "needed").length}
-              color={LIME}
-            />
-          </div>
-          <button
-            onClick={onOpenAddClient}
-            style={{
-              background: LIME,
-              color: "var(--on-lime)",
-              border: "none",
-              borderRadius: 6,
-              padding: "6px 12px",
-              fontSize: 12,
-              fontWeight: "bold",
-              fontFamily: FONT,
-              cursor: "pointer",
-            }}
-          >
-            + Add Client
-          </button>
-        </div>
-      </div>
-
-      {/* Added Clients List for Today */}
-      <div>
-        {todayClients.length === 0 ? (
-          <Empty text="No clients recorded yet today. Use + Add Client above or + Add Lead on Today's cards." />
-        ) : (
-          todayClients.map((c) => (
-            <ClientRow key={c.id} client={c} date={today} />
-          ))
-        )}
-      </div>
-
-      {/* Rotation Tracker Progress Overview */}
-      <div
-        style={{
-          background: SURF,
-          border: `1px solid ${BORDER}`,
-          borderRadius: 12,
-          padding: "14px 16px",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 10,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: 12,
-                color: LIME,
-                letterSpacing: 2,
-                fontWeight: "bold",
-              }}
-            >
-              ROTATION PLAN TRACKING
-            </div>
-            <div
-              style={{
-                fontSize: 13,
-                fontWeight: "bold",
-                color: "var(--text)",
-                marginTop: 2,
-              }}
-            >
-              120-Area Master Sequence Progress
-            </div>
-          </div>
-          <span
-            style={{
-              fontSize: 12,
-              background: LIME + "22",
-              color: LIME,
-              padding: "4px 10px",
-              borderRadius: 20,
-              fontFamily: FONT,
-              fontWeight: "bold",
-            }}
-          >
-            Lap {laps + 1}
-          </span>
-        </div>
-
-        {/* Remote Progress Bar */}
-        <div style={{ marginBottom: 10 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: 12,
-              marginBottom: 4,
-            }}
-          >
-            <span style={{ color: WARM_C, fontWeight: "bold" }}>
-              Remote Track (Forward)
-            </span>
-            <span style={{ color: DIM, fontFamily: FONT }}>
-              {remoteSeq} / 120 ({remoteArea.area})
-            </span>
-          </div>
-          <div
-            style={{
-              background: BORDER,
-              height: 6,
-              borderRadius: 3,
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                background: WARM_C,
-                height: "100%",
-                width: `${(remoteSeq / 120) * 100}%`,
-                transition: "width 0.3s ease",
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Physical Progress Bar */}
-        <div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: 12,
-              marginBottom: 4,
-            }}
-          >
-            <span style={{ color: COLD_C, fontWeight: "bold" }}>
-              Physical Track (Backward)
-            </span>
-            <span style={{ color: DIM, fontFamily: FONT }}>
-              {121 - physicalSeq} / 120 ({physicalArea.area})
-            </span>
-          </div>
-          <div
-            style={{
-              background: BORDER,
-              height: 6,
-              borderRadius: 3,
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                background: COLD_C,
-                height: "100%",
-                width: `${((121 - physicalSeq) / 120) * 100}%`,
-                transition: "width 0.3s ease",
-              }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* 120-Area Rotation Plan Explorer Accordion */}
-      <div
-        style={{
-          background: SURF,
-          border: `1px solid ${BORDER}`,
-          borderRadius: 10,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          onClick={() => setShowMap((v) => !v)}
-          style={{
-            padding: "12px 16px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            cursor: "pointer",
-          }}
-        >
-          <span
-            style={{ fontSize: 12, fontWeight: "bold", color: "var(--text)" }}
-          >
-            View Full 120-Area Rotation Plan
-          </span>
-          <span style={{ color: LIME, fontSize: 12, fontFamily: FONT }}>
-            {showMap ? "Hide ▲" : "Show ▼"}
-          </span>
-        </div>
-
-        {showMap && (
-          <div
-            style={{
-              padding: "12px 16px 16px",
-              borderTop: `1px solid ${BORDER}`,
-              maxHeight: 340,
-              overflowY: "auto",
-            }}
-          >
-            <div style={{ fontSize: 12, color: DIM, marginBottom: 10 }}>
-              Master sequence 1–120. Active track positions are highlighted.
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {OUTREACH_AREAS.map((a) => {
-                const isRemoteHere = a.sequence === remoteSeq;
-                const isPhysicalHere = a.sequence === physicalSeq;
-                return (
-                  <div
-                    key={a.sequence}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "36px 1fr auto",
-                      alignItems: "center",
-                      gap: 8,
-                      background:
-                        isRemoteHere || isPhysicalHere ? SURF2 : "transparent",
-                      border:
-                        isRemoteHere && isPhysicalHere
-                          ? `1px solid ${LIME}`
-                          : isRemoteHere
-                            ? `1px solid ${WARM_C}`
-                            : isPhysicalHere
-                              ? `1px solid ${COLD_C}`
-                              : `1px solid transparent`,
-                      padding: "6px 8px",
-                      borderRadius: 6,
-                      fontSize: 12,
-                    }}
-                  >
-                    <span style={{ color: DIM, fontFamily: FONT }}>
-                      #{a.sequence}
-                    </span>
-                    <div>
-                      <span
-                        style={{
-                          color: "var(--text)",
-                          fontWeight:
-                            isRemoteHere || isPhysicalHere ? "bold" : "normal",
-                        }}
-                      >
-                        {a.area}
-                      </span>
-                      <span style={{ color: DIM, fontSize: 12, marginLeft: 6 }}>
-                        ({a.division})
-                      </span>
-                    </div>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      {isRemoteHere && (
-                        <span
-                          style={{
-                            background: WARM_C,
-                            color: "var(--on-lime)",
-                            fontSize: 12,
-                            padding: "1px 5px",
-                            borderRadius: 4,
-                            fontWeight: "bold",
-                          }}
-                        >
-                          REMOTE
-                        </span>
-                      )}
-                      {isPhysicalHere && (
-                        <span
-                          style={{
-                            background: COLD_C,
-                            color: "var(--on-lime)",
-                            fontSize: 12,
-                            padding: "1px 5px",
-                            borderRadius: 4,
-                            fontWeight: "bold",
-                          }}
-                        >
-                          PHYSICAL
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* History Log Section with Easy Hide / Show Button */}
-      <div
-        style={{
-          background: SURF,
-          border: `1px solid ${BORDER}`,
-          borderRadius: 10,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          onClick={() => setShowLogs((v) => !v)}
-          style={{
-            padding: "12px 16px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            cursor: "pointer",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span
-              style={{ fontSize: 12, fontWeight: "bold", color: "var(--text)" }}
-            >
-              Outreach History Logs
-            </span>
-            <span
-              style={{
-                fontSize: 12,
-                background: SURF2,
-                color: LIME,
-                padding: "2px 7px",
-                borderRadius: 10,
-                fontFamily: FONT,
-                fontWeight: "bold",
-              }}
-            >
-              {logs.length}
-            </span>
-          </div>
-          <span style={{ color: LIME, fontSize: 12, fontFamily: FONT }}>
-            {showLogs ? "Hide Logs ▲" : "Show Logs ▼"}
-          </span>
-        </div>
-
-        {showLogs && (
-          <div
-            style={{
-              padding: "12px 16px 16px",
-              borderTop: `1px solid ${BORDER}`,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 12,
-                flexWrap: "wrap",
-                gap: 8,
-              }}
-            >
-              <div style={{ fontSize: 12, color: DIM, letterSpacing: 1 }}>
-                FILTER LOG TRACK:
-              </div>
-              <div style={{ display: "flex", gap: 4 }}>
-                {[
-                  { k: "all", l: "All" },
-                  { k: "physical", l: "Physical" },
-                  { k: "remote", l: "Remote" },
-                  { k: "laps", l: "Laps" },
-                ].map(({ k, l }) => (
-                  <button
-                    key={k}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFilterTrack(k);
-                    }}
-                    style={{
-                      padding: "4px 8px",
-                      fontSize: 12,
-                      fontFamily: FONT,
-                      borderRadius: 4,
-                      cursor: "pointer",
-                      background: filterTrack === k ? LIME + "22" : SURF2,
-                      border:
-                        filterTrack === k
-                          ? `1px solid ${LIME}`
-                          : `1px solid ${BORDER}`,
-                      color: filterTrack === k ? LIME : DIM,
-                    }}
-                  >
-                    {l}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {filteredLogs.length === 0 ? (
-              <Empty text="No history logs recorded for this filter." />
-            ) : (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                  maxHeight: 360,
-                  overflowY: "auto",
-                }}
-              >
-                {filteredLogs.map((log) => {
-                  const isLap = log.track === "lap";
-                  const isRem = log.track === "remote";
-                  const col = isLap ? LIME : isRem ? WARM_C : COLD_C;
-                  const dateStr = log.completedAt
-                    ? new Date(log.completedAt).toLocaleString("en-UG", {
-                        month: "short",
-                        day: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                    : "";
-                  return (
-                    <div
-                      key={log.id}
-                      style={{
-                        background: SURF2,
-                        border: `1px solid ${BORDER}`,
-                        borderLeft: `3px solid ${col}`,
-                        borderRadius: 8,
-                        padding: "10px 12px",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <div>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 6,
-                            marginBottom: 2,
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontSize: 12,
-                              background: col + "22",
-                              color: col,
-                              padding: "2px 6px",
-                              borderRadius: 4,
-                              fontWeight: "bold",
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            {isLap
-                              ? "Lap event"
-                              : isRem
-                                ? "Remote"
-                                : "Physical"}
-                          </span>
-                          <span
-                            style={{
-                              fontSize: 12,
-                              fontWeight: "bold",
-                              color: "var(--text)",
-                            }}
-                          >
-                            {log.area}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 12, color: DIM }}>
-                          {log.division && `${log.division} Division • `}
-                          {log.sequence ? `Seq #${log.sequence} • ` : ""}
-                          {dateStr}
-                        </div>
-                        {log.note && (
-                          <div
-                            style={{ fontSize: 12, color: LIME, marginTop: 3 }}
-                          >
-                            {log.note}
-                          </div>
-                        )}
-                      </div>
-
-                      {!isLap && (
-                        <button
-                          onClick={() => onUndoLog(log.id)}
-                          style={{
-                            background: BG,
-                            border: `1px solid ${BORDER}`,
-                            color: DIM,
-                            borderRadius: 4,
-                            padding: "4px 8px",
-                            fontSize: 12,
-                            cursor: "pointer",
-                            fontFamily: FONT,
-                          }}
-                        >
-                          Undo
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── History View
-function HistoryView({ clients, sortedDates, today, selected, onSelect }) {
-  const dates = sortedDates.filter((d) => d !== today);
-  if (selected) {
-    const dc = clients[selected] || [];
-    return (
-      <div>
-        <button
-          onClick={() => onSelect(null)}
-          style={{
-            background: "none",
-            border: "none",
-            color: LIME,
-            fontFamily: FONT,
-            fontSize: 12,
-            cursor: "pointer",
-            letterSpacing: 1,
-            padding: 0,
-            marginBottom: 12,
-          }}
-        >
-          ← BACK
-        </button>
-        <div
-          style={{
-            fontSize: 13,
-            fontWeight: "bold",
-            marginBottom: 14,
-            color: "var(--text)",
-          }}
-        >
-          {fmtDate(selected)}
-        </div>
-        {dc.length === 0 ? (
-          <Empty text="No clients for this day." />
-        ) : (
-          dc.map((c) => <ClientRow key={c.id} client={c} date={selected} />)
-        )}
-      </div>
-    );
-  }
-  if (dates.length === 0) return <Empty text="No past sessions yet." />;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {dates.map((date) => {
-        const dc = clients[date] || [];
-        const warm = dc.filter((c) => c.temp === "warm").length;
-        const pend = dc.filter((c) => c.followUp === "needed").length;
-        return (
-          <div
-            key={date}
-            onClick={() => onSelect(date)}
-            style={{
-              background: SURF,
-              border: `1px solid ${BORDER}`,
-              borderRadius: 10,
-              padding: "14px 16px",
-              cursor: "pointer",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <div>
-              <div
-                style={{ fontSize: 12, fontWeight: "bold", marginBottom: 3 }}
-              >
-                {fmtDate(date)}
-              </div>
-              <div style={{ fontSize: 12, color: DIM }}>
-                {dc.length} client{dc.length !== 1 ? "s" : ""}
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              {warm > 0 && <Bdg color={WARM_C}>{warm} warm</Bdg>}
-              {pend > 0 && <Bdg color={LIME}>{pend} pending</Bdg>}
-              <span style={{ color: DIM, fontSize: 18 }}>›</span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── Follow-Ups View
-function FollowupsView({ pending }) {
-  if (pending.length === 0)
-    return <Empty text="All caught up. No pending follow-ups." />;
-
-  const today = todayStr();
-  const overdue = pending.filter(
-    (c) => c.followUpDate && today >= c.followUpDate,
-  );
-  const regular = pending.filter(
-    (c) =>
-      !c.followUpDate || (c.followUp === "needed" && today < c.followUpDate),
-  );
-
-  return (
-    <div>
-      {overdue.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <div
-            style={{
-              fontSize: 12,
-              color: WARM_C,
-              letterSpacing: 2,
-              marginBottom: 12,
-              fontWeight: "bold",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: WARM_C,
-              }}
-            />
-            TIMELINE EXPIRED / RE-FOLLOWUP DUE ({overdue.length})
-          </div>
-          {overdue.map((c) => (
-            <ClientRow key={c.id + c.date} client={c} date={c.date} highlight />
-          ))}
-        </div>
-      )}
-
-      {regular.length > 0 && (
-        <div>
-          <div
-            style={{
-              fontSize: 12,
-              color: LIME,
-              letterSpacing: 2,
-              marginBottom: 12,
-              fontWeight: "bold",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: LIME,
-              }}
-            />
-            ACTIVE LEADS ({regular.length})
-          </div>
-          {regular.map((c) => (
-            <ClientRow
-              key={c.id + c.date}
-              client={c}
-              date={c.date}
-              highlight={false}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Print Helpers
-function getInvoiceNum(client, service) {
-  const year = client.date
-    ? client.date.split("-")[0]
-    : new Date().getFullYear();
-  const seq = String(service?.id || client.id)
-    .slice(-3)
-    .replace(/\D/g, "0")
-    .padStart(3, "0");
-  return `SWD-${year}-${seq}`;
-}
-function getReceiptNum(payment) {
-  const year = payment.date
-    ? payment.date.split("-")[0]
-    : new Date().getFullYear();
-  const seq = String(payment.id).slice(-3).replace(/\D/g, "0").padStart(3, "0");
-  return `RCP-${year}-${seq}`;
-}
-function servicePayments(client, serviceId) {
-  const payments = client.payments || [];
-  return serviceId
-    ? payments.filter(
-        (p) =>
-          p.serviceId === serviceId ||
-          (!p.serviceId && serviceId === getClientServices(client)[0]?.id),
-      )
-    : payments;
-}
-function servicePaid(client, serviceId) {
-  return servicePayments(client, serviceId).reduce(
-    (sum, p) => sum + (Number(p.amount) || 0),
-    0,
-  );
-}
-function documentDueDate(issueDate, days = 14) {
-  const date = new Date(`${issueDate}T00:00:00`);
-  date.setDate(date.getDate() + (Number(days) || 14));
-  return date.toISOString().slice(0, 10);
-}
-function printInvoice(
-  client,
-  service = null,
-  assignNumber = null,
-  profile = {},
-  print = null,
-  notify = () => {},
-) {
-  const activeService = service || getClientServices(client)[0];
-  if (!activeService) {
-    notify("Add a service before creating an invoice.");
-    return;
-  }
-  if (!print) return;
-  const number =
-    activeService.invoiceNo ||
-    assignNumber?.(client.date, client.id, "invoice", activeService.id) ||
-    getInvoiceNum(client, activeService);
-  const total = serviceTotal(activeService, client);
-  const paid = servicePaid(client, activeService.id);
-  const sourceItems = (activeService.items || []).length
-    ? activeService.items
-    : [
-        {
-          title: activeService.title || client.servicesToOffer || "Services",
-          price: total,
-        },
-      ];
-  const itemized = sourceItems.some((item) => Number(item.price) > 0);
-  const items = itemized
-    ? sourceItems.map((item) => ({
-        title: item.title,
-        amount: Number(item.price) || 0,
-      }))
-    : [
-        {
-          title:
-            sourceItems
-              .map((item) => item.title)
-              .filter(Boolean)
-              .join(", ") || activeService.title,
-          amount: total,
-        },
-      ];
-  const model = {
-    number,
-    date: activeService.createdAt || client.date || todayStr(),
-    dueDate: documentDueDate(
-      activeService.createdAt || client.date || todayStr(),
-      profile.invoiceDueDays,
-    ),
-    clientName: client.name,
-    business: client.business || "",
-    items,
-    total,
-    paid,
-    balance: total - paid,
-    stamp:
-      paid <= 0
-        ? "AWAITING PAYMENT"
-        : paid >= total
-          ? "PAID IN FULL"
-          : "PARTIAL PAYMENT",
-  };
-  print({
-    docType: "Invoice",
-    profile,
-    build: (format, business) => buildInvoiceHtml(model, format, business),
-  });
-}
-
-function printReceipt(
-  client,
-  payment,
-  assignNumber = null,
-  profile = {},
-  print = null,
-  notify = () => {},
-) {
-  const service =
-    getClientServices(client).find((item) => item.id === payment.serviceId) ||
-    getClientServices(client)[0];
-  if (!service) {
-    notify("This payment has no service to include on a receipt.");
-    return;
-  }
-  if (!print) return;
-  const number =
-    payment.receiptNo ||
-    assignNumber?.(client.date, client.id, "receipt", payment.id) ||
-    getReceiptNum(payment);
-  const model = {
-    number,
-    date: payment.date || client.date || todayStr(),
-    invoiceNo: service.invoiceNo || getInvoiceNum(client, service),
-    clientName: client.name,
-    business: client.business || "",
-    lines: [
-      {
-        title: payment.note || service.title || "Payment",
-        amount: payment.amount,
-      },
-    ],
-    total: payment.amount,
-    received: payment.amount,
-    invoiceTotal: serviceTotal(service, client),
-    previouslyPaid: Math.max(
-      0,
-      servicePaid(client, service.id) - Number(payment.amount || 0),
-    ),
-    stamp: "PAYMENT RECEIVED",
-    method:
-      payment.accountName ||
-      profile.accounts?.find((account) => account.id === payment.accountId)
-        ?.name ||
-      payment.accountId,
-  };
-  print({
-    docType: "Receipt",
-    profile,
-    build: (format, business) => buildReceiptHtml(model, format, business),
-  });
-}
-
-function printReceiptGroup(
-  client,
-  group,
-  assignNumber,
-  profile = {},
-  print = null,
-) {
-  const payments = (client.payments || []).filter((payment) =>
-    group.paymentIds.includes(payment.id),
-  );
-  if (!print || payments.length < 2) return;
-  const number =
-    group.receiptNo ||
-    assignNumber?.(client.date, client.id, "receiptGroup", group.id) ||
-    getReceiptNum(group);
-  const total = payments.reduce(
-    (sum, payment) => sum + (Number(payment.amount) || 0),
-    0,
-  );
-  const services = [...new Set(payments.map((payment) => payment.serviceId))]
-    .map((serviceId) =>
-      getClientServices(client).find((item) => item.id === serviceId),
-    )
-    .filter(Boolean);
-  const invoiceTotal = services.reduce(
-    (sum, service) => sum + serviceTotal(service, client),
-    0,
-  );
-  const totalPaid = services.reduce(
-    (sum, service) => sum + servicePaid(client, service.id),
-    0,
-  );
-  const model = {
-    number,
-    date: group.createdAt?.slice(0, 10) || todayStr(),
-    clientName: client.name,
-    business: client.business || "",
-    lines: payments.map((payment) => ({
-      title: payment.note || "Payment",
-      amount: payment.amount,
-    })),
-    total,
-    received: total,
-    invoiceTotal,
-    previouslyPaid: Math.max(0, totalPaid - total),
-    invoiceNo: services[0]?.invoiceNo || "",
-    payments: payments.map((payment) => ({
-      date: payment.date || "",
-      method:
-        payment.accountName ||
-        profile.accounts?.find((account) => account.id === payment.accountId)
-          ?.name ||
-        payment.accountId,
-      amount: payment.amount,
-    })),
-  };
-  print({
-    docType: "Receipt",
-    profile,
-    build: (format, business) => buildReceiptHtml(model, format, business),
-  });
-}
-
-function printCombinedInvoice(
-  client,
-  services,
-  assignNumber,
-  profile = {},
-  print = null,
-) {
-  if (services.length < 2) return;
-  if (!print) return;
-  const number =
-    services[0].invoiceNo ||
-    assignNumber?.(client.date, client.id, "invoice", services[0].id) ||
-    getInvoiceNum(client, services[0]);
-  const total = services.reduce(
-    (sum, service) => sum + serviceTotal(service, client),
-    0,
-  );
-  const paid = services.reduce(
-    (sum, service) => sum + servicePaid(client, service.id),
-    0,
-  );
-  const model = {
-    number,
-    date: todayStr(),
-    dueDate: documentDueDate(todayStr(), profile.invoiceDueDays),
-    clientName: client.name,
-    business: client.business || "",
-    items: services.map((service) => ({
-      title: service.title,
-      amount: serviceTotal(service, client),
-    })),
-    total,
-    paid,
-    balance: total - paid,
-    stamp:
-      paid >= total
-        ? "PAID IN FULL"
-        : paid > 0
-          ? "PARTIAL PAYMENT"
-          : "AWAITING PAYMENT",
-  };
-  print({
-    docType: "Invoice",
-    profile,
-    build: (format, business) => buildInvoiceHtml(model, format, business),
-  });
-}
-// ── Client Card
-function ClientScreen({ client: c, date, onUpdate, onBack }) {
-  const actions = useContext(ClientActions);
-  const print = usePrintDialog();
-  const ask = useConfirm();
-  const [infoOpen, setInfoOpen] = useState(false);
-  const [svcEditor, setSvcEditor] = useState(null);
-  const [isWinForm, setIsWinForm] = useState(false);
-  const [dealPrice, setDealPrice] = useState(
-    c.quotedPrice ? c.quotedPrice.replace(/\D/g, "") : "",
-  );
-  const [deposit, setDeposit] = useState("0");
-  const [isRescheduleForm, setIsRescheduleForm] = useState(false);
-  const [newFollowDate, setNewFollowDate] = useState(
-    c.followUpDate || todayStr(),
-  );
-  const [isPaymentForm, setIsPaymentForm] = useState(false);
-  const [paymentAmt, setPaymentAmt] = useState("");
-  const [paymentNote, setPaymentNote] = useState("");
-  const [paymentServiceId, setPaymentServiceId] = useState("");
-  const [editingPaymentId, setEditingPaymentId] = useState("");
-  const [pauseOpen, setPauseOpen] = useState(false);
-  const [pauseReason, setPauseReason] = useState("No payment");
-  const [pauseNote, setPauseNote] = useState("");
-  const [mergeMode, setMergeMode] = useState(false);
-  const [selectedServices, setSelectedServices] = useState([]);
-  const [mergeOpen, setMergeOpen] = useState(false);
-  const [mergeTitle, setMergeTitle] = useState("");
-  const [selectedPayments, setSelectedPayments] = useState([]);
-  const [receiptMergeMode, setReceiptMergeMode] = useState(false);
-  const [expandedReceiptGroups, setExpandedReceiptGroups] = useState([]);
-  const today = todayStr();
-  const isLead = c.status !== "ongoing";
-  const services = getClientServices(c);
-  const totals = clientTotals(c);
-  const textToMatch = c.businessType || c.business || "";
-  const packageMatch = PACKAGE_TEMPLATES.find((item) =>
-    item.match.test(textToMatch),
-  );
-  const saveInfo = (fields) => {
-    onUpdate(c.id, fields);
-    setInfoOpen(false);
-  };
-  const saveService = (draft) => {
-    onUpdate(c.id, upsertService(c, draft));
-    setSvcEditor(null);
-  };
-  const saveMerge = () => {
-    try {
-      onUpdate(c.id, mergeServices(c, selectedServices, mergeTitle));
-      setMergeOpen(false);
-      setMergeMode(false);
-      setSelectedServices([]);
-      setMergeTitle("");
-    } catch (error) {
-      actions?.showBanner?.(error.message);
-    }
-  };
-  const unmerge = async (service) => {
-    const titles = (service.mergedFrom || [])
-      .map((item) => item.title)
-      .join(", ");
-    if (
-      !(await ask({
-        title: "Unmerge this service?",
-        body: `This restores ${titles}. Edits made to the merged service will be discarded.`,
-        confirmLabel: "Unmerge",
-      }))
-    )
-      return;
-    onUpdate(c.id, unmergeService(c, service.id));
-  };
-  const mergeReceiptGroup = () => {
-    if (selectedPayments.length < 2) return;
-    const id = `receipt-group-${Date.now()}`;
-    const group = {
-      id,
-      paymentIds: selectedPayments,
-      createdAt: new Date().toISOString(),
-      receiptNo: "",
-    };
-    onUpdate(c.id, { receiptGroups: [...(c.receiptGroups || []), group] });
-    setSelectedPayments([]);
-  };
-  const unmergeReceiptGroup = async (group) => {
-    if (
-      !(await ask({
-        title: "Unmerge this receipt group?",
-        body: "The original payment entries remain unchanged in Money.",
-        confirmLabel: "Unmerge receipts",
-      }))
-    )
-      return;
-    onUpdate(c.id, {
-      receiptGroups: (c.receiptGroups || []).filter(
-        (item) => item.id !== group.id,
-      ),
-    });
-  };
-  const deleteService = async (service) => {
-    const linked = paymentsForService(c, service.id);
-    const amount = linked.reduce(
-      (sum, payment) => sum + (Number(payment.amount) || 0),
-      0,
-    );
-    const message = linked.length
-      ? `Delete "${service.title}"? This also deletes ${linked.length} payment(s) totalling ` +
-        `${fmtUGX(amount)} from this client and the Money ledger. This cannot be undone.`
-      : `Delete "${service.title}"? This cannot be undone.`;
-    if (
-      !(await ask({
-        title: `Delete ${service.title}?`,
-        body: message,
-        confirmLabel: "Delete service",
-        requireText: linked.length ? service.title : undefined,
-      }))
-    )
-      return;
-    onUpdate(
-      c.id,
-      removeService(c, service.id),
-      `Deleted service ${service.title}`,
-    );
-    setSvcEditor(null);
-  };
-  const deleteThisClient = () => {
-    actions?.deleteClient(date, c.id);
-  };
-  const openPaymentForm = (serviceId = "") => {
-    if (c.paused) actions?.showBanner?.("Client is paused");
-    setEditingPaymentId("");
-    setPaymentAmt("");
-    setPaymentNote("");
-    setPaymentServiceId(serviceId || services[0]?.id || "");
-    setIsPaymentForm(true);
-  };
-  const openEditPaymentForm = (payment, serviceId = "") => {
-    setEditingPaymentId(payment.id);
-    setPaymentAmt(String(payment.amount || ""));
-    setPaymentNote(payment.note || "");
-    setPaymentServiceId(
-      serviceId || payment.serviceId || services[0]?.id || "",
-    );
-    setIsPaymentForm(true);
-  };
-  const savePayment = () => {
-    const amount = Number(paymentAmt) || 0;
-    if (amount <= 0) {
-      actions?.showBanner?.("Please enter a valid payment amount.");
-      return;
-    }
-    const serviceId = paymentServiceId || services[0]?.id || "";
-    const payments = editingPaymentId
-      ? (c.payments || []).map((payment) =>
-          payment.id === editingPaymentId
-            ? {
-                ...payment,
-                amount,
-                note: paymentNote.trim() || "Payment",
-                serviceId,
-              }
-            : payment,
-        )
-      : [
-          ...(c.payments || []),
-          {
-            id: newPaymentId(),
-            date: today,
-            amount,
-            note: paymentNote.trim() || "Payment",
-            serviceId,
-          },
-        ];
-    onUpdate(c.id, {
-      payments,
-      amountPaid: payments.reduce(
-        (sum, payment) => sum + (Number(payment.amount) || 0),
-        0,
-      ),
-    });
-    setIsPaymentForm(false);
-  };
-  const deleteClientPayment = async (payment) => {
-    if (
-      !(await ask({
-        title: "Delete this payment?",
-        body: "Its Money ledger entry will also be removed.",
-      }))
-    )
-      return;
-    const payments = (c.payments || []).filter(
-      (item) => item.id !== payment.id,
-    );
-    onUpdate(
-      c.id,
-      {
-        payments,
-        receiptGroups: (c.receiptGroups || []).map((group) => ({
-          ...group,
-          paymentIds: group.paymentIds.filter((id) => id !== payment.id),
-        })),
-        amountPaid: payments.reduce(
-          (sum, item) => sum + (Number(item.amount) || 0),
-          0,
-        ),
-      },
-      `Deleted payment ${payment.note || "entry"}`,
-    );
-  };
-  const markDone = async () => {
-    const followUp = c.followUp === "needed" ? "done" : "needed";
-    if (followUp === "done" && c.followUpDate) {
-      const keep = await ask({
-        title: "Keep the follow-up reminder?",
-        body: "Keep the current follow-up date or cancel to clear it.",
-        confirmLabel: "Keep reminder",
-      });
-      onUpdate(c.id, { followUp, ...(keep ? {} : { followUpDate: "" }) });
-    } else onUpdate(c.id, { followUp });
-  };
-  const convert = () => {
-    const price = Number(dealPrice) || 0;
-    const paid = Number(deposit) || 0;
-    if (price <= 0) {
-      actions?.showBanner?.("Please enter a valid agreed price.");
-      return;
-    }
-    const serviceId = newPaymentId();
-    const service = {
-      id: serviceId,
-      title:
-        c.package && c.package !== "Undecided" ? c.package : "Client Service",
-      categories: c.servicesToOffer || "",
-      agreedPrice: price,
-      dueDate: "",
-      status: "active",
-      createdAt: today,
-    };
-    const payments =
-      paid > 0
-        ? [
-            {
-              id: newPaymentId(),
-              date: today,
-              amount: paid,
-              note: "Initial Deposit",
-              serviceId,
-            },
-          ]
-        : [];
-    onUpdate(c.id, {
-      status: "ongoing",
-      totalAgreedPrice: price,
-      amountPaid: paid,
-      services: [service],
-      payments,
-      followUp: "done",
-    });
-    setIsWinForm(false);
-  };
-  const saveReschedule = () => {
-    if (!newFollowDate) {
-      actions?.showBanner?.("Please select a date.");
-      return;
-    }
-    onUpdate(c.id, { followUp: "done", followUpDate: newFollowDate });
-    setIsRescheduleForm(false);
-  };
-  const reschedule = (days) => {
-    const followUpDate = addDays(days);
-    onUpdate(c.id, { followUp: "done", followUpDate });
-    setIsRescheduleForm(false);
-  };
-  const moveBack = async () => {
-    const paid = (c.payments || []).reduce(
-      (sum, payment) => sum + (Number(payment.amount) || 0),
-      0,
-    );
-    if (
-      await ask({
-        title: "Move back to lead?",
-        body: `This wipes ${services.length} service(s) and ${c.payments?.length || 0} payments (${fmtUGX(paid)}).`,
-        confirmLabel: "Move back",
-        requireText: c.name,
-      })
-    ) {
-      onUpdate(
-        c.id,
-        {
-          status: "lead",
-          totalAgreedPrice: "",
-          amountPaid: 0,
-          payments: [],
-          services: [],
-          followUp: "needed",
-        },
-        "Moved client back to lead",
-      );
-    }
-  };
-  const suggest = () => {
-    if (!textToMatch) {
-      actions?.showBanner?.(
-        "This client needs a business name or type to auto-suggest.",
-      );
-      return;
-    }
-    if (packageMatch)
-      onUpdate(c.id, {
-        servicesToOffer: packageMatch.services,
-        quotedPrice: packageMatch.price,
-      });
-    else
-      actions?.showBanner?.(
-        "No exact match found based on their business type.",
-      );
+function CloudSetupModal({ onClose, onSaved, onError, cloudStatus, onSync }) {
+  const saveConfig = ({ url, key }) => {
+    localStorage.setItem(CLOUD_URL_KEY, url);
+    localStorage.setItem(CLOUD_KEY_KEY, key);
+    onSaved({ url, key });
   };
   return (
-    <div className="cs">
-      <header className="cs-bar">
-        <button type="button" className="cs-back" onClick={onBack}>
-          ← Back
-        </button>
-        <div
-          className={`cs-avatar${c.paused ? " paused" : ""}`}
-          aria-hidden="true"
-        >
-          {String(c.name || "?")
-            .trim()
-            .split(/\s+/)
-            .slice(0, 2)
-            .map((part) => part[0])
-            .join("")
-            .toUpperCase()}
-        </div>
-        <div className="cs-title">
-          <h2>{c.name}</h2>
-          <p>
-            {c.business || "No business"}
-            {c.businessType ? ` · ${c.businessType}` : ""}
-          </p>
-        </div>
-        <button type="button" onClick={() => setInfoOpen(true)}>
-          Edit
-        </button>
-      </header>
-      {!isLead && (
-        <section className="cs-card cs-summary">
-          <div className="cs-totals">
-            {[
-              ["Agreed", totals.total],
-              ["Paid", totals.paid],
-              ["Balance", totals.balance],
-            ].map(([label, value]) => (
-              <div key={label}>
-                <small>{label}</small>
-                <b
-                  className={
-                    c.paused && label === "Balance" ? "paused-balance" : ""
-                  }
-                >
-                  {c.paused && label === "Balance"
-                    ? `${fmtUGX(value)} excluded from Money`
-                    : fmtUGX(value)}
-                </b>
-              </div>
-            ))}
-          </div>
-          <div className="cs-progress">
-            <i
-              style={{
-                width: `${totals.total > 0 ? Math.min(100, (totals.paid / totals.total) * 100) : 0}%`,
-              }}
-            />
-          </div>
-        </section>
-      )}
-      <div className="cs-grid">
-        <div className="cs-col">
-          <div className="cs-chips">
-            <span
-              className={
-                isLead ? (c.temp === "cold" ? "cold" : "warm") : "lime"
-              }
-            >
-              {isLead ? "LEAD" : "ONGOING"}
-            </span>
-            <span>
-              {isLead
-                ? c.followUp === "needed"
-                  ? "FOLLOW-UP NEEDED"
-                  : "FOLLOW-UP DONE"
-                : "CLIENT"}
-            </span>
-            <span>Demo {c.demoShown === "yes" ? "✓" : "×"}</span>
-            {c.paused && <span className="cr-paused">PAUSED</span>}
-          </div>
-          {c.phone && (
-            <div className="cs-contact">
-              {c.hasWhatsApp !== "no" && (
-                <a
-                  href={`https://wa.me/${toWaNumber(c.phone)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  WhatsApp
-                </a>
-              )}
-              <a href={`tel:${c.phone}`}>Call {c.phone}</a>
-            </div>
-          )}
-          <div className="cs-actions cs-actionbar">
-            {isLead ? (
-              <>
-                <button onClick={markDone}>
-                  {c.followUp === "needed" ? "Mark done" : "Follow up"}
-                </button>
-                <button onClick={() => setIsRescheduleForm(true)}>
-                  Timeline
-                </button>
-                <button
-                  onClick={() =>
-                    onUpdate(c.id, {
-                      temp: c.temp === "warm" ? "cold" : "warm",
-                    })
-                  }
-                >
-                  {c.temp === "warm" ? "Warm" : "Cold"}
-                </button>
-                <button className="primary" onClick={() => setIsWinForm(true)}>
-                  Won!
-                </button>
-                {(!c.quotedPrice || !c.servicesToOffer) && (
-                  <button onClick={suggest}>Suggest</button>
-                )}
-              </>
-            ) : (
-              <>
-                <button className="primary" onClick={() => openPaymentForm()}>
-                  Record payment
-                </button>
-                <button onClick={() => setSvcEditor({ service: null })}>
-                  + Add service
-                </button>
-                {c.paused ? (
-                  <button
-                    onClick={() =>
-                      onUpdate(c.id, {
-                        paused: false,
-                        pausedAt: "",
-                        pauseReason: "",
-                      })
-                    }
-                  >
-                    Resume client
-                  </button>
-                ) : (
-                  <button onClick={() => setPauseOpen(true)}>
-                    Pause client
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-          <section className="cs-card">
-            <header>
-              <h3>Client details</h3>
-              <button onClick={() => setInfoOpen(true)}>Edit</button>
-            </header>
-            <dl>
-              <div>
-                <dt>Phone</dt>
-                <dd>{c.phone || "Not provided"}</dd>
-              </div>
-              <div>
-                <dt>Pitch method</dt>
-                <dd>{c.pitchMethod || "Not provided"}</dd>
-              </div>
-              <div>
-                <dt>Owner around</dt>
-                <dd>{c.ownerAround || "unknown"}</dd>
-              </div>
-              <div>
-                <dt>WhatsApp</dt>
-                <dd>{c.hasWhatsApp === "no" ? "No" : "Yes"}</dd>
-              </div>
-              {isLead && (
-                <>
-                  <div>
-                    <dt>Temperature</dt>
-                    <dd>{c.temp || "warm"}</dd>
-                  </div>
-                  <div>
-                    <dt>Quoted price</dt>
-                    <dd>{c.quotedPrice || "Not provided"}</dd>
-                  </div>
-                </>
-              )}
-            </dl>
-            {isLead && c.servicesToOffer && (
-              <div className="cs-tags">
-                {c.servicesToOffer.split(",").map((item, index) => (
-                  <span key={index}>{item.trim()}</span>
-                ))}
-              </div>
-            )}
-            {c.notes && <p className="cs-notes">{c.notes}</p>}
-          </section>
-        </div>
-        <div className="cs-col">
-          {isLead && (
-            <section className="cs-card">
-              <header>
-                <h3>Follow-up</h3>
-                <button onClick={() => setIsRescheduleForm(true)}>
-                  Timeline
-                </button>
-              </header>
-              <p>
-                {c.followUpDate ? fmtDate(c.followUpDate) : "No timeline set"}
-              </p>
-              <p className="cs-notes">{c.notes || "No notes yet."}</p>
-            </section>
-          )}
-          {!isLead && (
-            <>
-              <section className="cs-card cs-payments">
-                <header>
-                  <h3>Payments &amp; receipts</h3>
-                  {(c.payments || []).length > 1 && (
-                    <button
-                      onClick={() => {
-                        setReceiptMergeMode((value) => !value);
-                        setSelectedPayments([]);
-                      }}
-                    >
-                      {receiptMergeMode ? "Cancel receipts" : "Merge receipts"}
-                    </button>
-                  )}
-                </header>
-                <div className="cs-receipt-groups">
-                  {(c.receiptGroups || []).map((group) => {
-                    const grouped = (c.payments || []).filter((payment) =>
-                      group.paymentIds.includes(payment.id),
-                    );
-                    const total = grouped.reduce(
-                      (sum, payment) => sum + (Number(payment.amount) || 0),
-                      0,
-                    );
-                    const expanded = expandedReceiptGroups.includes(group.id);
-                    return (
-                      <article className="cs-receipt-group" key={group.id}>
-                        <strong>
-                          Receipt {group.receiptNo || getReceiptNum(group)} ·{" "}
-                          {grouped.length} payments · {fmtUGX(total)}
-                        </strong>
-                        <button
-                          onClick={() =>
-                            printReceiptGroup(
-                              { ...c, date },
-                              group,
-                              actions?.assignDocumentNumber,
-                              actions?.profile,
-                              print,
-                            )
-                          }
-                        >
-                          Print
-                        </button>
-                        <button
-                          onClick={() =>
-                            setExpandedReceiptGroups((ids) =>
-                              expanded
-                                ? ids.filter((id) => id !== group.id)
-                                : [...ids, group.id],
-                            )
-                          }
-                        >
-                          {expanded ? "Collapse" : "Expand"}
-                        </button>
-                        <button onClick={() => unmergeReceiptGroup(group)}>
-                          Unmerge
-                        </button>
-                        {expanded &&
-                          grouped.map((payment) => (
-                            <div className="cs-group-payment" key={payment.id}>
-                              {payment.note || "Payment"} ·{" "}
-                              {fmtUGX(payment.amount)}
-                            </div>
-                          ))}
-                      </article>
-                    );
-                  })}
-                </div>
-                {receiptMergeMode && (
-                  <div className="cs-receipt-select">
-                    {(c.payments || []).map((payment) => {
-                      const grouped = (c.receiptGroups || []).some((group) =>
-                        group.paymentIds.includes(payment.id),
-                      );
-                      return (
-                        <label key={payment.id}>
-                          <input
-                            type="checkbox"
-                            disabled={grouped}
-                            checked={selectedPayments.includes(payment.id)}
-                            onChange={(event) =>
-                              setSelectedPayments((ids) =>
-                                event.target.checked
-                                  ? [...ids, payment.id]
-                                  : ids.filter((id) => id !== payment.id),
-                              )
-                            }
-                          />
-                          {payment.note || "Payment"} · {fmtUGX(payment.amount)}
-                        </label>
-                      );
-                    })}
-                    <button
-                      disabled={selectedPayments.length < 2}
-                      onClick={mergeReceiptGroup}
-                    >
-                      Merge receipts ({selectedPayments.length})
-                    </button>
-                  </div>
-                )}
-                {(c.payments || []).map((payment) => {
-                  const group = (c.receiptGroups || []).find((item) =>
-                    item.paymentIds.includes(payment.id),
-                  );
-                  if (group && !expandedReceiptGroups.includes(group.id))
-                    return null;
-                  const serviceId = payment.serviceId || services[0]?.id || "";
-                  return (
-                    <div
-                      className="cs-payment"
-                      data-payment-id={payment.id}
-                      key={payment.id}
-                    >
-                      <span>
-                        {payment.date || "Date unknown"} ·{" "}
-                        {payment.note || "Payment"} · {fmtUGX(payment.amount)}
-                      </span>
-                      <button
-                        onClick={() => openEditPaymentForm(payment, serviceId)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="danger"
-                        onClick={() => deleteClientPayment(payment)}
-                      >
-                        Delete
-                      </button>
-                      <button
-                        onClick={() =>
-                          printReceipt(
-                            { ...c, date },
-                            payment,
-                            actions?.assignDocumentNumber,
-                            actions?.profile,
-                            print,
-                            actions?.showBanner,
-                          )
-                        }
-                      >
-                        Receipt
-                      </button>
-                    </div>
-                  );
-                })}
-              </section>
-              <section className="cs-card cs-services">
-                <header>
-                  <h3>Services ({services.length})</h3>
-                  <div className="cs-service-tools">
-                    <button onClick={() => setSvcEditor({ service: null })}>
-                      + Add service
-                    </button>
-                    {services.length > 1 && (
-                      <button
-                        onClick={() => {
-                          setMergeMode((value) => !value);
-                          setSelectedServices([]);
-                        }}
-                      >
-                        {mergeMode ? "Cancel select" : "Select"}
-                      </button>
-                    )}
-                  </div>
-                </header>
-                {mergeMode && (
-                  <div className="cs-merge-tools">
-                    <button
-                      disabled={selectedServices.length < 2}
-                      onClick={() => setMergeOpen(true)}
-                    >
-                      Merge ({selectedServices.length})
-                    </button>
-                    <button
-                      disabled={selectedServices.length < 2}
-                      onClick={() =>
-                        printCombinedInvoice(
-                          { ...c, date },
-                          services.filter((service) =>
-                            selectedServices.includes(service.id),
-                          ),
-                          actions?.assignDocumentNumber,
-                          actions?.profile,
-                          print,
-                        )
-                      }
-                    >
-                      Print combined invoice
-                    </button>
-                  </div>
-                )}
-                {services.length === 0 && (
-                  <p className="cs-empty">No services yet. Add service.</p>
-                )}
-                {services.map((service) => {
-                  const paid = servicePaid(c, service.id);
-                  const total = serviceTotal(service, c);
-                  const balance = total - paid;
-                  return (
-                    <article
-                      className="cs-service"
-                      data-service-id={service.id}
-                      key={service.id}
-                    >
-                      {mergeMode && !service.mergedFrom?.length && (
-                        <label className="cs-select-service">
-                          <input
-                            type="checkbox"
-                            checked={selectedServices.includes(service.id)}
-                            onChange={(event) =>
-                              setSelectedServices((ids) =>
-                                event.target.checked
-                                  ? [...ids, service.id]
-                                  : ids.filter((id) => id !== service.id),
-                              )
-                            }
-                          />
-                          Select service
-                        </label>
-                      )}
-                      <header className="cs-service-head">
-                        <div>
-                          <h4>{service.title}</h4>
-                          <small>
-                            {service.dueDate
-                              ? `Due ${fmtDate(service.dueDate)}`
-                              : "No due date"}
-                          </small>
-                        </div>
-                        {service.mergedFrom?.length > 0 && (
-                          <span className="cs-merged-badge">
-                            MERGED ×{service.mergedFrom.length}
-                          </span>
-                        )}
-                        <b className={balance > 0 ? "warm" : "lime"}>
-                          {balance > 0 ? fmtUGX(balance) : "Paid"}
-                        </b>
-                      </header>
-                      <div className="cs-totals">
-                        {[
-                          ["FEE", total],
-                          ["PAID", paid],
-                          ["BALANCE", balance],
-                        ].map(([label, value]) => (
-                          <div key={label}>
-                            <small>{label}</small>
-                            <b
-                              className={
-                                c.paused && label === "BALANCE"
-                                  ? "paused-balance"
-                                  : ""
-                              }
-                            >
-                              {c.paused && label === "BALANCE"
-                                ? `${fmtUGX(value)} excluded`
-                                : fmtUGX(value)}
-                            </b>
-                          </div>
-                        ))}
-                      </div>
-                      {(service.items || []).map((item) => (
-                        <div className="cs-item" key={item.id}>
-                          <span>{item.title}</span>
-                          <span>
-                            {Number(item.price) > 0
-                              ? fmtUGX(item.price)
-                              : "Included"}
-                          </span>
-                        </div>
-                      ))}
-                      <div className="cs-service-actions">
-                        <button onClick={() => openPaymentForm(service.id)}>
-                          Record payment
-                        </button>
-                        <button onClick={() => setSvcEditor({ service })}>
-                          Edit
-                        </button>
-                        <button
-                          onClick={() =>
-                            printInvoice(
-                              { ...c, date },
-                              service,
-                              actions?.assignDocumentNumber,
-                              actions?.profile,
-                              print,
-                              actions?.showBanner,
-                            )
-                          }
-                        >
-                          Invoice
-                        </button>
-                        <button
-                          className="danger"
-                          onClick={() => deleteService(service)}
-                        >
-                          Delete
-                        </button>
-                        {service.mergedFrom?.length > 0 && (
-                          <button onClick={() => unmerge(service)}>
-                            Unmerge
-                          </button>
-                        )}
-                      </div>
-                    </article>
-                  );
-                })}
-              </section>
-            </>
-          )}
-        </div>
-      </div>
-      <section className="cs-danger">
-        {!isLead && <button onClick={moveBack}>Move back to lead</button>}
-        <button className="danger" onClick={deleteThisClient}>
-          Delete client
-        </button>
-      </section>
-      {c.paused && isPaymentForm && (
-        <p className="cs-paused-note">Client is paused</p>
-      )}
-      {pauseOpen && (
-        <div
-          className="ce-overlay"
-          onMouseDown={(event) =>
-            event.target === event.currentTarget && setPauseOpen(false)
-          }
-        >
-          <form
-            className="ce-dialog"
-            onSubmit={(event) => {
-              event.preventDefault();
-              onUpdate(c.id, {
-                paused: true,
-                pausedAt: today,
-                pauseReason: [pauseReason, pauseNote.trim()]
-                  .filter(Boolean)
-                  .join(": "),
-              });
-              setPauseOpen(false);
-            }}
-          >
-            <h2>Pause client</h2>
-            <p>
-              Their outstanding balance will be excluded from active totals.
-            </p>
-            <label className="ce-field">
-              Reason
-              <select
-                value={pauseReason}
-                onChange={(event) => setPauseReason(event.target.value)}
-              >
-                <option>No payment</option>
-                <option>Waiting on client</option>
-                <option>Dispute</option>
-                <option>Other</option>
-              </select>
-            </label>
-            <label className="ce-field">
-              Note
-              <textarea
-                value={pauseNote}
-                onChange={(event) => setPauseNote(event.target.value)}
-              />
-            </label>
-            <footer>
-              <button type="button" onClick={() => setPauseOpen(false)}>
-                Cancel
-              </button>
-              <button className="primary">Pause client</button>
-            </footer>
-          </form>
-        </div>
-      )}
-      {mergeOpen && (
-        <div
-          className="ce-overlay"
-          onMouseDown={(event) =>
-            event.target === event.currentTarget && setMergeOpen(false)
-          }
-        >
-          <form
-            className="ce-dialog"
-            onSubmit={(event) => {
-              event.preventDefault();
-              saveMerge();
-            }}
-          >
-            <h2>Merge services</h2>
-            <label className="ce-field">
-              Merged service title
-              <input
-                value={mergeTitle}
-                onChange={(event) => setMergeTitle(event.target.value)}
-                placeholder={services
-                  .filter((service) => selectedServices.includes(service.id))
-                  .map((service) => service.title)
-                  .join(" + ")}
-              />
-            </label>
-            <p>
-              Total{" "}
-              {fmtUGX(
-                services
-                  .filter((service) => selectedServices.includes(service.id))
-                  .reduce((sum, service) => sum + serviceTotal(service, c), 0),
-              )}
-            </p>
-            <footer>
-              <button type="button" onClick={() => setMergeOpen(false)}>
-                Cancel
-              </button>
-              <button className="primary">Merge services</button>
-            </footer>
-          </form>
-        </div>
-      )}
-      {infoOpen && (
-        <ClientInfoEditor
-          client={c}
-          onUpdate={(_id, fields) => saveInfo(fields)}
-          onClose={() => setInfoOpen(false)}
-        />
-      )}
-      {svcEditor && (
-        <ServiceEditor
-          service={svcEditor.service}
-          fallbackTotal={
-            svcEditor.service ? serviceTotal(svcEditor.service, c) : 0
-          }
-          paid={svcEditor.service ? servicePaid(c, svcEditor.service.id) : 0}
-          onSave={saveService}
-          onDelete={
-            svcEditor.service
-              ? () => deleteService(svcEditor.service)
-              : undefined
-          }
-          onClose={() => setSvcEditor(null)}
-        />
-      )}
-      {isWinForm && (
-        <div
-          className="ce-overlay"
-          onMouseDown={(event) =>
-            event.target === event.currentTarget && setIsWinForm(false)
-          }
-        >
-          <form
-            className="ce-dialog"
-            onSubmit={(event) => {
-              event.preventDefault();
-              convert();
-            }}
-          >
-            <header>
-              <h2>Convert to ongoing client</h2>
-              <button type="button" onClick={() => setIsWinForm(false)}>
-                ×
-              </button>
-            </header>
-            <label className="ce-field">
-              Agreed price (UGX)
-              <input
-                type="number"
-                min="1"
-                required
-                value={dealPrice}
-                onChange={(event) => setDealPrice(event.target.value)}
-              />
-            </label>
-            <label className="ce-field">
-              Initial deposit (UGX)
-              <input
-                type="number"
-                min="0"
-                value={deposit}
-                onChange={(event) => setDeposit(event.target.value)}
-              />
-            </label>
-            <footer>
-              <button type="button" onClick={() => setIsWinForm(false)}>
-                Cancel
-              </button>
-              <button className="primary">Confirm conversion</button>
-            </footer>
-          </form>
-        </div>
-      )}
-      {isRescheduleForm && (
-        <div
-          className="ce-overlay"
-          onMouseDown={(event) =>
-            event.target === event.currentTarget && setIsRescheduleForm(false)
-          }
-        >
-          <form
-            className="ce-dialog"
-            onSubmit={(event) => {
-              event.preventDefault();
-              saveReschedule();
-            }}
-          >
-            <header>
-              <h2>Set follow-up timeline</h2>
-              <button type="button" onClick={() => setIsRescheduleForm(false)}>
-                ×
-              </button>
-            </header>
-            <div className="cs-actions">
-              {[3, 7, 14, 30].map((days) => (
-                <button
-                  type="button"
-                  key={days}
-                  onClick={() => reschedule(days)}
-                >
-                  +{days} days
-                </button>
-              ))}
-            </div>
-            <label className="ce-field">
-              Date
-              <input
-                type="date"
-                value={newFollowDate}
-                onChange={(event) => setNewFollowDate(event.target.value)}
-              />
-            </label>
-            <footer>
-              <button type="button" onClick={() => setIsRescheduleForm(false)}>
-                Cancel
-              </button>
-              <button className="primary">Save timeline</button>
-            </footer>
-          </form>
-        </div>
-      )}
-      {isPaymentForm && (
-        <div
-          className="ce-overlay"
-          onMouseDown={(event) =>
-            event.target === event.currentTarget && setIsPaymentForm(false)
-          }
-        >
-          <form
-            className="ce-dialog"
-            onSubmit={(event) => {
-              event.preventDefault();
-              savePayment();
-            }}
-          >
-            <header>
-              <h2>{editingPaymentId ? "Edit payment" : "Record payment"}</h2>
-              <button type="button" onClick={() => setIsPaymentForm(false)}>
-                ×
-              </button>
-            </header>
-            {c.paused && <p className="cs-paused-note">Client is paused</p>}
-            <label className="ce-field">
-              Amount (UGX)
-              <input
-                type="number"
-                min="1"
-                required
-                value={paymentAmt}
-                onChange={(event) => setPaymentAmt(event.target.value)}
-              />
-            </label>
-            <label className="ce-field">
-              Note
-              <input
-                value={paymentNote}
-                onChange={(event) => setPaymentNote(event.target.value)}
-              />
-            </label>
-            <label className="ce-field">
-              Service
-              <select
-                required
-                value={paymentServiceId}
-                onChange={(event) => setPaymentServiceId(event.target.value)}
-              >
-                {services.map((service) => (
-                  <option key={service.id} value={service.id}>
-                    {service.title} · {fmtUGX(serviceTotal(service, c))}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <footer>
-              <button type="button" onClick={() => setIsPaymentForm(false)}>
-                Cancel
-              </button>
-              <button className="primary">Save payment</button>
-            </footer>
-          </form>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ClientForm({ onAdd, onClose, onError, initialValues }) {
-  const [f, setF] = useState(() => ({
-    name: "",
-    business: "",
-    businessType: "",
-    phone: "",
-    pitchMethod: "In-Person",
-    package: "Undecided",
-    servicesToOffer: "",
-    quotedPrice: "",
-    demoShown: "no",
-    temp: "warm",
-    followUp: "needed",
-    notes: "",
-    status: "lead",
-    ownerAround: "yes",
-    followUpDate: "",
-    hasWhatsApp: "yes",
-    totalAgreedPrice: "",
-    amountPaid: 0,
-    payments: [],
-    ...(initialValues || {}),
-  }));
-  const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
-
-  const autoSuggest = () => {
-    if (!f.businessType) {
-      onError("Please enter a business type first.");
-      return;
-    }
-    const match = PACKAGE_TEMPLATES.find((p) => p.match.test(f.businessType));
-    if (match) {
-      setF((prev) => ({
-        ...prev,
-        servicesToOffer: match.services,
-        quotedPrice: match.price,
-      }));
-    } else {
-      onError(
-        "No exact match found. You can enter services and price manually.",
-      );
-    }
-  };
-
-  const submit = () => {
-    if (!f.name.trim()) {
-      onError("Client name is required.");
-      return;
-    }
-    onAdd(f);
-  };
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.88)",
-        zIndex: 100,
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "center",
-      }}
-    >
-      <div
-        style={{
-          background: "var(--s1)",
-          borderRadius: "16px 16px 0 0",
-          width: "100%",
-          maxWidth: 480,
-          padding: "20px 16px 36px",
-          maxHeight: "92vh",
-          overflowY: "auto",
-          border: `1px solid ${BORDER}`,
-          borderBottom: "none",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 18,
-          }}
-        >
-          <span
-            style={{ fontWeight: "bold", fontSize: 14, letterSpacing: -0.3 }}
-          >
-            New Client Pitch
-          </span>
-          <span
-            onClick={onClose}
-            style={{
-              color: DIM,
-              cursor: "pointer",
-              fontSize: 20,
-              lineHeight: 1,
-            }}
-          >
-            ✕
-          </span>
-        </div>
-
-        <Lbl>Full Name *</Lbl>
-        <Inp
-          value={f.name}
-          onChange={(v) => set("name", v)}
-          placeholder="e.g. Sarah Nakato"
-        />
-
-        <Lbl>Business Name</Lbl>
-        <Inp
-          value={f.business}
-          onChange={(v) => set("business", v)}
-          placeholder="e.g. Nakato Hair Salon"
-        />
-
-        <Lbl>Business Type</Lbl>
-        <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ flex: 1 }}>
-            <Inp
-              value={f.businessType}
-              onChange={(v) => set("businessType", v)}
-              placeholder="e.g. Beauty Salon, Restaurant..."
-            />
-          </div>
-          <button
-            onClick={autoSuggest}
-            style={{
-              background: SURF2,
-              border: `1px solid ${LIME}`,
-              color: LIME,
-              borderRadius: 8,
-              padding: "0 12px",
-              fontSize: 12,
-              cursor: "pointer",
-              fontFamily: FONT,
-              fontWeight: "bold",
-            }}
-          >
-            Suggest
-          </button>
-        </div>
-
-        {f.businessType &&
-          (() => {
-            const match = PACKAGE_TEMPLATES.find((p) =>
-              p.match.test(f.businessType),
-            );
-            if (!match) return null;
-            const items = match.services.split(",").map((s) => s.trim());
-            return (
-              <div
-                style={{
-                  marginTop: 8,
-                  padding: 10,
-                  background: SURF,
-                  borderRadius: 8,
-                  border: `1px solid ${BORDER}`,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: LIME,
-                    letterSpacing: 1,
-                    marginBottom: 6,
-                    fontWeight: "bold",
-                  }}
-                >
-                  SELECT SERVICES TO OFFER:
-                </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {items.map((item) => {
-                    const currentList = f.servicesToOffer
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean);
-                    const active = currentList.includes(item);
-                    return (
-                      <button
-                        key={item}
-                        type="button"
-                        onClick={() => {
-                          let nextList;
-                          if (active) {
-                            nextList = currentList.filter((s) => s !== item);
-                          } else {
-                            nextList = [...currentList, item];
-                          }
-                          set("servicesToOffer", nextList.join(", "));
-                        }}
-                        style={{
-                          padding: "5px 9px",
-                          borderRadius: 4,
-                          fontSize: 12,
-                          cursor: "pointer",
-                          fontFamily: FONT,
-                          background: active ? LIME + "22" : SURF2,
-                          border: active
-                            ? `1px solid ${LIME}`
-                            : `1px solid ${BORDER}`,
-                          color: active ? LIME : DIM,
-                          transition: "all 0.1s",
-                        }}
-                      >
-                        {active ? "✓ " : "+ "} {item}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
-
-        <Lbl>Suggested Services</Lbl>
-        <textarea
-          value={f.servicesToOffer}
-          onChange={(e) => set("servicesToOffer", e.target.value)}
-          placeholder="Editable services list..."
-          style={{
-            width: "100%",
-            background: SURF2,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 8,
-            color: "var(--text)",
-            padding: "10px 12px",
-            fontSize: 12,
-            fontFamily: FONT,
-            resize: "vertical",
-            minHeight: 48,
-            boxSizing: "border-box",
-          }}
-        />
-
-        <Lbl>Quoted Price (UGX)</Lbl>
-        <Inp
-          value={f.quotedPrice}
-          onChange={(v) => set("quotedPrice", v)}
-          placeholder="e.g. 250k - 450k UGX"
-        />
-
-        <Lbl>Was the Owner Around?</Lbl>
-        <Tog
-          value={f.ownerAround}
-          opts={["yes", "no", "unknown"]}
-          onChange={(v) => set("ownerAround", v)}
-          colors={{ yes: LIME, no: DIM, unknown: DIM }}
-        />
-
-        <Lbl>Phone Number (Optional)</Lbl>
-        <Inp
-          value={f.phone}
-          onChange={(v) => set("phone", v)}
-          placeholder="e.g. 0701234567"
-          type="tel"
-        />
-
-        {f.phone && (
-          <>
-            <Lbl>Does Client Have WhatsApp?</Lbl>
-            <Tog
-              value={f.hasWhatsApp}
-              opts={["yes", "no"]}
-              onChange={(v) => set("hasWhatsApp", v)}
-              colors={{ yes: GREEN_WA, no: DIM }}
-            />
-          </>
-        )}
-
-        <Lbl>Follow-Up Target Date (Optional)</Lbl>
-        <Inp
-          type="date"
-          value={f.followUpDate}
-          onChange={(v) => set("followUpDate", v)}
-        />
-
-        <Lbl>Pitched Via</Lbl>
-        <Tog
-          value={f.pitchMethod}
-          opts={["In-Person", "WhatsApp"]}
-          onChange={(v) => set("pitchMethod", v)}
-        />
-
-        <Lbl>Package They Reacted To</Lbl>
-        <Tog
-          value={f.package}
-          opts={["Basic", "Standard", "Premium", "Undecided"]}
-          onChange={(v) => set("package", v)}
-        />
-
-        <Lbl>Showed Demo Site? (solomantalgo.online)</Lbl>
-        <Tog
-          value={f.demoShown}
-          opts={["yes", "no"]}
-          onChange={(v) => set("demoShown", v)}
-          colors={{ yes: LIME, no: DIM }}
-        />
-
-        <Lbl>Lead Temperature</Lbl>
-        <Tog
-          value={f.temp}
-          opts={["warm", "cold"]}
-          onChange={(v) => set("temp", v)}
-          colors={{ warm: WARM_C, cold: COLD_C }}
-        />
-
-        <Lbl>Follow-Up Needed?</Lbl>
-        <Tog
-          value={f.followUp}
-          opts={["needed", "done"]}
-          onChange={(v) => set("followUp", v)}
-          colors={{ needed: LIME, done: DIM }}
-        />
-
-        <Lbl>Notes (optional)</Lbl>
-        <textarea
-          value={f.notes}
-          onChange={(e) => set("notes", e.target.value)}
-          placeholder="Key hesitations, what got them interested, anything to remember..."
-          style={{
-            width: "100%",
-            background: SURF2,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 8,
-            color: "var(--text)",
-            padding: "10px 12px",
-            fontSize: 12,
-            fontFamily: FONT,
-            resize: "vertical",
-            minHeight: 72,
-            boxSizing: "border-box",
-            marginBottom: 18,
-          }}
-        />
-
-        <button
-          onClick={submit}
-          style={{
-            width: "100%",
-            background: LIME,
-            color: "var(--on-lime)",
-            border: "none",
-            borderRadius: 8,
-            padding: 14,
-            fontSize: 12,
-            fontWeight: "bold",
-            letterSpacing: 1.5,
-            cursor: "pointer",
-            fontFamily: FONT,
-          }}
-        >
-          SAVE CLIENT
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── Cloud Setup Modal
-function CloudSetupModal({ onClose, onSaved, onError }) {
-  const [url, setUrl] = useState(
-    localStorage.getItem(CLOUD_URL_KEY) || DEFAULT_SUPABASE_URL,
-  );
-  const [key, setKey] = useState(
-    localStorage.getItem(CLOUD_KEY_KEY) || DEFAULT_SUPABASE_KEY,
-  );
-
-  const save = () => {
-    const cleanUrl = normalizeSupabaseUrl(url);
-    const cleanKey = key.trim();
-    if (!cleanUrl || !cleanKey) {
-      onError("Add your Supabase URL and anon key first.");
-      return;
-    }
-    localStorage.setItem(CLOUD_URL_KEY, cleanUrl);
-    localStorage.setItem(CLOUD_KEY_KEY, cleanKey);
-    onSaved({ url: cleanUrl, key: cleanKey });
-    onClose();
-  };
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.9)",
-        zIndex: 120,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-      }}
-    >
-      <div
-        style={{
-          background: SURF,
-          border: `1px solid ${BORDER}`,
-          borderRadius: 14,
-          width: "100%",
-          maxWidth: 420,
-          padding: 18,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 12,
-          }}
-        >
-          <div style={{ fontSize: 14, fontWeight: "bold" }}>
-            Cloud backup (Supabase)
-          </div>
-          <span
-            onClick={onClose}
-            style={{ color: DIM, cursor: "pointer", fontSize: 20 }}
-          >
-            ✕
-          </span>
-        </div>
-        <div
-          style={{
-            fontSize: 12,
-            color: DIM,
-            lineHeight: 1.6,
-            marginBottom: 12,
-          }}
-        >
-          Use the same Supabase project URL and anon key on every device. These
-          connection settings are saved in this browser only. Create a table
-          named <b>sales_os_state</b> with columns <b>id</b> (text),{" "}
-          <b>payload</b> (jsonb), and <b>updated_at</b> (text). The app uses the
-          row with <b>id = primary</b>.
-        </div>
-        <Lbl>Supabase URL</Lbl>
-        <Inp
-          value={url}
-          onChange={setUrl}
-          placeholder="https://xyzcompany.supabase.co"
-        />
-        <Lbl>Anon Key</Lbl>
-        <Inp
-          value={key}
-          onChange={setKey}
-          placeholder="Paste your anon/public key"
-        />
-        <button
-          onClick={save}
-          style={{
-            width: "100%",
-            marginTop: 14,
-            background: LIME,
-            color: "var(--on-lime)",
-            border: "none",
-            borderRadius: 8,
-            padding: 12,
-            fontSize: 12,
-            fontWeight: "bold",
-            cursor: "pointer",
-            fontFamily: FONT,
-          }}
-        >
-          Save cloud settings
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── Micro components
-const Pill = ({ label, count, color }) => (
-  <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-    <div
-      style={{ width: 6, height: 6, borderRadius: "50%", background: color }}
+    <CloudSync
+      initialUrl={localStorage.getItem(CLOUD_URL_KEY) || DEFAULT_SUPABASE_URL}
+      initialKey={localStorage.getItem(CLOUD_KEY_KEY) || DEFAULT_SUPABASE_KEY}
+      cloudStatus={cloudStatus}
+      onSync={onSync}
+      onClose={onClose}
+      onSaved={saveConfig}
+      onError={onError}
+      normalizeUrl={normalizeSupabaseUrl}
     />
-    <span style={{ fontSize: 12, color: DIM }}>{label}</span>
-    <span style={{ fontSize: 12, fontWeight: "bold", color }}>{count}</span>
-  </div>
-);
-
-// eslint-disable-next-line no-unused-vars
-const TempBadge = ({ temp }) => (
-  <span
-    style={{
-      fontSize: 12,
-      padding: "2px 7px",
-      borderRadius: 20,
-      background: temp === "warm" ? WARM_C + "22" : COLD_C + "22",
-      color: temp === "warm" ? WARM_C : COLD_C,
-      letterSpacing: 0.5,
-    }}
-  >
-    {temp === "warm" ? "WARM" : "COLD"}
-  </span>
-);
-
-const Bdg = ({ children, color }) => (
-  <span
-    style={{
-      fontSize: 12,
-      padding: "3px 8px",
-      borderRadius: 20,
-      background: color + "22",
-      color,
-    }}
-  >
-    {children}
-  </span>
-);
-
-const Chip = ({ children, style }) => (
-  <span
-    style={{
-      fontSize: 12,
-      padding: "3px 8px",
-      borderRadius: 4,
-      background: SURF2,
-      color: DIM,
-      letterSpacing: 0.3,
-      ...style,
-    }}
-  >
-    {children}
-  </span>
-);
-
-// eslint-disable-next-line no-unused-vars
-const ABtn = ({ children, onClick, color, tc }) => (
-  <button
-    onClick={onClick}
-    style={{
-      background: color || SURF2,
-      color: tc || "var(--text)",
-      border: "none",
-      borderRadius: 6,
-      padding: "7px 11px",
-      fontSize: 12,
-      fontWeight: "bold",
-      cursor: "pointer",
-      fontFamily: FONT,
-      letterSpacing: 0.5,
-    }}
-  >
-    {children}
-  </button>
-);
-
-const SmBtn = ({ children, onClick }) => (
-  <button
-    onClick={onClick}
-    style={{
-      background: SURF2,
-      border: `1px solid ${BORDER}`,
-      color: "var(--text)",
-      width: 26,
-      height: 26,
-      borderRadius: 6,
-      cursor: "pointer",
-      fontFamily: FONT,
-      fontSize: 16,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      lineHeight: 1,
-    }}
-  >
-    {children}
-  </button>
-);
-
-const Lbl = ({ children }) => (
-  <div
-    style={{
-      color: DIM,
-      fontSize: 12,
-      letterSpacing: 2,
-      marginBottom: 5,
-      marginTop: 13,
-    }}
-  >
-    {children}
-  </div>
-);
-
-const Inp = ({ value, onChange, placeholder, type }) => (
-  <input
-    type={type || "text"}
-    value={value}
-    onChange={(e) => onChange(e.target.value)}
-    placeholder={placeholder}
-    style={{
-      width: "100%",
-      background: SURF2,
-      border: `1px solid ${BORDER}`,
-      borderRadius: 8,
-      color: "var(--text)",
-      padding: "10px 12px",
-      fontSize: 12,
-      fontFamily: FONT,
-      boxSizing: "border-box",
-      outline: "none",
-      caretColor: LIME,
-    }}
-  />
-);
-
-const Tog = ({ value, opts, onChange, colors = {} }) => (
-  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-    {opts.map((o) => {
-      const active = value === o;
-      const col = colors[o] || LIME;
-      return (
-        <button
-          key={o}
-          onClick={() => onChange(o)}
-          style={{
-            padding: "7px 13px",
-            borderRadius: 6,
-            fontSize: 12,
-            cursor: "pointer",
-            fontFamily: FONT,
-            background: active ? col + "22" : SURF2,
-            border: active ? `1px solid ${col}` : `1px solid ${BORDER}`,
-            color: active ? col : DIM,
-            fontWeight: active ? "bold" : "normal",
-            transition: "all 0.12s",
-          }}
-        >
-          {o}
-        </button>
-      );
-    })}
-  </div>
-);
-
-const Empty = ({ text }) => (
-  <div
-    style={{
-      textAlign: "center",
-      color: DIM,
-      fontSize: 12,
-      padding: "44px 0",
-      letterSpacing: 0.5,
-      lineHeight: 1.8,
-    }}
-  >
-    {text}
-  </div>
-);
-
-// ── System Flow View
-function OngoingView({ clients }) {
-  const [filter, setFilter] = useState("Active");
-  const ongoing = Object.entries(clients).flatMap(([date, arr]) =>
-    arr.filter((c) => c.status === "ongoing").map((c) => ({ ...c, date })),
-  );
-  const active = ongoing.filter((client) => !client.paused);
-  const paused = ongoing.filter((client) => client.paused);
-  const visible =
-    filter === "Paused" ? paused : filter === "All" ? ongoing : active;
-
-  if (ongoing.length === 0) {
-    return (
-      <Empty text="No ongoing projects yet. Win some deals to move them here." />
-    );
-  }
-
-  return (
-    <div>
-      <div className="os-segments" role="group" aria-label="Ongoing clients">
-        {["Active", "Paused", "All"].map((item) => (
-          <button
-            className={filter === item ? "active" : ""}
-            key={item}
-            onClick={() => setFilter(item)}
-          >
-            {item}
-            {item === "Paused"
-              ? ` (${paused.length})`
-              : item === "Active"
-                ? ` (${active.length})`
-                : ""}
-          </button>
-        ))}
-      </div>
-      {visible.length === 0 ? (
-        <Empty text={`No ${filter.toLowerCase()} ongoing clients.`} />
-      ) : (
-        visible.map((c) => (
-          <ClientRow key={c.id + c.date} client={c} date={c.date} />
-        ))
-      )}
-    </div>
-  );
-}
-
-// ── Payments View
-// eslint-disable-next-line no-unused-vars
-function ServiceAccountList({ accounts, onUpdate, tone, label }) {
-  const sortedAccounts = [...accounts].sort((a, b) => {
-    const ad = a.dueDate || a.service.createdAt || a.client.date || "";
-    const bd = b.dueDate || b.service.createdAt || b.client.date || "";
-    return ad.localeCompare(bd);
-  });
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div
-        style={{
-          fontSize: 12,
-          color: tone,
-          letterSpacing: 2,
-          marginBottom: 10,
-          fontWeight: "bold",
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {sortedAccounts.map(
-          ({ client, service, total, paid, balance, dueDate }) => (
-            <div
-              key={`${client.id}-${service.id}`}
-              style={{
-                background: SURF,
-                border: `1px solid ${BORDER}`,
-                borderLeft: `3px solid ${tone}`,
-                borderRadius: 8,
-                padding: 12,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 10,
-                  marginBottom: 5,
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: "bold",
-                      color: "var(--text)",
-                    }}
-                  >
-                    {client.name}
-                  </div>
-                  <div style={{ fontSize: 12, color: DIM, marginTop: 2 }}>
-                    {client.business || "No business"} · {service.title}
-                  </div>
-                </div>
-                <div
-                  style={{
-                    textAlign: "right",
-                    fontSize: 12,
-                    color: balance > 0 ? WARM_C : LIME,
-                    fontWeight: "bold",
-                  }}
-                >
-                  {fmtUGX(balance)} left
-                </div>
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  fontSize: 12,
-                  color: DIM,
-                }}
-              >
-                <span>
-                  Agreed {fmtUGX(total)} · Paid {fmtUGX(paid)}
-                </span>
-                <span>
-                  {dueDate ? `Due ${fmtDate(dueDate)}` : "No due date"}
-                </span>
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 6,
-                  flexWrap: "wrap",
-                  marginTop: 9,
-                }}
-              >
-                <button
-                  onClick={() =>
-                    onUpdate(client.date, client.id, {
-                      services: getClientServices(client).map((s) =>
-                        s.id === service.id ? { ...s, dueDate: todayStr() } : s,
-                      ),
-                    })
-                  }
-                  style={{
-                    background: SURF2,
-                    border: `1px solid ${BORDER}`,
-                    color: WARM_C,
-                    borderRadius: 5,
-                    padding: "5px 8px",
-                    fontSize: 12,
-                    cursor: "pointer",
-                    fontFamily: FONT,
-                  }}
-                >
-                  Mark due today
-                </button>
-              </div>
-            </div>
-          ),
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StatsView({ clients, target }) {
-  const activeOutstanding = outstandingBalances(clients).reduce(
-    (sum, item) => sum + item.balance,
-    0,
-  );
-  const allClients = Object.entries(clients).flatMap(([date, arr]) =>
-    arr.map((c) => ({ ...c, date })),
-  );
-
-  const today = todayStr();
-
-  const getDaysAgo = (days) => {
-    const d = new Date();
-    d.setDate(d.getDate() - days);
-    return d.toISOString().split("T")[0];
-  };
-
-  const oneWeekAgo = getDaysAgo(7);
-  const oneMonthAgo = getDaysAgo(30);
-  const thisYearStart = `${new Date().getFullYear()}-01-01`;
-
-  const todayOutreaches = allClients.filter((c) => c.date === today).length;
-  const weekOutreaches = allClients.filter((c) => c.date >= oneWeekAgo).length;
-  const monthOutreaches = allClients.filter(
-    (c) => c.date >= oneMonthAgo,
-  ).length;
-  const yearOutreaches = allClients.filter(
-    (c) => c.date >= thisYearStart,
-  ).length;
-
-  const totalOutreaches = allClients.length;
-  const totalLeads = allClients.filter((c) => c.status === "lead").length;
-  const totalOngoing = allClients.filter((c) => c.status === "ongoing").length;
-
-  const conversionRate =
-    totalOutreaches > 0
-      ? ((totalOngoing / totalOutreaches) * 100).toFixed(1)
-      : "0.0";
-
-  const inPerson = allClients.filter(
-    (c) => c.pitchMethod === "In-Person",
-  ).length;
-  const whatsapp = allClients.filter(
-    (c) => c.pitchMethod === "WhatsApp",
-  ).length;
-
-  const warm = allClients.filter((c) => c.temp === "warm").length;
-  const cold = allClients.filter((c) => c.temp === "cold").length;
-
-  const ownerPresent = allClients.filter((c) => c.ownerAround === "yes").length;
-  const ownerAbsent = allClients.filter((c) => c.ownerAround === "no").length;
-
-  const todayPct = Math.min(1, todayOutreaches / target);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div
-        style={{
-          background: SURF,
-          border: `1px solid ${BORDER}`,
-          borderRadius: 12,
-          padding: "16px",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginBottom: 8,
-          }}
-        >
-          <span style={{ fontSize: 12, color: DIM, letterSpacing: 1 }}>
-            TODAY'S OUTREACH TARGET
-          </span>
-          <span
-            style={{
-              fontSize: 12,
-              color: todayPct >= 1 ? LIME : "var(--text)",
-              fontWeight: "bold",
-            }}
-          >
-            {todayOutreaches} / {target} ({Math.round(todayPct * 100)}%)
-          </span>
-        </div>
-        <div
-          style={{
-            background: BORDER,
-            borderRadius: 4,
-            height: 6,
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              height: "100%",
-              borderRadius: 4,
-              background: LIME,
-              width: `${todayPct * 100}%`,
-              transition: "width 0.4s ease",
-            }}
-          />
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <div
-          style={{
-            background: SURF,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 10,
-            padding: 12,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              color: DIM,
-              letterSpacing: 1,
-              marginBottom: 4,
-            }}
-          >
-            TODAY
-          </div>
-          <div style={{ fontSize: 20, fontWeight: "bold", color: LIME }}>
-            {todayOutreaches}
-          </div>
-          <div style={{ fontSize: 12, color: DIM, marginTop: 2 }}>
-            Target: {target}
-          </div>
-        </div>
-        <div
-          style={{
-            background: SURF,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 10,
-            padding: 12,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              color: DIM,
-              letterSpacing: 1,
-              marginBottom: 4,
-            }}
-          >
-            THIS WEEK (7D)
-          </div>
-          <div
-            style={{ fontSize: 20, fontWeight: "bold", color: "var(--text)" }}
-          >
-            {weekOutreaches}
-          </div>
-          <div style={{ fontSize: 12, color: DIM, marginTop: 2 }}>
-            Avg: {(weekOutreaches / 7).toFixed(1)}/day
-          </div>
-        </div>
-        <div
-          style={{
-            background: SURF,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 10,
-            padding: 12,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              color: DIM,
-              letterSpacing: 1,
-              marginBottom: 4,
-            }}
-          >
-            THIS MONTH (30D)
-          </div>
-          <div
-            style={{ fontSize: 20, fontWeight: "bold", color: "var(--text)" }}
-          >
-            {monthOutreaches}
-          </div>
-          <div style={{ fontSize: 12, color: DIM, marginTop: 2 }}>
-            Avg: {(monthOutreaches / 30).toFixed(1)}/day
-          </div>
-        </div>
-        <div
-          style={{
-            background: SURF,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 10,
-            padding: 12,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              color: DIM,
-              letterSpacing: 1,
-              marginBottom: 4,
-            }}
-          >
-            THIS YEAR
-          </div>
-          <div
-            style={{ fontSize: 20, fontWeight: "bold", color: "var(--text)" }}
-          >
-            {yearOutreaches}
-          </div>
-          <div style={{ fontSize: 12, color: DIM, marginTop: 2 }}>
-            Total year pitches
-          </div>
-        </div>
-      </div>
-
-      <div
-        style={{
-          background: SURF,
-          border: `1px solid ${BORDER}`,
-          borderRadius: 12,
-          padding: "16px",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 12,
-            color: DIM,
-            letterSpacing: 1,
-            marginBottom: 12,
-          }}
-        >
-          CONVERSION PERFORMANCE
-        </div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 12,
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 24, fontWeight: "bold", color: LIME }}>
-              {conversionRate}%
-            </div>
-            <div style={{ fontSize: 12, color: DIM }}>LEADS TO ONGOING</div>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 12, color: "var(--text-2)" }}>
-              <b>{totalOngoing}</b> Won Clients
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>
-              <b>{totalLeads}</b> Active Leads
-            </div>
-            <div style={{ fontSize: 12, color: DIM, marginTop: 4 }}>
-              Active balance due: {fmtUGX(activeOutstanding)}
-            </div>
-            <div style={{ fontSize: 12, color: DIM, marginTop: 4 }}>
-              Out of {totalOutreaches} total pitches
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div
-        style={{
-          background: SURF,
-          border: `1px solid ${BORDER}`,
-          borderRadius: 12,
-          padding: "16px",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 12,
-            color: DIM,
-            letterSpacing: 1,
-            marginBottom: 12,
-          }}
-        >
-          OUTREACH ANALYSIS
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: 12,
-              marginBottom: 4,
-            }}
-          >
-            <span style={{ color: DIM }}>Pitch Method</span>
-            <span>
-              In-Person: {inPerson} · WhatsApp: {whatsapp}
-            </span>
-          </div>
-          <div
-            style={{
-              background: BORDER,
-              height: 6,
-              borderRadius: 3,
-              display: "flex",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                background: LIME,
-                width: `${totalOutreaches ? (inPerson / totalOutreaches) * 100 : 0}%`,
-              }}
-            />
-            <div
-              style={{
-                background: GREEN_WA,
-                width: `${totalOutreaches ? (whatsapp / totalOutreaches) * 100 : 0}%`,
-              }}
-            />
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: 12,
-              marginBottom: 4,
-            }}
-          >
-            <span style={{ color: DIM }}>Lead Temperature</span>
-            <span>
-              Warm: {warm} · Cold: {cold}
-            </span>
-          </div>
-          <div
-            style={{
-              background: BORDER,
-              height: 6,
-              borderRadius: 3,
-              display: "flex",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                background: WARM_C,
-                width: `${totalOutreaches ? (warm / totalOutreaches) * 100 : 0}%`,
-              }}
-            />
-            <div
-              style={{
-                background: COLD_C,
-                width: `${totalOutreaches ? (cold / totalOutreaches) * 100 : 0}%`,
-              }}
-            />
-          </div>
-        </div>
-
-        <div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: 12,
-              marginBottom: 4,
-            }}
-          >
-            <span style={{ color: DIM }}>Decision Maker Presence</span>
-            <span>
-              Owner Around: {ownerPresent} · Staff Only: {ownerAbsent}
-            </span>
-          </div>
-          <div
-            style={{
-              background: BORDER,
-              height: 6,
-              borderRadius: 3,
-              display: "flex",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                background: LIME,
-                width: `${totalOutreaches ? (ownerPresent / totalOutreaches) * 100 : 0}%`,
-              }}
-            />
-            <div
-              style={{
-                background: DIM,
-                width: `${totalOutreaches ? (ownerAbsent / totalOutreaches) * 100 : 0}%`,
-              }}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }

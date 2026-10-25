@@ -13,11 +13,21 @@ const views = [
       ["ongoing", "Ongoing", "Pipeline"],
     ],
   },
-  { group: "Money", items: [["payments", "Money", "Money"]] },
   {
-    group: "Records",
+    group: "Money",
     items: [
-      ["stats", "Stats", "More"],
+      ["payments", "Overview", "Money", "Overview"],
+      ["transactions", "Transactions", "History", "Income"],
+      ["monthly", "Monthly earnings", "Chart", "Monthly earnings"],
+      ["purposes", "Purposes", "Pipeline", "Allocations"],
+      ["accounts", "Accounts", "Money", "Accounts"],
+      ["balances", "Client balances", "Today", "Client balances"],
+    ],
+  },
+  {
+    group: "Insights and reference",
+    items: [
+      ["stats", "Performance", "Chart"],
       ["history", "History", "More"],
       ["flow", "Playbook", "Book"],
     ],
@@ -29,7 +39,7 @@ const titles = {
   followups: "Follow-Ups",
   ongoing: "Ongoing Projects",
   payments: "Money",
-  stats: "Performance Stats",
+  stats: "Performance",
   history: "History",
   flow: "Playbook",
 };
@@ -53,10 +63,13 @@ export default function AppShell({
   onQuickLead,
   onQuickIncome,
   onQuickExpense,
+  moneyTab = "Overview",
+  onSelectMoneySection,
 }) {
   const [more, setMore] = useState(false);
   const [quickAdd, setQuickAdd] = useState(false);
   const [lastPipeline, setLastPipeline] = useState("followups");
+  const [moneyMenu, setMoneyMenu] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
   const pipeline = ["outreach", "followups", "ongoing"].includes(tab);
   const select = (key) => {
@@ -82,6 +95,7 @@ export default function AppShell({
     ["payments", "Money", "Money"],
     ["more", "More", "More"],
   ];
+  const currentTitle = tab === "payments" ? "Money" : titles[tab] || "Today";
   const logo = (
     <img
       src="/assets/images/logo.png"
@@ -105,11 +119,28 @@ export default function AppShell({
           {views.map((group) => (
             <section key={group.group}>
               <h2>{group.group}</h2>
-              {group.items.map(([key, label, icon]) => (
+              {group.items.map(([key, label, icon, section]) => (
                 <button
                   key={key}
-                  className={tab === key ? "active" : ""}
-                  onClick={() => select(key)}
+                  className={
+                    (group.group === "Money"
+                      ? tab === "payments" && (
+                          section === "Income"
+                            ? ["Income", "Expenses"].includes(moneyTab)
+                            : moneyTab === section
+                        )
+                      : tab === key)
+                      ? "active"
+                      : ""
+                  }
+                  onClick={() => {
+                    if (group.group === "Money") {
+                      select("payments");
+                      onSelectMoneySection?.(section);
+                      return;
+                    }
+                    select(key);
+                  }}
                 >
                   <Icon name={icon} size={20} />
                   <span>{label}</span>
@@ -137,7 +168,7 @@ export default function AppShell({
       <div className="os-main">
         <header className="os-topbar">
           <div className="os-mobile-logo">{logoFailed ? <b>S</b> : logo}</div>
-          <h1 title={titles[tab] || "Today"}>{titles[tab] || "Today"}</h1>
+          <h1 title={currentTitle}>{currentTitle}</h1>
           <button
             className={`os-sync ${statusTone}`}
             onClick={onSync}
@@ -182,6 +213,55 @@ export default function AppShell({
             ))}
           </nav>
         )}
+        {tab === "payments" && (
+          <div className="os-money-picker">
+            <button
+              className="os-money-current"
+              aria-expanded={moneyMenu}
+              aria-haspopup="menu"
+              onClick={() => setMoneyMenu((open) => !open)}
+            >
+              <span>Money section</span>
+              <strong>
+                {{
+                  Overview: "Overview",
+                  Income: "Transactions",
+                  Expenses: "Expenses",
+                  Allocations: "Purposes",
+                  Accounts: "Accounts",
+                  "Client balances": "Clients",
+                  "Monthly earnings": "Monthly earnings",
+                }[moneyTab] || "Overview"}
+              </strong>
+              <Icon name="ChevronDown" size={18} />
+            </button>
+            {moneyMenu && (
+              <nav className="os-money-menu" aria-label="Money sections" role="menu">
+                {[
+                  ["Overview", "Overview"],
+                  ["Income", "Transactions"],
+                  ["Expenses", "Expenses"],
+                  ["Allocations", "Purposes"],
+                  ["Accounts", "Accounts"],
+                  ["Client balances", "Clients"],
+                  ["Monthly earnings", "Monthly earnings"],
+                ].map(([section, label]) => (
+                  <button
+                    key={section}
+                    role="menuitem"
+                    className={moneyTab === section ? "active" : ""}
+                    onClick={() => {
+                      onSelectMoneySection?.(section);
+                      setMoneyMenu(false);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </nav>
+            )}
+          </div>
+        )}
         <main
           className={`os-content${detail ? " has-detail" : ""}${pipeline ? " split-pipeline" : ""}`}
         >
@@ -193,17 +273,6 @@ export default function AppShell({
           )}
           <div className="os-list">{children}</div>
           {detail && <section className="os-detail">{detail}</section>}
-          {!detail && pipeline && (
-            <section className="os-detail os-detail-empty">
-              <div className="card">
-                <h2>Select a client to see details</h2>
-                <button className="btn btn-secondary" onClick={onSearch}>
-                  <Icon name="Search" size={18} />
-                  Search clients
-                </button>
-              </div>
-            </section>
-          )}
         </main>
         {searchPanel}
       </div>

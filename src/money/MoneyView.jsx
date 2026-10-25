@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import {
   DEFAULT_FINANCE,
   allocateAmount,
@@ -9,17 +9,18 @@ import {
 } from "../money.js";
 import { outstandingBalances, pausedBalances } from "../clients.js";
 import { useConfirm } from "../Confirm.jsx";
-import { Icon } from "../components/Icon.jsx";
+import { useEffect } from "react";
+import Card from "../components/Card.jsx";
+import Overview from "./Overview.jsx";
+import Transactions from "./Transactions.jsx";
+import Purposes from "./Purposes.jsx";
+import Accounts from "./Accounts.jsx";
+import ClientBalances from "./ClientBalances.jsx";
+import MonthlyEarnings from "./MonthlyEarnings.jsx";
 import "./MoneyView.css";
+import "./MonthlyEarnings.css";
 
-const bucketIcons = {
-  "move-out": "ArrowDown",
-  living: "Money",
-  business: "Pipeline",
-  emergency: "Plus",
-  projects: "Edit",
-  giving: "Check",
-};
+
 
 const money = (n) => `UGX ${Math.round(n || 0).toLocaleString("en-UG")}`;
 const uid = () => `m-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -36,6 +37,9 @@ export default function MoneyView({
   query = "",
   initialTab = "Income",
   initialForm = "",
+  initialMonth = "",
+  onSelectMoneySection,
+  onInitialFormConsumed,
 }) {
   const ask = useConfirm();
   const finance = data.finance || DEFAULT_FINANCE;
@@ -47,11 +51,13 @@ export default function MoneyView({
   const [message, setMessage] = useState("");
   const [paymentEdit, setPaymentEdit] = useState(null);
   const [paymentEditError, setPaymentEditError] = useState("");
-  const [incomeMenuOpen, setIncomeMenuOpen] = useState(false);
   const [resetBucket, setResetBucket] = useState(null);
   const [resetOpening, setResetOpening] = useState("0");
   const [resetNote, setResetNote] = useState("");
   const [borrowShortfall, setBorrowShortfall] = useState(false);
+  useEffect(() => {
+    if (initialForm) onInitialFormConsumed?.();
+  }, [initialForm, onInitialFormConsumed]);
   const [draft, setDraft] = useState({
     date: today(),
     amount: "",
@@ -170,6 +176,7 @@ export default function MoneyView({
             description: draft.description.trim(),
             note: draft.note || "",
             sourceType: draft.sourceType,
+            reportingClass: draft.reportingClass || "",
             accountId: draft.accountId,
             allocationMode: draft.custom
               ? "custom"
@@ -195,6 +202,7 @@ export default function MoneyView({
             description: draft.description.trim(),
             note: draft.note || "",
             sourceType: draft.sourceType,
+            reportingClass: draft.reportingClass || "",
             accountId: draft.accountId,
             allocationMode: draft.custom ? "custom" : "default",
             allocations: split.allocations,
@@ -515,7 +523,25 @@ export default function MoneyView({
           .includes(searchText.toLocaleLowerCase()),
     );
   const createManualIncome = () => startForm("income");
-
+  const createManualExpense = () => startForm("expense");
+  const changeTab = (next) => {
+    setTab(next);
+    onSelectMoneySection?.(next);
+  };
+  const selectReportTransaction = (transaction) => {
+    if (transaction.sourceType === "client_payment") {
+      for (const [date, clients] of Object.entries(data.clients || {})) {
+        const client = clients.find((item) => item.id === transaction.clientId);
+        const payment = client?.payments?.find((item) => item.id === transaction.paymentId);
+        if (client && payment) {
+          openClientPaymentEdit({ date, clientId: client.id }, payment);
+          return;
+        }
+      }
+      return;
+    }
+    editTransaction(transaction, startForm);
+  };
   return (
     <main className="money-app">
       <header className="money-header">
@@ -528,535 +554,48 @@ export default function MoneyView({
             "Allocations",
             "Accounts",
             "Client balances",
+            "Monthly earnings",
           ].map((item) => (
             <button
               key={item}
               className={tab === item ? "selected" : ""}
-              onClick={() => setTab(item)}
+              onClick={() => changeTab(item)}
             >
               {item}
             </button>
           ))}
         </nav>
-        <button className="m-primary" onClick={createManualIncome}>
-          ＋ Log income
-        </button>
+        {!['Allocations', 'Accounts', 'Client balances'].includes(tab) && (
+          <button
+            className="m-primary"
+            onClick={tab === 'Expenses' ? createManualExpense : createManualIncome}
+          >
+            {tab === 'Expenses' ? '＋ Log expense' : '＋ Log income'}
+          </button>
+        )}
       </header>
-      {message && !form && <p className="m-notice">{message}</p>}
-      <section className="money-content">
-        {tab === "Overview" && (
-          <>
-            <div className="m-stats">
-              <Metric
-                title="Total received"
-                value={money(totals.income)}
-                detail={`${money(totals.clientIncome)} from clients · ${money(totals.otherIncome)} other`}
-              />
-              <Metric
-                title="Available money"
-                value={money(totals.available)}
-                detail="Income received less expenses"
-              />
-              <Metric
-                title="Total expenses"
-                value={money(totals.expenses)}
-                detail={`${transactions.filter((t) => t.type === "expense").length} recorded expenses`}
-              />
-              <Metric
-                title="Outstanding client money"
-                value={money(
-                  outstandingBalances(data.clients).reduce(
-                    (sum, item) => sum + item.balance,
-                    0,
-                  ),
-                )}
-                detail="Agreed client balances · not cash"
-              />
-            </div>
-            <div className="m-panel">
-              <div className="m-section-head">
-                <div>
-                  <h2>Money by purpose</h2>
-                  <p>Current balances from allocations and expenses</p>
-                </div>
-                <button
-                  className="m-quiet"
-                  onClick={() => setTab("Allocations")}
-                >
-                  Manage allocations →
-                </button>
-              </div>
-              {activeBuckets.length ? (
-                <div className="m-bucket-grid">
-                  {activeBuckets.map((b) => {
-                    const v = totals.buckets[b.id] || {
-                      allocated: 0,
-                      spent: 0,
-                    };
-                    const available = v.balance;
-                    return (
-                      <article className="m-bucket" key={b.id}>
-                        <div className="m-bucket-name">
-                          <span className="m-icon">
-                            <Icon name={bucketIcons[b.id] || "Money"} size={20} />
-                          </span>
-                          <span>{b.name}</span>
-                        </div>
-                        <strong>{money(available)}</strong>
-                        <span className="m-muted">available</span>
-                        {v.borrowed > 0 && (
-                          <span className="m-muted">
-                            Borrowed balance: -{money(v.borrowed)} · repaid from
-                            future allocations
-                          </span>
-                        )}
-                        <div className="m-progress">
-                          <i
-                            style={{
-                              width: `${b.target ? Math.min(100, Math.max(0, (available / b.target) * 100)) : 0}%`,
-                            }}
-                          />
-                        </div>
-                        <div className="m-detail-row">
-                          <span>{b.percentage}% default</span>
-                          <span>{money(v.allocated)} allocated</span>
-                        </div>
-                        <div className="m-detail-row">
-                          <span>{money(v.spent)} spent</span>
-                          <span>
-                            {b.target
-                              ? `${Math.min(100, Math.round((available / b.target) * 100))}% of goal`
-                              : "No target"}
-                          </span>
-                        </div>
-                        <div className="m-row-actions">
-                          <button
-                            className="m-quiet"
-                            onClick={() => startForm("bucket", b)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            className="m-quiet"
-                            onClick={() => {
-                              setResetBucket(b);
-                              setResetOpening("0");
-                            }}
-                          >
-                            Start fresh
-                          </button>
-                          <button
-                            className="m-quiet"
-                            onClick={() => archiveBucket(b)}
-                          >
-                            Archive
-                          </button>
-                        </div>
-                        {(finance.bucketResets || [])
-                          .filter((reset) => reset.bucketId === b.id)
-                          .slice(-1)
-                          .map((reset) => (
-                            <p className="m-muted" key={reset.id}>
-                              Counting since{" "}
-                              {new Date(reset.at).toLocaleDateString("en-UG")} ·{" "}
-                              <button
-                                className="m-quiet"
-                                onClick={() => undoBucketClear(reset)}
-                              >
-                                Undo clear
-                              </button>
-                            </p>
-                          ))}
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : (
-                <Empty
-                  title="No buckets yet"
-                  text="Add a bucket to decide what your money is for."
-                  action={() => setTab("Allocations")}
-                  label="Set up buckets"
-                />
-              )}
-              <p className="m-muted">
-                Not assigned to a purpose:{" "}
-                {money(totals.available - assignedBalance)}
-              </p>
-            </div>
-            <div className="m-two-col">
-              <div className="m-panel">
-                <div className="m-section-head">
-                  <div>
-                    <h2>Where money is</h2>
-                    <p>Balances derive from recorded activity</p>
-                  </div>
-                  <button
-                    className="m-quiet"
-                    onClick={() => setTab("Accounts")}
-                  >
-                    Accounts →
-                  </button>
-                </div>
-                {finance.accounts
-                  .filter((a) => a.status !== "archived")
-                  .map((a) => (
-                    <div className="m-list-row" key={a.id}>
-                      <span>{a.name}</span>
-                      <strong>{money(totals.accounts[a.id] || 0)}</strong>
-                    </div>
-                  ))}
-              </div>
-              <div className="m-panel">
-                <div className="m-section-head">
-                  <div>
-                    <h2>Recent activity</h2>
-                    <p>Latest income and expenses</p>
-                  </div>
-                  <button className="m-quiet" onClick={() => setTab("Income")}>
-                    Full history →
-                  </button>
-                </div>
-                <TransactionList
-                  rows={transactions.slice(0, 5)}
-                  finance={finance}
-                  onEdit={(t) => editTransaction(t, startForm)}
-                  onSetAccount={setPaymentAccount}
-                />
-              </div>
-            </div>
-          </>
-        )}
-        {tab === "Income" && (
-          <div className="m-panel">
-            <div className="m-section-head">
-              <div>
-                <h2>Income</h2>
-                <p>
-                  Client payments appear automatically. Other income is recorded
-                  here.
-                </p>
-                <button
-                  className="m-menu-button"
-                  aria-label="Income options"
-                  onClick={() => setIncomeMenuOpen((open) => !open)}
-                >
-                  ⋯
-                </button>
-                {incomeMenuOpen && (
-                  <button
-                    className="m-secondary"
-                    onClick={() => {
-                      setIncomeMenuOpen(false);
-                      startForm("source");
-                    }}
-                  >
-                    Source type
-                  </button>
-                )}
-              </div>
-              <div className="m-actions">
-                <button
-                  className="m-secondary"
-                  onClick={() => startForm("source")}
-                >
-                  ＋ Source type
-                </button>
-                <button className="m-primary" onClick={createManualIncome}>
-                  ＋ Add income
-                </button>
-              </div>
-            </div>
-            <FilterBar filter={filter} setFilter={setFilter} />
-            <TransactionSearch value={searchText} onChange={setSearchText} />
-            <TransactionList
-              rows={visible.filter((t) => t.type === "income")}
-              finance={finance}
-              onEdit={(t) => editTransaction(t, startForm)}
-              onDelete={archiveTransaction}
-              onSetAccount={setPaymentAccount}
-            />
-          </div>
-        )}
-        {tab === "Expenses" && (
-          <div className="m-panel">
-            <div className="m-section-head">
-              <div>
-                <h2>Expenses</h2>
-                <p>Assign each expense to its purpose and payment account.</p>
-              </div>
-              <button
-                className="m-primary"
-                onClick={() => startForm("expense")}
-              >
-                ＋ Log expense
-              </button>
-            </div>
-            <FilterBar filter={filter} setFilter={setFilter} />
-            <TransactionSearch value={searchText} onChange={setSearchText} />
-            <TransactionList
-              rows={visible.filter((t) => t.type === "expense")}
-              finance={finance}
-              onEdit={(t) => editTransaction(t, startForm)}
-              onDelete={archiveTransaction}
-            />
-          </div>
-        )}
-        {tab === "Allocations" && (
-          <div className="m-panel">
-            <div className="m-section-head">
-              <div>
-                <h2>Allocation rules</h2>
-                <p>
-                  Changes apply only to future income. Past allocations stay
-                  unchanged.
-                </p>
-              </div>
-              <button className="m-primary" onClick={() => startForm("bucket")}>
-                ＋ Add bucket
-              </button>
-            </div>
-            <div
-              className={`m-allocation-total ${allocationTotal > 100 ? "invalid" : ""}`}
-            >
-              <b>{allocationTotal}%</b>
-              <span>
-                {allocationTotal > 100
-                  ? `Over-allocated by ${allocationTotal - 100}%`
-                  : allocationTotal === 100
-                    ? "Allocation complete"
-                    : `${100 - allocationTotal}% will stay unallocated`}
-              </span>
-            </div>
-            {finance.buckets
-              .slice()
-              .sort((a, b) => a.sortOrder - b.sortOrder)
-              .map((b) => {
-                const index = activeBuckets.findIndex((x) => x.id === b.id);
-                return (
-                  <div
-                    className={`m-rule ${b.status === "archived" ? "archived" : ""}`}
-                    key={b.id}
-                  >
-                    <span className="m-icon">
-                      <Icon name={bucketIcons[b.id] || "Money"} size={20} />
-                    </span>
-                    <div className="m-rule-main">
-                      <strong>{b.name}</strong>
-                      <div className="m-muted">
-                        {money(totals.buckets[b.id]?.balance || 0)} available
-                        {totals.buckets[b.id]?.borrowed > 0 && (
-                          <span>
-                            {" "}
-                            · Debt -{money(totals.buckets[b.id].borrowed)}
-                          </span>
-                        )}
-                        {b.target ? ` · Goal ${money(b.target)}` : ""}
-                      </div>
-                    </div>
-                    <b>{b.percentage}%</b>
-                    {(finance.bucketResets || [])
-                      .filter((reset) => reset.bucketId === b.id)
-                      .slice(-1)
-                      .map((reset) => (
-                        <small className="m-muted" key={reset.id}>
-                          Counting since{" "}
-                          {new Date(reset.at).toLocaleDateString("en-UG")} ·{" "}
-                          <button
-                            className="m-quiet"
-                            onClick={() => undoBucketClear(reset)}
-                          >
-                            Undo clear
-                          </button>
-                        </small>
-                      ))}
-                    {b.status === "archived" ? (
-                      <button
-                        className="m-quiet"
-                        onClick={() => restoreBucket(b)}
-                      >
-                        Restore
-                      </button>
-                    ) : (
-                      <>
-                        <button
-                          className="m-quiet m-order"
-                          aria-label={`Move ${b.name} up`}
-                          disabled={index === 0}
-                          onClick={() => reorderBucket(b, -1)}
-                        >
-                          ↑
-                        </button>
-                        <button
-                          className="m-quiet m-order"
-                          aria-label={`Move ${b.name} down`}
-                          disabled={index === activeBuckets.length - 1}
-                          onClick={() => reorderBucket(b, 1)}
-                        >
-                          ↓
-                        </button>
-                        <button
-                          className="m-quiet"
-                          onClick={() => startForm("bucket", b)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="m-quiet"
-                          onClick={() => {
-                            setResetBucket(b);
-                            setResetOpening("0");
-                          }}
-                        >
-                          Start fresh
-                        </button>
-                        <button
-                          className="m-quiet"
-                          onClick={() => archiveBucket(b)}
-                        >
-                          Archive
-                        </button>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            {allocationTotal > 100 && (
-              <p className="m-error">
-                New income cannot be saved while active bucket percentages
-                exceed 100%.
-              </p>
-            )}
-            <p className="m-muted">
-              Not assigned to a purpose:{" "}
-              {money(totals.available - assignedBalance)}
-            </p>
-          </div>
-        )}
-        {tab === "Accounts" && (
-          <div className="m-panel">
-            <div className="m-section-head">
-              <div>
-                <h2>Accounts</h2>
-                <p>
-                  Where money physically exists. Balances use recorded
-                  transactions.
-                </p>
-              </div>
-              <button
-                className="m-primary"
-                onClick={() => startForm("account")}
-              >
-                ＋ Add account
-              </button>
-            </div>
-            {finance.accounts.map((a) => (
-              <div
-                className={`m-rule ${a.status === "archived" ? "archived" : ""}`}
-                key={a.id}
-              >
-                <span className="m-icon">⌁</span>
-                <div className="m-rule-main">
-                  <strong>{a.name}</strong>
-                  <div className="m-muted">
-                    {a.type} · {a.status === "archived" ? "Archived" : "Active"}
-                  </div>
-                </div>
-                <b>{money(totals.accounts[a.id] || 0)}</b>
-                {a.status !== "archived" && (
-                  <>
-                    <button
-                      className="m-quiet"
-                      onClick={() => startForm("account", a)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="m-quiet"
-                      onClick={() => archiveAccount(a)}
-                    >
-                      Archive
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
-            <p className="m-hint">
-              Legacy expenses with no account remain marked as unknown and are
-              excluded from account balances.
-            </p>
-          </div>
-        )}
-        {tab === "Client balances" && (
-          <div className="m-panel">
-            <h2>Outstanding client balances</h2>
-            <p className="m-muted">
-              Unpaid agreements are not included in available money. Editing a
-              payment updates both the balance owed and its ledger entry.
-            </p>
-            {outstandingBalances(data.clients).map((x) => (
-              <div className="m-list-row m-client-balance" key={x.id}>
-                <div>
-                  <strong>{x.name}</strong>
-                  <div className="m-muted">
-                    {x.service} · {money(x.paid)} received of {money(x.total)}
-                  </div>
-                  {x.payments.length > 0 && (
-                    <div className="m-client-payments">
-                      {x.payments.map((payment) => (
-                        <div className="m-client-payment" key={payment.id}>
-                          <span>
-                            {payment.date || "Date unknown"} ·{" "}
-                            {payment.note || "Payment"} ·{" "}
-                            {money(payment.amount)}
-                          </span>
-                          <button
-                            className="m-quiet"
-                            onClick={() => openClientPaymentEdit(x, payment)}
-                          >
-                            Edit payment
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <strong className="m-warm">{money(x.balance)}</strong>
-              </div>
-            ))}
-            {!outstandingBalances(data.clients).length && (
-              <Empty
-                title="No outstanding balances"
-                text="Client balances will appear here when payments are due."
-              />
-            )}
-            <details className="m-paused">
-              <summary>
-                Paused ({pausedBalances(data.clients).length}) ·{" "}
-                {money(
-                  pausedBalances(data.clients).reduce(
-                    (sum, row) => sum + row.balance,
-                    0,
-                  ),
-                )}{" "}
-                not counted
-              </summary>
-              {pausedBalances(data.clients).map((row) => (
-                <div className="m-list-row" key={row.id}>
-                  <div>
-                    <strong>{row.name}</strong>
-                    <div className="m-muted">{row.service}</div>
-                  </div>
-                  <strong className="m-muted">{money(row.balance)}</strong>
-                </div>
-              ))}
-              {!pausedBalances(data.clients).length && (
-                <p className="m-muted">No paused client balances.</p>
-              )}
-            </details>
-          </div>
-        )}
-      </section>
+      {message && !form && <Card className="m-notice">{message}</Card>}
+      {tab === "Monthly earnings" ? (
+        <MonthlyEarnings data={data} initialMonth={initialMonth} onSave={onSave} onSelectTransaction={selectReportTransaction} />
+      ) : (
+        <section className="money-content">
+          {tab === "Overview" && (
+            <Overview totals={totals} transactions={transactions} clients={data.clients || {}} activeBuckets={activeBuckets} finance={finance} assignedBalance={assignedBalance} onChangeTab={changeTab} onEditBucket={(bucket) => startForm("bucket", bucket)} onResetBucket={(bucket) => { setResetBucket(bucket); setResetOpening("0"); }} onArchiveBucket={archiveBucket} onUndoBucketClear={undoBucketClear} onEditTransaction={(row) => editTransaction(row, startForm)} onSetAccount={setPaymentAccount} />
+          )}
+          {["Income", "Expenses"].includes(tab) && (
+            <Transactions rows={visible} filter={filter} setFilter={setFilter} searchText={searchText} setSearchText={setSearchText} onCreateExpense={createManualExpense} showExpenseAction={tab !== "Expenses"} onEdit={(row) => editTransaction(row, startForm)} onDelete={archiveTransaction} finance={finance} onSetAccount={setPaymentAccount} onAddSource={() => startForm("source")} />
+          )}
+          {tab === "Allocations" && (
+            <Purposes buckets={finance.buckets.slice().sort((a, b) => a.sortOrder - b.sortOrder)} totals={totals} allocationTotal={allocationTotal} assignedBalance={assignedBalance} available={totals.available} onAdd={() => startForm("bucket")} onEdit={(bucket) => startForm("bucket", bucket)} onArchive={archiveBucket} onRestore={restoreBucket} onReset={(bucket) => { setResetBucket(bucket); setResetOpening("0"); }} onUndo={undoBucketClear} onReorder={reorderBucket} />
+          )}
+          {tab === "Accounts" && (
+            <Accounts accounts={finance.accounts} totals={totals} onAdd={() => startForm("account")} onEdit={(account) => startForm("account", account)} onArchive={archiveAccount} />
+          )}
+          {tab === "Client balances" && (
+            <ClientBalances rows={outstandingBalances(data.clients)} pausedRows={pausedBalances(data.clients)} onEditPayment={openClientPaymentEdit} />
+          )}
+        </section>
+      )}
       {form && (
         <div
           className="m-overlay"
@@ -1094,6 +633,7 @@ export default function MoneyView({
                 ×
               </button>
             </div>
+            <div className="m-dialog-content">
             {(form === "income" || form === "expense") && (
               <>
                 <label>
@@ -1186,6 +726,28 @@ export default function MoneyView({
                     </label>
                   )}
                 </div>
+                {form === "income" && (
+                  <label className="m-reporting-class">
+                    Earnings report category
+                    <select
+                      value={draft.reportingClass || ""}
+                      onChange={(event) =>
+                        setDraft({
+                          ...draft,
+                          reportingClass: event.target.value,
+                        })
+                      }
+                    >
+                      <option value="">Use source default or review later</option>
+                      <option value="earned">Earnings</option>
+                      <option value="other">Other money received</option>
+                    </select>
+                    <small>
+                      This changes monthly reporting only, not how this income
+                      is allocated.
+                    </small>
+                  </label>
+                )}
                 {form === "expense" && expenseShortfall > 0 && (
                   <div className="m-borrow-prompt">
                     <strong>Bucket short by {money(expenseShortfall)}</strong>
@@ -1384,6 +946,7 @@ export default function MoneyView({
               </label>
             )}
             {message && <p className="m-error">{message}</p>}
+            </div>
             <div className="m-dialog-actions">
               <button type="button" className="m-secondary" onClick={closeForm}>
                 Cancel
@@ -1534,196 +1097,6 @@ export default function MoneyView({
   );
 }
 
-function Metric({ title, value, detail }) {
-  return (
-    <article className="m-stat">
-      <span>{title}</span>
-      <strong>{value}</strong>
-      <small>{detail}</small>
-    </article>
-  );
-}
-function Empty({ title, text, action, label }) {
-  return (
-    <div className="m-empty">
-      <strong>{title}</strong>
-      <p>{text}</p>
-      {action && (
-        <button className="m-quiet" onClick={action}>
-          {label}
-        </button>
-      )}
-    </div>
-  );
-}
-function FilterBar({ filter, setFilter }) {
-  return (
-    <div className="m-filters">
-      {["All", "Income", "Expenses"].map((x) => (
-        <button
-          className={filter === x ? "selected" : ""}
-          key={x}
-          onClick={() => setFilter(x)}
-        >
-          {x}
-        </button>
-      ))}
-    </div>
-  );
-}
-function TransactionSearch({ value, onChange }) {
-  return (
-    <div className="m-transaction-search">
-      <Icon name="Search" size={18} />
-      <input
-        className="field"
-        aria-label="Search transactions"
-        placeholder="Search transactions"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-      {value && (
-        <button
-          type="button"
-          aria-label="Clear search"
-          onClick={() => onChange("")}
-        >
-          ×
-        </button>
-      )}
-    </div>
-  );
-}
-function TransactionList({ rows, finance, onEdit, onDelete, onSetAccount }) {
-  const [accountPicker, setAccountPicker] = useState(null);
-  if (!rows.length)
-    return (
-      <Empty
-        title="No transactions yet"
-        text="Income and expenses will show here as they are recorded."
-      />
-    );
-  return (
-    <div className="m-transactions">
-      {rows.map((t) => (
-        <article className="m-transaction" key={t.id}>
-          <span className={`m-transaction-icon ${t.type}`}>
-            <Icon
-              name={t.type === "income" ? "ArrowDown" : "ArrowUp"}
-              size={20}
-            />
-          </span>
-          <span
-            className={`m-amount ${t.type === "income" ? "positive" : "negative"}`}
-          >
-            {t.type === "income" ? "+" : "−"}
-            {money(t.amount)}
-          </span>
-          <div className="m-transaction-main">
-            <strong>{t.clientName || t.description}</strong>
-            <span>
-              {t.type === "expense"
-                ? `${finance.buckets.find((b) => b.id === t.bucketId)?.name || "Uncategorized"} · `
-                : t.sourceType === "client_payment"
-                  ? `Client payment · ${t.serviceName}`
-                  : `${t.sourceType} · ${t.description}`}
-              {t.accountId
-                ? ` · ${finance.accounts.find((a) => a.id === t.accountId)?.name || "Archived account"}`
-                : " · Unknown account"}
-            </span>
-            <small>
-              {t.date || "Date unknown"}
-              {t.type === "income" && t.unallocated
-                ? ` · ${money(t.unallocated)} unallocated`
-                : ""}
-            </small>
-          </div>
-          {t.type === "income" &&
-            t.sourceType === "client_payment" &&
-            onSetAccount && (
-              <button
-                className={`m-account-chip${t.accountId ? " assigned" : " warn"}`}
-                aria-label={`Account for ${t.clientName} payment`}
-                onClick={() => setAccountPicker(t)}
-              >
-                {t.accountId
-                  ? finance.accounts.find(
-                      (account) => account.id === t.accountId,
-                    )?.name || "Archived account"
-                  : "Assign account"}
-              </button>
-            )}
-          {t.type === "income" && t.sourceType !== "client_payment" && (
-            <>
-              <button className="m-quiet" onClick={() => onEdit?.(t)}>
-                Edit
-              </button>
-              {onDelete && (
-                <button className="m-quiet" onClick={() => onDelete(t)}>
-                  Delete
-                </button>
-              )}
-            </>
-          )}
-          {t.type === "expense" && (
-            <>
-              <button className="m-quiet" onClick={() => onEdit?.(t)}>
-                Edit
-              </button>
-              {onDelete && (
-                <button className="m-quiet" onClick={() => onDelete(t)}>
-                  Delete
-                </button>
-              )}
-            </>
-          )}
-        </article>
-      ))}
-      {accountPicker && (
-        <div
-          className="m-overlay"
-          onMouseDown={(event) =>
-            event.target === event.currentTarget && setAccountPicker(null)
-          }
-        >
-          <section className="m-dialog m-account-picker">
-            <h2>Assign account</h2>
-            <p>Select where this payment was received.</p>
-            {finance.accounts
-              .filter((account) => account.status !== "archived")
-              .map((account) => (
-                <button
-                  key={account.id}
-                  className="btn btn-ghost"
-                  onClick={() => {
-                    onSetAccount(accountPicker, account.id);
-                    setAccountPicker(null);
-                  }}
-                >
-                  {account.name}
-                </button>
-              ))}
-            <button
-              className="btn btn-ghost"
-              onClick={() => {
-                onSetAccount(accountPicker, "");
-                setAccountPicker(null);
-              }}
-            >
-              Unknown
-            </button>
-            <button
-              className="btn btn-ghost"
-              onClick={() => setAccountPicker(null)}
-            >
-              Cancel
-            </button>
-          </section>
-        </div>
-      )}
-    </div>
-  );
-}
 function editTransaction(t, start) {
   if (t.type === "income" && t.sourceType !== "client_payment")
     start("income", { ...t, id: t.id.replace("income:", "") });

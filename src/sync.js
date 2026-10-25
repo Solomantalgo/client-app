@@ -20,6 +20,36 @@ export function hasSavedContent(data) {
     || hasCustomSetup;
 }
 
+export function snapshotRecordCount(data) {
+  const clients = Object.values(data?.clients || {}).flatMap((rows) =>
+    Array.isArray(rows) ? rows : [],
+  );
+  return (
+    clients.length +
+    clients.reduce(
+      (total, client) =>
+        total + (client.services || []).length + (client.payments || []).length,
+      0,
+    ) +
+    (data?.expenses || []).length +
+    (data?.finance?.manualIncome || []).length +
+    (data?.outreach?.logs || []).length
+  );
+}
+
+export function hasDrasticRemoteShrink(local, remote) {
+  if (!local || !remote || !hasSavedContent(local)) return false;
+
+  const localTime = new Date(local.meta?.updatedAt || 0).getTime();
+  const remoteTime = new Date(remote.meta?.updatedAt || 0).getTime();
+  const resetTime = new Date(remote.meta?.emptyStateResetAt || 0).getTime();
+  if (resetTime > localTime || remoteTime <= localTime) return false;
+
+  const localRecords = snapshotRecordCount(local);
+  const remoteRecords = snapshotRecordCount(remote);
+  return localRecords >= 10 && remoteRecords * 2 < localRecords;
+}
+
 export function chooseSnapshot(local, remote, localExists = true) {
   if (!remote) return 'local';
   if (!localExists) return 'remote';

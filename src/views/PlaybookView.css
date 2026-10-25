@@ -43,7 +43,7 @@
   min-height: 72px;
   align-items: center;
   gap: 12px;
-  color: var(--lime);
+  color: var(--blue);
 }
 
 .playbook-rule strong {
@@ -84,7 +84,7 @@
   place-items: center;
   border-radius: 50%;
   background: var(--lime-soft);
-  color: var(--lime);
+  color: var(--blue);
   font: 600 14px var(--font-mono);
 }
 
@@ -147,7 +147,7 @@
 .playbook-checklist input {
   width: 18px;
   height: 18px;
-  accent-color: var(--lime);
+  accent-color: var(--blue);
 }
 
 .playbook-pricing {
@@ -157,7 +157,7 @@
 .playbook-pricing strong {
   display: inline-block;
   margin-top: 14px;
-  color: var(--lime);
+  color: var(--blue);
   font: 500 14px var(--font-mono);
 }
 

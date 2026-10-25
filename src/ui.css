@@ -1,12 +1,13 @@
 .card { background: var(--s1); border: 1px solid var(--line); border-radius: var(--r-card); padding: 16px; }
 .btn { min-height: 44px; border-radius: var(--r-ctl); font-weight: 600; padding: 8px 14px; cursor: pointer; }
 .btn-primary { background: var(--lime); color: var(--on-lime); border: 1px solid var(--lime); }
-.btn-secondary { background: var(--blue-soft); color: var(--blue); border: 1px solid var(--blue-line); }
+.btn-primary:hover { filter: brightness(1.05); }
+.btn-secondary { background: var(--blue-soft); color: var(--blue-text); border: 1px solid var(--blue-line); }
 .btn-ghost { background: transparent; color: var(--text-2); border: 1px solid var(--line); }
 .btn-danger { background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger); }
 .chip { display: inline-flex; align-items: center; min-height: 28px; border: 1px solid var(--line); border-radius: var(--r-pill); padding: 4px 9px; font: 11px var(--font-mono); }
-.chip-lime { background: var(--lime-soft); color: var(--lime); border-color: var(--lime-line); }
-.chip-blue { background: var(--blue-soft); color: var(--blue); border-color: var(--blue-line); }
+.chip-lime { background: var(--success-soft); color: var(--success); border-color: var(--success-line); }
+.chip-blue { background: var(--blue-soft); color: var(--blue-text); border-color: var(--blue-line); }
 .chip-warn { background: var(--warn-soft); color: var(--warn); }
 .chip-danger { background: var(--danger-soft); color: var(--danger); }
 .field { min-height: 44px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--s2); color: var(--text); padding: 9px 12px; }

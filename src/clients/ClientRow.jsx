@@ -45,6 +45,7 @@ export default function ClientRow({ client: c, date, highlight }) {
             {c.business || "No business"}
             {c.businessType ? ` · ${c.businessType}` : ""}
           </small>
+          {!isLead && <small className="cr-service-count">{services.length} {services.length === 1 ? "service" : "services"}</small>}
         </span>
         <span className="cr-meta">
           {c.paused && <em className="cr-paused">PAUSED</em>}

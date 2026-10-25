@@ -83,6 +83,8 @@ export function normalizeData(d) {
             ...p,
             id: p.id || `payment-${c.id || date}-${index + 1}`,
             amount: Number(p.amount) || 0,
+            amountValid:
+              Number.isSafeInteger(Number(p.amount)) && Number(p.amount) > 0,
             serviceId: p.serviceId || "",
           })),
           services: Array.isArray(c.services)
@@ -142,16 +144,22 @@ export function normalizeData(d) {
     manualIncome: (Array.isArray(financeSource.manualIncome)
       ? financeSource.manualIncome
       : []
-    ).map((income) =>
-      income.origin
+    ).map((income) => ({
+      ...(income.origin
         ? income
         : {
             ...income,
             allocations: [],
             unallocated: Number(income.amount) || 0,
             origin: "legacy",
-          },
-    ),
+          }),
+      amountValid:
+        income.amountValid ??
+        (Number.isSafeInteger(Number(income.amount)) && Number(income.amount) > 0),
+      reportingClass: ["earned", "other"].includes(income.reportingClass)
+        ? income.reportingClass
+        : "",
+    })),
     paymentSnapshots: { ...(financeSource.paymentSnapshots || {}) },
     bucketResets: Array.isArray(financeSource.bucketResets)
       ? financeSource.bucketResets
@@ -220,6 +228,9 @@ export function normalizeData(d) {
     ...source,
     settings: {
       ...(source.settings || {}),
+      monthlyEarningsTargets: {
+        ...(source.settings?.monthlyEarningsTargets || {}),
+      },
       business: {
         brandName: "Solomantalgo",
         tagline: "Web Design",
@@ -248,6 +259,9 @@ export function normalizeData(d) {
       id: e.id || Date.now().toString(),
       date: e.date || "",
       amount: Number(e.amount) || 0,
+      amountValid:
+        e.amountValid ??
+        (Number.isSafeInteger(Number(e.amount)) && Number(e.amount) > 0),
       note: e.note || e.description || "",
       bucketId: e.bucketId || "",
       accountId: e.accountId || "",

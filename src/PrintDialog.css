@@ -21,5 +21,22 @@
   .print-dialog { width: 100%; max-height: 94dvh; padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
     border-radius: 16px 16px 0 0; }
   .print-preview iframe { height: 300px; }
-  .print-stage.a4 .print-preview { min-width: 400px; }
+  .print-stage.a4 {
+    min-height: 210px;
+    overflow: hidden;
+  }
+  .print-stage.a4 .print-preview {
+    width: 700px;
+    min-width: 700px;
+    height: 190px;
+    flex: none;
+    margin-right: -378px;
+    margin-bottom: -226px;
+    transform: scale(0.46);
+    transform-origin: top left;
+  }
+  .print-stage.a4 .print-preview iframe {
+    width: 700px;
+    height: 420px;
+  }
 }

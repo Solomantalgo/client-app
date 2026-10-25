@@ -54,21 +54,33 @@ async function newPage(browser, donorBalance) {
     localStorage.setItem("solo-sales-cloud-config:url", "https://isolated.test");
     localStorage.setItem("solo-sales-cloud-config:key", "synthetic-only");
   }, syntheticData(donorBalance));
-  await context.route("https://isolated.test/**", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: "null" }),
-  );
+  await context.route("**/*", (route) => {
+    const requestUrl = new URL(route.request().url());
+    if (requestUrl.hostname === "isolated.test") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: "null",
+      });
+    }
+    if (requestUrl.hostname === "127.0.0.1" && requestUrl.port === "5180") {
+      return route.continue();
+    }
+    return route.abort();
+  });
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(origin, { waitUntil: "networkidle" });
   await page.locator(".os-sidebar").waitFor();
-  await page.locator(".os-sidebar button").filter({ hasText: "Money" }).click();
+  await page.locator(".os-sidebar button").filter({ hasText: "Overview" }).click();
   return { context, page, errors };
 }
 
 async function submitExpense(page, amount) {
-  await page.locator(".money-nav button").filter({ hasText: "Expenses" }).click();
-  await page.getByRole("button", { name: /Log expense/ }).last().click();
+  await page.locator(".os-sidebar button").filter({ hasText: "Transactions" }).click();
+  await page.locator(".m-filter-row button").filter({ hasText: "Expenses" }).click();
+  await page.getByRole("button", { name: /Add expense/ }).click();
   await page.getByLabel("Amount (UGX)").fill(String(amount));
   await page.getByLabel("Expense description").fill("Synthetic shortfall test");
   await page.getByLabel("Bucket").selectOption("needs");
@@ -138,7 +150,6 @@ async function main() {
     assert.equal(saved.finance.bucketLoans.length, 3, "loans should persist after reload");
 
     for (const amount of [5, 1, 2]) {
-      await page.locator(".money-nav button").filter({ hasText: "Income" }).click();
       await page.getByRole("button", { name: /Log income/ }).last().click();
       await page.getByLabel("Amount (UGX)").fill(String(amount));
       await page.getByLabel("Source / description").fill("Synthetic repayment");
@@ -159,8 +170,8 @@ async function main() {
       c: 68,
     });
 
-    await page.locator(".money-nav button").filter({ hasText: "Expenses" }).click();
-    const expenseRow = page.locator(".m-transaction").filter({
+    await page.locator(".m-filter-row button").filter({ hasText: "Expenses" }).click();
+    const expenseRow = page.locator(".m-transaction-row").filter({
       hasText: "Synthetic shortfall test",
     });
     await expenseRow.getByRole("button", { name: "Delete" }).click();

@@ -10,7 +10,6 @@ const records = [
 export default function MoreView({
   cloudStatus,
   onNavigate,
-  onSync,
   onOpenProfile,
   onExportBackup,
   onOpenCloud,
@@ -40,15 +39,12 @@ export default function MoreView({
           <button onClick={onOpenProfile}>
             <Icon name="Edit" size={20} />Business profile
           </button>
-          <button onClick={onSync}>
+          <button onClick={onOpenCloud}>
             <Icon name="Sync" size={20} />
             Cloud sync <small>{cloudStatus}</small>
           </button>
           <button onClick={onExportBackup}>
             <Icon name="Download" size={20} />Export backup
-          </button>
-          <button onClick={onOpenCloud}>
-            <Icon name="More" size={20} />Cloud settings
           </button>
         </Card>
         <Card className="more-group more-danger">

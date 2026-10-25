@@ -1,34 +1,75 @@
 :root {
-  --bg: #070A09;
-  --s1: #0D1211;
-  --s2: #131A19;
-  --s3: #1B2523;
-  --line: #222D2B;
-  --line-2: #33423F;
-  --text: #F2F5F6;
-  --text-2: #B9C3C5;
-  --text-3: #8A9698;
-  --lime: #C3F83E;
-  --on-lime: #070A09;
-  --lime-soft: rgba(195,248,62,.12);
-  --lime-line: rgba(195,248,62,.35);
-  --blue: #428CFF;
-  --on-blue: #070A09;
-  --blue-soft: rgba(66,140,255,.14);
-  --blue-line: rgba(66,140,255,.40);
-  --danger: #FF5D5D;
-  --danger-soft: rgba(255,93,93,.12);
-  --warn: #FFB54D;
-  --warn-soft: rgba(255,181,77,.12);
+  --bg: #080B10;
+  --s1: #111823;
+  --s2: #192333;
+  --s3: #202D3F;
+  --sidebar: #0B1018;
+  --sidebar-raised: #192333;
+  --sidebar-text: #F1F5F9;
+  --sidebar-muted: #AAB8CB;
+  --sidebar-link: #D6E0EC;
+  --sidebar-hover: #151E2B;
+  --sidebar-border: #2B394C;
+  --sidebar-active: #C3FF4D;
+  --sidebar-danger: #FF7D88;
+  --line: #2B394C;
+  --line-2: #3A4B62;
+  --text: #F1F5F9;
+  --text-2: #AAB8CB;
+  --text-3: #AAB8CB;
+  --lime: #C3FF4D;
+  --on-lime: #080B10;
+  --lime-soft: rgba(195, 255, 77, 0.12);
+  --lime-line: rgba(195, 255, 77, 0.32);
+  --blue: #67B3FF;
+  --blue-hover: #91C8FF;
+  --blue-soft: rgba(103, 179, 255, 0.14);
+  --blue-line: rgba(103, 179, 255, 0.38);
+  --blue-text: #67B3FF;
+  --on-blue: #080B10;
+  --success: #C3FF4D;
+  --success-soft: rgba(195, 255, 77, 0.12);
+  --success-line: rgba(195, 255, 77, 0.32);
+  --danger: #FF7D88;
+  --danger-soft: rgba(255, 125, 136, 0.12);
+  --danger-line: rgba(255, 125, 136, 0.4);
+  --warn: #FFC266;
+  --warn-soft: rgba(255, 194, 102, 0.12);
+  --warn-line: rgba(255, 194, 102, 0.4);
+  --warn-fill: rgba(255, 194, 102, 0.18);
+  --warn-ink: #FFC266;
+  --neutral-chart: #AAB8CB;
   --r-card: 16px;
   --r-ctl: 12px;
   --r-pill: 999px;
   --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "DM Mono", ui-monospace, Menlo, Consolas, monospace;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
   color-scheme: dark;
 }
-html, body { background: var(--bg); color: var(--text); font-family: var(--font-ui); }
-:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+
+:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  * { animation: none !important; transition: none !important; }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
