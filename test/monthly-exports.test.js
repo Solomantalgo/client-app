@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { readFile } from "node:fs/promises";
 import { inflateRawSync } from "node:zlib";
+import JSZip from "jszip";
 import {
   buildMonthlyCsv,
   buildMonthlyDocx,
   buildMonthlyPdf,
+  buildMonthlyXlsx,
   createMonthlyReportModel,
   monthlyReportFilename,
 } from "../src/reporting/monthlyExports.js";
@@ -181,6 +183,78 @@ test("CSV export includes title, period and existing filtered report rows safely
   assert.equal(
     monthlyReportFilename("2026-10", "csv"),
     "solomantalgo-monthly-earnings-2026-10.csv",
+  );
+});
+
+test("CSV preserves field boundaries, quotes and line breaks safely", () => {
+  const report = reportFor(sampleData());
+  report.transactions = [
+    {
+      type: "expense",
+      date: "2026-10-12",
+      reportDate: "2026-10-12",
+      reportClassification: "Expense",
+      clientName: '=HYPERLINK("x")',
+      serviceName: "Service, one",
+      description: 'First line,\nSecond "line"',
+      amount: 4000,
+    },
+  ];
+  const csv = buildMonthlyCsv(report);
+  assert.match(
+    csv,
+    /"Client","Service","Description","Source","Amount UGX","Account"/,
+  );
+  assert.ok(csv.includes('"\'=HYPERLINK(""x"")"'));
+  assert.ok(csv.includes('"First line,\nSecond ""line"""'));
+});
+
+test("XLSX export is a styled workbook with frozen, filterable transaction headers", async () => {
+  const report = reportFor(sampleData());
+  report.transactions = [
+    {
+      type: "expense",
+      date: "2026-10-12",
+      reportDate: "2026-10-12",
+      reportClassification: "Expense",
+      clientName: "William Kalule",
+      serviceName: "Website",
+      description: `Long description ${"Kampala service details ".repeat(8)}`,
+      sourceType: "Expense",
+      amount: 99000,
+      accountName: "Cash",
+    },
+  ];
+  const blob = await buildMonthlyXlsx(report);
+  assert.equal(
+    blob.type,
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  const workbook = await JSZip.loadAsync(await blob.arrayBuffer());
+  const transactionSheet = await workbook
+    .file("xl/worksheets/sheet2.xml")
+    .async("string");
+  const summarySheet = await workbook
+    .file("xl/worksheets/sheet1.xml")
+    .async("string");
+  const styles = await workbook.file("xl/styles.xml").async("string");
+  assert.match(transactionSheet, /ySplit="1"/);
+  assert.match(transactionSheet, /autoFilter ref="A1:I2"/);
+  assert.match(transactionSheet, /width="52"/);
+  assert.match(styles, /wrapText="1"/);
+  assert.match(transactionSheet, /William Kalule/);
+  assert.match(transactionSheet, /UGX/);
+  assert.match(summarySheet, /Solomantalgo/);
+  assert.match(summarySheet, /Monthly summary/);
+  assert.match(styles, /FFA984D6/);
+  assert.match(styles, /FFC3FF4D/);
+  assert.equal(
+    workbook.file("xl/worksheets/sheet1.xml").name.endsWith(".xml"),
+    true,
+  );
+  assert.equal(
+    monthlyReportFilename("2026-10", "xlsx"),
+    "solomantalgo-monthly-earnings-2026-10.xlsx",
   );
 });
 

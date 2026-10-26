@@ -139,30 +139,71 @@
 }
 
 .cr-quick {
-  position: absolute;
-  top: 10px;
-  right: 5px;
   display: flex;
-  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 12px 10px 60px;
 }
 
-.cr-quick a {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--blue-soft);
-  color: var(--blue);
+.cr-quick a,
+.cs-contact a {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 13px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-ctl);
+  background: var(--s2);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-decoration: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
 }
 
-.cr-quick a:first-child {
-  background: var(--success-soft);
-  color: var(--success);
+.cr-quick a:visited,
+.cr-quick a:hover,
+.cr-quick a:active,
+.cr-quick a:focus-visible,
+.cs-contact a:visited,
+.cs-contact a:hover,
+.cs-contact a:active,
+.cs-contact a:focus-visible {
+  color: inherit;
+  text-decoration: none;
 }
 
-.cr-quick span {
-  display: none;
+.cr-quick a:focus-visible,
+.cs-contact a:focus-visible {
+  outline: 2px solid var(--studio-violet);
+  outline-offset: 2px;
+}
+
+.cr-quick .cr-contact-whatsapp,
+.cs-contact .cs-contact-whatsapp {
+  border-color: rgb(195 255 77 / 32%);
+  background: rgb(195 255 77 / 10%);
+  color: var(--studio-lime);
+}
+
+.cr-quick .cr-contact-call,
+.cs-contact .cs-contact-call {
+  border-color: var(--line-2);
+  background: var(--s2);
+  color: var(--text);
+}
+
+.cr-quick svg,
+.cs-contact svg {
+  flex: none;
 }
 
 .cs {
@@ -171,9 +212,7 @@
 }
 
 .cs-bar {
-  position: sticky;
-  top: 68px;
-  z-index: 5;
+  position: static;
   display: flex;
   min-width: 0;
   align-items: center;
@@ -216,6 +255,9 @@
 }
 
 .cs-sections {
+  position: sticky;
+  top: 68px;
+  z-index: 8;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
@@ -223,7 +265,9 @@
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: var(--r-ctl);
-  background: var(--s1);
+  background: color-mix(in srgb, var(--s1) 96%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 6px 12px rgb(0 0 0 / 18%);
 }
 
 .cs-sections button {
@@ -375,7 +419,6 @@
   margin-top: 10px;
 }
 
-.cs-contact a,
 .cs-actions button,
 .cs button,
 .cs-service-actions button {
@@ -665,8 +708,8 @@
 
   .cr-quick {
     position: static;
-    justify-content: flex-end;
-    padding: 0 8px 8px;
+    justify-content: flex-start;
+    padding: 0 8px 10px 50px;
   }
 
   .cs {
@@ -699,13 +742,18 @@
   }
 
   .cs-bar {
+    position: static;
+    top: auto;
+  }
+
+  .cs-sections {
     top: 56px;
   }
 
   .cr-main {
-    grid-template-columns: 34px minmax(0, 1fr) 92px 0;
+    grid-template-columns: 34px minmax(0, 1fr) minmax(70px, 98px) 0;
     gap: 8px;
-    padding-right: 102px;
+    padding-right: 8px;
   }
 
   .cr-avatar {
@@ -733,38 +781,14 @@
     position: static;
   }
 
-  .cr-quick {
-    right: 12px;
-  }
-
-  .cr-quick a {
-    display: flex;
-    width: 44px;
-    min-width: 44px;
-    gap: 6px;
-    padding: 0 10px;
-  }
-
-  .cr-quick span {
-    display: none;
-  }
-
   .cr-main {
     grid-template-columns: 38px minmax(0, 1fr) 140px 0;
-    padding-right: 112px;
+    padding-right: 10px;
   }
 }
 
 @media (min-width: 1280px) {
-  .cr-quick a {
-    min-width: 44px;
-  }
-
-  .cr-quick span {
-    display: none;
-  }
-
   .cr-main {
-    padding-right: 112px;
+    padding-right: 10px;
   }
 }

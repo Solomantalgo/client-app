@@ -14,6 +14,7 @@ import {
   buildMonthlyCsv,
   buildMonthlyDocx,
   buildMonthlyPdf,
+  buildMonthlyXlsx,
   createMonthlyReportModel,
   monthlyReportFilename,
 } from "../reporting/monthlyExports.js";
@@ -190,6 +191,11 @@ export default function MonthlyEarnings({
           buildMonthlyPdf(report),
           monthlyReportFilename(month, "pdf"),
         );
+      } else if (format === "xlsx") {
+        downloadReport(
+          await buildMonthlyXlsx(report),
+          monthlyReportFilename(month, "xlsx"),
+        );
       } else {
         const blob = await buildMonthlyDocx(report);
         downloadReport(blob, monthlyReportFilename(month, "docx"));
@@ -241,6 +247,9 @@ export default function MonthlyEarnings({
               </button>
               <button role="menuitem" onClick={() => exportReport("pdf")}>
                 PDF
+              </button>
+              <button role="menuitem" onClick={() => exportReport("xlsx")}>
+                Excel (.xlsx)
               </button>
               <button role="menuitem" onClick={() => exportReport("docx")}>
                 Word (.docx)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { Icon } from "./components/Icon.jsx";
 import QuickAdd from "./QuickAdd.jsx";
 import MoreView from "./views/MoreView.jsx";
@@ -87,6 +87,9 @@ export default function AppShell({
     : /pending|syncing/i.test(cloudStatus)
       ? "orange"
       : "grey";
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, [tab]);
   useEffect(() => {
     if (!banner) return undefined;
     const timer = setTimeout(onDismissBanner, 8000);
@@ -127,13 +130,14 @@ export default function AppShell({
                 <button
                   key={key}
                   className={
-                    (group.group === "Money"
-                      ? tab === "payments" && (
-                          section === "Income"
+                    (
+                      group.group === "Money"
+                        ? tab === "payments" &&
+                          (section === "Income"
                             ? ["Income", "Expenses"].includes(moneyTab)
-                            : moneyTab === section
-                        )
-                      : tab === key)
+                            : moneyTab === section)
+                        : tab === key
+                    )
                       ? "active"
                       : ""
                   }
@@ -172,7 +176,11 @@ export default function AppShell({
       <div className="os-main">
         <header className="os-topbar" data-view={tab}>
           <div className="os-mobile-brand">
-            {logoFailed ? <b className="os-mobile-wordmark">Solomantalgo</b> : logo}
+            {logoFailed ? (
+              <b className="os-mobile-wordmark">Solomantalgo</b>
+            ) : (
+              logo
+            )}
           </div>
           <h1 title={currentTitle}>{currentTitle}</h1>
           <button
@@ -242,7 +250,11 @@ export default function AppShell({
               <Icon name="ChevronDown" size={18} />
             </button>
             {moneyMenu && (
-              <nav className="os-money-menu" aria-label="Money sections" role="menu">
+              <nav
+                className="os-money-menu"
+                aria-label="Money sections"
+                role="menu"
+              >
                 {[
                   ["Overview", "Overview"],
                   ["Income", "Transactions"],
@@ -296,7 +308,9 @@ export default function AppShell({
                 else select(key);
               }}
             >
-              <span className={`os-nav-icon${key === "quick-add" ? " raised" : ""}`}>
+              <span
+                className={`os-nav-icon${key === "quick-add" ? " raised" : ""}`}
+              >
                 <Icon name={icon} size={22} />
                 {key === "pipeline" && pendingCount > 0 && (
                   <i>{pendingCount}</i>

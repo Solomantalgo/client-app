@@ -754,14 +754,24 @@ export default function ClientScreen({
               <div className="cs-contact">
                 {c.hasWhatsApp !== "no" && (
                   <a
+                    className="cs-contact-whatsapp"
                     href={`https://wa.me/${toWaNumber(c.phone)}`}
                     target="_blank"
                     rel="noreferrer"
+                    aria-label={`WhatsApp ${c.name}`}
                   >
+                    <Icon name="Message" size={18} />
                     WhatsApp
                   </a>
                 )}
-                <a href={`tel:${c.phone}`}>Call {c.phone}</a>
+                <a
+                  className="cs-contact-call"
+                  href={`tel:${c.phone}`}
+                  aria-label={`Call ${c.name} at ${c.phone}`}
+                >
+                  <Icon name="Phone" size={18} />
+                  <span>Call {c.phone}</span>
+                </a>
               </div>
             )}
             <div className="cs-actions cs-actionbar">

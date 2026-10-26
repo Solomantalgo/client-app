@@ -298,7 +298,7 @@ export function summarizeRange(data, month, range) {
 }
 
 function safeCsvCell(value) {
-  const text = String(value ?? "").replace(/[\r\n]+/g, " ");
+  const text = String(value ?? "");
   const protectedText = /^[\s]*[=+@-]/.test(text) ? `'${text}` : text;
   return `"${protectedText.replaceAll('"', '""')}"`;
 }
@@ -320,6 +320,8 @@ export function buildMonthCsv(summary, range, options = {}) {
       "Date",
       "Reporting classification",
       "Type",
+      "Client",
+      "Service",
       "Description",
       "Source",
       "Amount UGX",
@@ -329,10 +331,12 @@ export function buildMonthCsv(summary, range, options = {}) {
       transaction.reportDate || reportDate(transaction.date),
       transaction.reportClassification || "",
       transaction.type,
-      transaction.description || transaction.clientName || "",
+      transaction.clientName || "",
+      transaction.serviceName || "",
+      transaction.description || transaction.note || "",
       transaction.sourceType || "",
       Math.round(Number(transaction.amount) || 0),
-      transaction.accountId || "Not assigned",
+      transaction.accountName || transaction.accountId || "Not assigned",
     ]),
   ];
   return lines.map((line) => line.map(safeCsvCell).join(",")).join("\r\n");

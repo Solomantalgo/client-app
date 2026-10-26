@@ -33,7 +33,10 @@
 
 .studio-home-top {
   display: grid;
-  grid-template-columns: minmax(0, 2.25fr) minmax(220px, 1fr) minmax(230px, 1.08fr);
+  grid-template-columns: minmax(0, 2.25fr) minmax(220px, 1fr) minmax(
+      230px,
+      1.08fr
+    );
   gap: 16px;
 }
 
@@ -213,8 +216,35 @@
 }
 
 .studio-home .today-target-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 6px 10px;
   border-color: var(--studio-border);
   background: var(--studio-inset);
+}
+
+.studio-home .today-target-controls button {
+  display: grid;
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
+  min-height: 48px;
+  place-items: center;
+  border: 1px solid var(--studio-border);
+  border-radius: 12px;
+  color: var(--studio-text);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.studio-home .today-target-controls strong {
+  min-width: 32px;
+  color: var(--studio-text);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .studio-home .today-target-controls button {
@@ -655,6 +685,22 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 0 14px;
     padding: 14px;
+  }
+
+  .studio-home .today-target-controls {
+    gap: 2px;
+    padding: 4px 2px;
+  }
+
+  .studio-home .today-target-controls button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .studio-home .today-target-controls strong {
+    min-width: 16px;
   }
 
   .studio-metric-heading {

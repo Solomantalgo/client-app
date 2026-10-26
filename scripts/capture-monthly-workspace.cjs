@@ -288,6 +288,32 @@ async function downloadExport(page, format, targetDirectory) {
     if (tabLayout.tabCount !== 4 || !tabLayout.tabsVisible) {
       errors.push(`${width}px did not show all four client section tabs.`);
     }
+    const contactLinks = await page
+      .locator(".cs-contact a")
+      .evaluateAll((links) =>
+        links.map((link) => {
+          const rect = link.getBoundingClientRect();
+          return {
+            href: link.getAttribute("href"),
+            decoration: getComputedStyle(link).textDecorationLine,
+            width: rect.width,
+            height: rect.height,
+            right: rect.right,
+          };
+        }),
+      );
+    if (
+      contactLinks.some(
+        (link) => link.decoration !== "none" || link.height < 44,
+      )
+    ) {
+      errors.push(
+        `${width}px client contact actions are underlined or below 44px.`,
+      );
+    }
+    if (contactLinks.some((link) => link.right > width + 1)) {
+      errors.push(`${width}px long contact details overflow the viewport.`);
+    }
     const storedBefore = await page.evaluate(() =>
       localStorage.getItem("solo-sales-os-v1"),
     );
@@ -348,6 +374,21 @@ async function downloadExport(page, format, targetDirectory) {
       errors.push(`${width}px Home did not return to Overview.`);
     }
 
+    await page.evaluate(() => window.scrollTo(0, 600));
+    await page.waitForTimeout(120);
+    const stickyTabPosition = await page
+      .locator(".cs-sections")
+      .evaluate((tabs) => {
+        const tabTop = tabs.getBoundingClientRect().top;
+        const shellHeaderBottom = document
+          .querySelector(".os-topbar")
+          .getBoundingClientRect().bottom;
+        return { tabTop, shellHeaderBottom };
+      });
+    if (stickyTabPosition.tabTop < stickyTabPosition.shellHeaderBottom - 1) {
+      errors.push(`${width}px sticky client tabs overlap the app header.`);
+    }
+
     if (width === 375) {
       const getSampleClient = () =>
         page.evaluate(() => {
@@ -401,7 +442,9 @@ async function downloadExport(page, format, targetDirectory) {
         JSON.stringify(financialProjection(beforePause)) !==
         JSON.stringify(financialProjection(paused))
       ) {
-        errors.push(`Pause changed financial data: ${JSON.stringify(pauseComparison)}`);
+        errors.push(
+          `Pause changed financial data: ${JSON.stringify(pauseComparison)}`,
+        );
       }
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.locator(".os-topbar").waitFor();
@@ -463,7 +506,8 @@ async function downloadExport(page, format, targetDirectory) {
           );
         }
         const resumed = await getSampleClient();
-        if (resumed?.paused) errors.push("Resume did not persist after reload.");
+        if (resumed?.paused)
+          errors.push("Resume did not persist after reload.");
         if (
           JSON.stringify(financialProjection(beforePause)) !==
           JSON.stringify(financialProjection(resumed))
@@ -475,6 +519,74 @@ async function downloadExport(page, format, targetDirectory) {
       }
     }
 
+    const todayButton =
+      width >= 900
+        ? page
+            .locator(".os-sidebar nav button")
+            .filter({ hasText: "Today" })
+            .first()
+        : page.locator(".os-mobile-nav button").filter({ hasText: "Today" });
+    await todayButton.click();
+    await page.screenshot({
+      path: path.join(output, `today-${width}.png`),
+      fullPage: true,
+    });
+    await page.locator(".today-target-menu summary").click();
+    await page.screenshot({
+      path: path.join(output, `today-target-controls-${width}.png`),
+      fullPage: true,
+    });
+    const targetControlSizes = await page
+      .locator(".today-target-controls button")
+      .evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const { width, height } = button.getBoundingClientRect();
+          return { width, height };
+        }),
+      );
+    if (
+      targetControlSizes.some(({ width, height }) => width < 44 || height < 44)
+    ) {
+      errors.push(`${width}px daily target controls are smaller than 44px.`);
+    }
+    const storedTargetBefore = await page.evaluate(() => {
+      const saved = JSON.parse(
+        localStorage.getItem("solo-sales-os-v1") || "{}",
+      );
+      return saved.target;
+    });
+    const targetButtons = page.locator(".today-target-controls button");
+    await targetButtons.last().click();
+    await page.waitForFunction((expected) => {
+      const saved = JSON.parse(
+        localStorage.getItem("solo-sales-os-v1") || "{}",
+      );
+      return saved.target === expected;
+    }, storedTargetBefore + 1);
+    await targetButtons.first().click();
+    await page.waitForFunction((expected) => {
+      const saved = JSON.parse(
+        localStorage.getItem("solo-sales-os-v1") || "{}",
+      );
+      return saved.target === expected;
+    }, storedTargetBefore);
+    await page.locator(".today-target-menu summary").click();
+    await page.evaluate(() => window.scrollTo(0, 600));
+    const moneyButton =
+      width >= 900
+        ? page
+            .locator(".os-sidebar nav button")
+            .filter({ hasText: "Overview" })
+            .first()
+        : page.locator(".os-mobile-nav button").filter({ hasText: "Money" });
+    await moneyButton.click();
+    await page.waitForTimeout(60);
+    if ((await page.evaluate(() => window.scrollY)) !== 0) {
+      errors.push(
+        `${width}px main navigation did not return the page to the top.`,
+      );
+    }
+
     if (width === 1280) {
       await goMonthly(page, width);
       await page
@@ -482,6 +594,9 @@ async function downloadExport(page, format, targetDirectory) {
         .selectOption("Expenses");
       const exportDirectory = path.join(output, "exports");
       fs.mkdirSync(exportDirectory, { recursive: true });
+      const storedBeforeExports = await page.evaluate(() =>
+        localStorage.getItem("solo-sales-os-v1"),
+      );
       const csvPath = await downloadExport(page, "CSV", exportDirectory);
       const csv = fs.readFileSync(csvPath, "utf8");
       if (
@@ -495,6 +610,16 @@ async function downloadExport(page, format, targetDirectory) {
       }
       if (!path.basename(csvPath).includes(month))
         errors.push("CSV filename does not identify the selected month.");
+      const xlsxPath = await downloadExport(
+        page,
+        "Excel (.xlsx)",
+        exportDirectory,
+      );
+      const xlsx = fs.readFileSync(xlsxPath);
+      if (xlsx.subarray(0, 4).toString("hex") !== "504b0304")
+        errors.push("Excel export is not a valid XLSX ZIP package.");
+      if (!path.basename(xlsxPath).includes(month))
+        errors.push("XLSX filename does not identify the selected month.");
       const pdfPath = await downloadExport(page, "PDF", exportDirectory);
       const pdf = fs.readFileSync(pdfPath);
       if (pdf.subarray(0, 5).toString() !== "%PDF-")
@@ -516,7 +641,7 @@ async function downloadExport(page, format, targetDirectory) {
       const storedAfterExports = await page.evaluate(() =>
         localStorage.getItem("solo-sales-os-v1"),
       );
-      if (storedAfterExports !== storedBefore)
+      if (storedAfterExports !== storedBeforeExports)
         errors.push("Monthly exports modified saved records.");
     }
     await context.close();
@@ -530,7 +655,7 @@ async function downloadExport(page, format, targetDirectory) {
       `Inspected ${widths.join(", ")}px with disposable local data, mocked cloud and blocked external requests.`,
     );
     console.log(
-      `Captured monthly and client-section screens and generated CSV, PDF and DOCX under ${output}.`,
+      `Captured monthly, Today, and client-section screens; generated CSV, XLSX, PDF and DOCX under ${output}.`,
     );
   }
 })().catch((error) => {

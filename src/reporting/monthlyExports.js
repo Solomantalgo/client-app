@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import JSZip from "jszip";
 import { buildMonthCsv, classifyEarning, monthDateRange } from "./earnings.js";
 
 const REPORT_INK = "29252D";
@@ -315,6 +316,305 @@ export function buildMonthlyPdf(report) {
   }
 
   return doc.output("blob");
+}
+
+const xmlEscape = (value) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+
+function excelColumn(index) {
+  let value = index + 1;
+  let name = "";
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    value = Math.floor((value - 1) / 26);
+  }
+  return name;
+}
+
+function excelTextCell(reference, value, style = 0) {
+  const textValue = xmlEscape(value);
+  return `<c r="${reference}" t="inlineStr" s="${style}"><is><t xml:space="preserve">${textValue}</t></is></c>`;
+}
+
+function excelNumberCell(reference, value, style = 0) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return excelTextCell(reference, value, style);
+  return `<c r="${reference}" s="${style}"><v>${amount}</v></c>`;
+}
+
+function excelRow(number, cells, height) {
+  const heightAttribute = height ? ` ht="${height}" customHeight="1"` : "";
+  return `<row r="${number}"${heightAttribute}>${cells.join("")}</row>`;
+}
+
+function excelWorksheet({ rows, widths, freezeRows = 0, filterRange = "" }) {
+  const cols = widths
+    .map(
+      (width, index) =>
+        `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`,
+    )
+    .join("");
+  const pane = freezeRows
+    ? `<pane ySplit="${freezeRows}" topLeftCell="A${freezeRows + 1}" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A${freezeRows + 1}" sqref="A${freezeRows + 1}"/>`
+    : "";
+  const autoFilter = filterRange ? `<autoFilter ref="${filterRange}"/>` : "";
+  const lastRow = rows.length;
+  const lastColumn = excelColumn(widths.length - 1);
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+    `<dimension ref="A1:${lastColumn}${lastRow}"/><sheetViews><sheetView workbookViewId="0">${pane}</sheetView></sheetViews>` +
+    `<sheetFormatPr defaultRowHeight="20"/><cols>${cols}</cols><sheetData>${rows.join("")}</sheetData>${autoFilter}` +
+    `<pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>` +
+    `<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/><printOptions horizontalCentered="1"/>` +
+    `</worksheet>`
+  );
+}
+
+function monthlyExcelStyles() {
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `<numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;UGX&quot; #,##0;[Red]-&quot;UGX&quot; #,##0"/></numFmts>` +
+    `<fonts count="4"><font><sz val="11"/><name val="Aptos"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="16"/><name val="Aptos Display"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Aptos"/></font><font><b/><color rgb="FF29252D"/><sz val="11"/><name val="Aptos"/></font></fonts>` +
+    `<fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF29252D"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFA984D6"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF4F0F8"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFBFAFC"/><bgColor indexed="64"/></patternFill></fill></fills>` +
+    `<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="medium"><color rgb="FFC3FF4D"/></bottom><diagonal/></border></borders>` +
+    `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
+    `<cellXfs count="9">` +
+    `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
+    `<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>` +
+    `<xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>` +
+    `<xf numFmtId="0" fontId="3" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>` +
+    `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>` +
+    `<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="right" vertical="top"/></xf>` +
+    `<xf numFmtId="0" fontId="0" fillId="5" borderId="0" xfId="0" applyFill="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>` +
+    `<xf numFmtId="164" fontId="0" fillId="5" borderId="0" xfId="0" applyNumberFormat="1" applyFill="1" applyAlignment="1"><alignment horizontal="right" vertical="top"/></xf>` +
+    `<xf numFmtId="0" fontId="3" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs>` +
+    `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`
+  );
+}
+
+function monthlySummarySheet(report) {
+  const widthCount = 6;
+  const rows = [];
+  const fillBand = (rowNumber, label, style = 1) =>
+    excelRow(
+      rowNumber,
+      [
+        excelTextCell(`A${rowNumber}`, label, style),
+        ...Array.from({ length: widthCount - 1 }, (_, index) =>
+          excelTextCell(`${excelColumn(index + 1)}${rowNumber}`, "", style),
+        ),
+      ],
+      28,
+    );
+  rows.push(fillBand(1, "Solomantalgo · Monthly earnings"));
+  rows.push(
+    excelRow(
+      2,
+      [
+        excelTextCell("A2", "Period", 8),
+        excelTextCell("B2", `${report.range.start} to ${report.range.end}`),
+        excelTextCell("C2", "Generated", 8),
+        excelTextCell("D2", report.generatedAt),
+        excelTextCell("E2", "Currency", 8),
+        excelTextCell("F2", report.currency),
+      ],
+      24,
+    ),
+  );
+  rows.push(
+    excelRow(
+      3,
+      [
+        excelTextCell("A3", "Report basis", 8),
+        excelTextCell("B3", report.basis),
+        excelTextCell("C3", "Active filter", 8),
+        excelTextCell("D3", report.filterLabel || "All"),
+      ],
+      24,
+    ),
+  );
+  rows.push(excelRow(4, []));
+  rows.push(fillBand(5, "Monthly summary", 2));
+  const summaryItems = [
+    ["Earned", report.summary.earned],
+    ["Other received", report.summary.otherReceived],
+    ["Unclassified received", report.summary.unclassified],
+    ["Expenses", report.summary.expenses],
+    ["After expenses", report.summary.afterExpenses],
+  ];
+  summaryItems.forEach(([label, amount], index) => {
+    const rowNumber = index + 6;
+    const alternate = index % 2 ? 6 : 4;
+    rows.push(
+      excelRow(
+        rowNumber,
+        [
+          excelTextCell(`A${rowNumber}`, label, alternate),
+          excelNumberCell(`B${rowNumber}`, amount, alternate === 6 ? 7 : 5),
+        ],
+        24,
+      ),
+    );
+  });
+  rows.push(excelRow(11, []));
+  rows.push(fillBand(12, "Earnings breakdown", 2));
+  rows.push(
+    excelRow(
+      13,
+      [
+        excelTextCell("A13", "Source", 3),
+        excelTextCell("B13", "Amount UGX", 3),
+      ],
+      25,
+    ),
+  );
+  (report.summary.bySource || []).forEach((item, index) => {
+    const rowNumber = index + 14;
+    const style = index % 2 ? 6 : 4;
+    rows.push(
+      excelRow(
+        rowNumber,
+        [
+          excelTextCell(`A${rowNumber}`, item.source, style),
+          excelNumberCell(`B${rowNumber}`, item.amount, style === 6 ? 7 : 5),
+        ],
+        24,
+      ),
+    );
+  });
+  return excelWorksheet({
+    rows,
+    widths: [28, 24, 18, 25, 16, 18],
+  });
+}
+
+function monthlyTransactionsSheet(report) {
+  const headers = [
+    "Date",
+    "Classification",
+    "Type",
+    "Client",
+    "Service",
+    "Description",
+    "Source",
+    "Amount UGX",
+    "Account",
+  ];
+  const rows = [
+    excelRow(
+      1,
+      headers.map((label, index) =>
+        excelTextCell(`${excelColumn(index)}1`, label, 3),
+      ),
+      30,
+    ),
+  ];
+  report.transactions.forEach((transaction, index) => {
+    const rowNumber = index + 2;
+    const style = index % 2 ? 6 : 4;
+    const amountStyle = index % 2 ? 7 : 5;
+    const date = transaction.reportDate || transaction.date || "";
+    const values = [
+      date,
+      transaction.reportClassification || "",
+      transaction.type || "",
+      transaction.clientName || "",
+      transaction.serviceName || "",
+      transaction.description || transaction.note || "",
+      transaction.sourceType || "",
+      null,
+      transaction.accountName || transaction.accountId || "Not assigned",
+    ];
+    const cells = values.map((value, column) =>
+      column === 7
+        ? excelNumberCell(
+            `${excelColumn(column)}${rowNumber}`,
+            transaction.amount,
+            amountStyle,
+          )
+        : excelTextCell(
+            `${excelColumn(column)}${rowNumber}`,
+            value,
+            column === 5 ? style : style,
+          ),
+    );
+    rows.push(excelRow(rowNumber, cells, 34));
+  });
+  return excelWorksheet({
+    rows,
+    widths: [15, 21, 12, 26, 24, 52, 22, 19, 24],
+    freezeRows: 1,
+    filterRange: `A1:I${Math.max(1, rows.length)}`,
+  });
+}
+
+export async function buildMonthlyXlsx(report) {
+  const zip = new JSZip();
+  zip.file(
+    "[Content_Types].xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+      `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+      `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+      `<Default Extension="xml" ContentType="application/xml"/>` +
+      `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
+      `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>` +
+      `<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>` +
+      `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>` +
+      `</Types>`,
+  );
+  zip
+    .folder("_rels")
+    .file(
+      ".rels",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>` +
+        `</Relationships>`,
+    );
+  zip
+    .folder("xl")
+    .file(
+      "workbook.xml",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+        `<sheets><sheet name="Report" sheetId="1" r:id="rId1"/><sheet name="Transactions" sheetId="2" r:id="rId2"/></sheets></workbook>`,
+    );
+  zip
+    .folder("xl")
+    .folder("_rels")
+    .file(
+      "workbook.xml.rels",
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+        `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+        `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>` +
+        `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>` +
+        `<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
+        `</Relationships>`,
+    );
+  zip.folder("xl").file("styles.xml", monthlyExcelStyles());
+  zip
+    .folder("xl")
+    .folder("worksheets")
+    .file("sheet1.xml", monthlySummarySheet(report));
+  zip
+    .folder("xl")
+    .folder("worksheets")
+    .file("sheet2.xml", monthlyTransactionsSheet(report));
+  const bytes = await zip.generateAsync({
+    type: "uint8array",
+    compression: "DEFLATE",
+  });
+  return new Blob([bytes], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
 }
 
 function imageBytes(dataUri) {
