@@ -645,7 +645,7 @@ function AppBody() {
   });
   const searchFocus = useRef(null);
   const searchTargetRef = useRef(null);
-  const [moneyRoute, setMoneyRoute] = useState({ tab: "Income", query: "" });
+  const [moneyRoute, setMoneyRoute] = useState({ tab: "Overview", query: "" });
   const [showCloudSetup, setShowCloudSetup] = useState(false);
   const [showBusinessProfile, setShowBusinessProfile] = useState(false);
   const [cloudConfig, setCloudConfig] = useState(

@@ -78,6 +78,10 @@ export default function AppShell({
     if (["outreach", "followups", "ongoing"].includes(key))
       setLastPipeline(key);
   };
+  const openMoneyOverview = () => {
+    onSelectMoneySection?.("Overview");
+    select("payments");
+  };
   const statusTone = /synced|connected/i.test(cloudStatus)
     ? "green"
     : /pending|syncing/i.test(cloudStatus)
@@ -166,8 +170,10 @@ export default function AppShell({
         </footer>
       </aside>
       <div className="os-main">
-        <header className="os-topbar">
-          <div className="os-mobile-logo">{logoFailed ? <b>S</b> : logo}</div>
+        <header className="os-topbar" data-view={tab}>
+          <div className="os-mobile-brand">
+            {logoFailed ? <b className="os-mobile-wordmark">Solomantalgo</b> : logo}
+          </div>
           <h1 title={currentTitle}>{currentTitle}</h1>
           <button
             className={`os-sync ${statusTone}`}
@@ -265,12 +271,6 @@ export default function AppShell({
         <main
           className={`os-content${detail ? " has-detail" : ""}${pipeline ? " split-pipeline" : ""}`}
         >
-          {(tab === "today" || pipeline) && (
-            <button className="os-inline-search" onClick={onSearch}>
-              <Icon name="Search" size={19} />
-              <span>Search clients, services, payments</span>
-            </button>
-          )}
           <div className="os-list">{children}</div>
           {detail && <section className="os-detail">{detail}</section>}
         </main>
@@ -292,6 +292,7 @@ export default function AppShell({
                 if (key === "quick-add") setQuickAdd(true);
                 else if (key === "pipeline") select(lastPipeline);
                 else if (key === "more") setMore((value) => !value);
+                else if (key === "payments") openMoneyOverview();
                 else select(key);
               }}
             >

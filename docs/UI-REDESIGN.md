@@ -1,8 +1,11 @@
 # Solo Sales OS UI redesign
 
-This document supersedes the prior light-workspace attachment. Keep the extracted screen structure, responsive
-navigation, client workspace, search and monthly earnings report. Preserve every pre-redesign business rule and
-storage workflow except the reporting metadata and calculations explicitly required by monthly earnings.
+The approved visual authority for the entire app is [`studio-handoff/IMPLEMENT-STUDIO.md`](../studio-handoff/IMPLEMENT-STUDIO.md),
+with [`studio-handoff/studio-tokens.css`](../studio-handoff/studio-tokens.css) and the approved reference image beside it.
+This file records the preserved business-data requirements; its visual directions are superseded by the Studio handoff.
+
+Keep the existing extracted screen structure, responsive navigation, client workspace, search and monthly earnings
+report. Preserve every existing business rule and storage workflow. This is UI work only.
 
 ## Baseline and scope
 
@@ -19,24 +22,24 @@ storage workflow except the reporting metadata and calculations explicitly requi
 
 ## Visual system
 
-Use a restrained dark neon workspace with clearly separated charcoal surfaces. Do not introduce a light default,
-glowing text, animated gradients, heavy shadows or bright outlines around every panel.
+Follow the Studio handoff: warm neutral graphite panels, off-white sans-serif text, restrained violet selection and
+primary actions, with small lime earnings/brand accents. Do not use the former navy, blue and lime theme.
 
 | Token | Value | Use |
 | --- | --- | --- |
-| Background | `#080B10` | App canvas |
-| Sidebar | `#0B1018` | Navigation shell |
-| Surface | `#111823` | Cards and dialogs |
-| Elevated surface | `#192333` | Inputs and raised areas |
-| Border | `#2B394C` | Dividers and control edges |
-| Main text | `#F1F5F9` | Headings and body |
-| Secondary text | `#AAB8CB` | Supporting copy |
-| Neon lime | `#C3FF4D` | Primary actions, selected state, positive progress |
-| Electric blue | `#67B3FF` | Secondary actions, links, information and comparison data |
-| Warning | `#FFC266` | Warm leads and warnings |
-| Danger | `#FF7D88` | Destructive actions and overdue state |
+| Background | `#141313` | Warm graphite canvas |
+| Sidebar | `#171616` | Navigation shell |
+| Surface | `#211F20` | Panels and dialogs |
+| Inset | `#252225` | Inputs and raised areas |
+| Border | `#383438` | Quiet dividers and control edges |
+| Main text | `#F5F3F6` | Headings and body |
+| Secondary text | `#B9B3BE` | Supporting copy |
+| Violet | `#BB8CFF` | Primary actions, focus and selection |
+| Lime | `#C3FF4D` | Small brand and earnings accents |
+| Warning | `#FF9C70` | Warm leads and warnings |
+| Danger | `#FF8585` | Destructive actions and overdue state |
 
-Solid lime controls use dark text. Keep focus rings visible and use text or icons alongside semantic color. Use
+Solid violet controls use dark text. Keep focus rings visible and use text or icons alongside semantic color. Use
 sans-serif for headings and body; use tabular figures for money and dates. Keep body text readable at phone size,
 touch targets at least 44px, and respect reduced motion.
 

@@ -1,15 +1,16 @@
 # UI coverage
 
-This table reports the implemented surface and the remaining gaps against `docs/UI-REDESIGN.md`.
-The static `npm run check:ui` gate passes for the repository. That gate checks code hygiene and required
-module imports; it is not a substitute for interaction or accessibility review.
+This table reports the implemented surface and remaining gaps against the Studio visual authority in
+`studio-handoff/IMPLEMENT-STUDIO.md`. Shared warm graphite and violet tokens now apply across the app, and Today
+uses the Studio bento layout. Rows remain `partial` where screen-specific refinements or interaction/accessibility
+review are incomplete. The static `npm run check:ui` gate is not a substitute for visual review.
 
 | Screen | File | Status | What changed | Not verified or incomplete |
 | --- | --- | --- | --- | --- |
-| S1 App shell | `src/AppShell.jsx`, `src/AppShell.css` | partial | Responsive sidebar/bottom navigation, icons, search, sync, More and Quick add. Dark charcoal tokens, lime primary controls and blue secondary actions are applied. | Full keyboard routing, error boundary and global toast stack. |
+| S1 App shell | `src/AppShell.jsx`, `src/AppShell.css`, `src/styles/theme.css`, `src/styles/studio.css` | partial | Responsive sidebar/bottom navigation, icons, search, sync, More and Quick add use warm graphite surfaces and violet active/primary states. | Full keyboard routing, error boundary and global toast stack. |
 | S2 Quick add | `src/QuickAdd.jsx` | partial | New lead, income and expense choices open existing forms. | Focus management and every save/error state. |
 | S3 Search | `src/SearchPanel.jsx`, `src/search.js` | partial | Search index, type filter, recent searches, matched-token rendering and target resolution. | Back/focus behavior for every result type and accessibility audit. |
-| S4 Today | `src/views/TodayView.jsx`, `src/views/TodayView.css` | partial | Greeting, session progress, next stop, needs-attention panel and money snapshot. | Full empty-plan and small-screen action review with production data. |
+| S4 Today | `src/views/TodayView.jsx`, `src/views/TodayView.css` | partial | Rebuilt as a Studio bento: outreach area, pitch progress, monthly earnings, today’s leads, attention and supplementary balances. Mobile puts earnings first. Existing selectors and callbacks are reused. | Handoff sample comparison uses synthetic data; unusual empty-plan combinations need manual review. |
 | S5 Outreach | `src/views/OutreachView.jsx`, `src/views/OutreachView.css` | partial | Today's session, track progress, plan/log sheets and shared client rows. | Rotation history undo and all sheet interactions. |
 | S6 Due | `src/views/DueView.jsx`, `src/views/PipelineViews.css` | partial | Follow-up groups, search/filter controls, overdue labels and client rows. | Row overflow actions and all date boundary cases. |
 | S7 Ongoing | `src/views/OngoingView.jsx`, `src/views/PipelineViews.css` | partial | Owing, paused, paid-up and all filters with balances. | Large-data sorting and all paused/resume interactions. |
@@ -26,11 +27,10 @@ module imports; it is not a substitute for interaction or accessibility review.
 
 ## Browser review
 
-Playwright captures use an isolated browser context with synthetic client, payment and purpose records. Captures were
-made at 375px, 768px, 1280px and 1440px and inspected for Today, Pipeline, Client, Money, Monthly Earnings and other
-extracted screens. The automated capture checked page overflow, failed requests and runtime errors. Expense borrowing was
-submitted in isolated synthetic data and verified for even distribution, insufficient funds, repayment, deletion
-reconciliation and reload persistence.
+Playwright captures use an isolated browser context with synthetic client, payment and purpose records. Cloud calls
+are intercepted at the isolated host and unexpected external requests are blocked before app navigation. Captures
+were made at 360px, 375px, 390px, 768px, 1280px and 1440px and inspected for Today, Pipeline, Client, Money, Monthly
+Earnings, editors, settings and other screens. Automated capture reported no page overflow or runtime errors.
 
 Screens remain marked `partial` where the full specification includes interactions or accessibility behavior not
 verified in this pass. The coverage checker was not weakened.

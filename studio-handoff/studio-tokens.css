@@ -1,0 +1,54 @@
+/* Studio entire-app starting tokens. Migrate all screens to this shared system.
+   Do not replace financial/domain code, storage, sync or current behaviour. */
+.studio-app, .studio-home, .studio-shell {
+  --studio-bg: #141313;
+  --studio-sidebar: #171616;
+  --studio-panel: #211f20;
+  --studio-panel-hover: #29262a;
+  --studio-inset: #252225;
+  --studio-border: #383438;
+  --studio-text: #f5f3f6;
+  --studio-muted: #b9b3be;
+  --studio-violet: #bb8cff;
+  --studio-violet-hover: #cba7ff;
+  --studio-on-violet: #1b102b;
+  --studio-violet-soft: rgb(187 140 255 / 14%);
+  --studio-violet-line: rgb(187 140 255 / 55%);
+  --studio-lime: #c3ff4d;
+  --studio-warning: #ff9c70;
+  --studio-danger: #ff8585;
+  --studio-font: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --studio-radius-panel: 16px;
+  --studio-radius-control: 11px;
+  --studio-space-1: 4px;
+  --studio-space-2: 8px;
+  --studio-space-3: 12px;
+  --studio-space-4: 16px;
+  --studio-space-5: 20px;
+  --studio-space-6: 24px;
+  --studio-space-7: 32px;
+  color-scheme: dark;
+}
+/* Suggested foundation, adapt class names to existing components. */
+.studio-home { background: var(--studio-bg); color: var(--studio-text); font-family: var(--studio-font); }
+.studio-home :focus-visible { outline: 2px solid var(--studio-violet); outline-offset: 3px; }
+.studio-home .studio-numeric { font-variant-numeric: tabular-nums; }
+.studio-home .studio-top-grid { display: grid; grid-template-columns: minmax(0, 2.25fr) minmax(0, 1fr) minmax(0, 1.08fr); gap: 18px; }
+.studio-home .studio-lower-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.studio-home .studio-panel { min-width: 0; padding: 24px; border: 1px solid var(--studio-border); border-radius: var(--studio-radius-panel); background: var(--studio-panel); }
+.studio-home .studio-panel-outreach { border-color: var(--studio-violet-line); background: linear-gradient(125deg, #302638, #252027); }
+.studio-home .studio-primary { background: var(--studio-violet); color: var(--studio-on-violet); border: 1px solid transparent; border-radius: var(--studio-radius-control); min-height: 44px; padding: 10px 16px; font: 600 14px var(--studio-font); }
+.studio-home .studio-primary:hover { background: var(--studio-violet-hover); }
+.studio-home .studio-secondary { background: #242125; color: var(--studio-text); border: 1px solid #514855; border-radius: var(--studio-radius-control); min-height: 44px; padding: 10px 16px; font: 500 14px var(--studio-font); }
+@media (min-width: 768px) and (max-width: 1179px) {
+  .studio-home .studio-top-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .studio-home .studio-panel-outreach { grid-column: 1 / -1; }
+}
+@media (max-width: 767px) {
+  .studio-home .studio-top-grid, .studio-home .studio-lower-grid { display: flex; flex-direction: column; gap: 14px; }
+  .studio-home .studio-panel { padding: 18px; }
+  /* Compose/reorder mobile content as specified in the brief, not by scaling desktop. */
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-home *, .studio-shell * { animation: none !important; transition: none !important; }
+}
