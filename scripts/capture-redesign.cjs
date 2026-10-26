@@ -61,11 +61,30 @@ const synthetic = {
         ],
         payments: [
           {
-            id: "sample-payment",
+            id: "sample-payment-one",
             date: yesterday,
-            amount: 250000,
+            amount: 100000,
             note: "Deposit",
             serviceId: "sample-service",
+            accountName: "MTN MoMo",
+            receiptNo: "RCP-2026-0101",
+          },
+          {
+            id: "sample-payment-two",
+            date: today,
+            amount: 150000,
+            note: "Second payment",
+            serviceId: "sample-service",
+            accountName: "Cash",
+            receiptNo: "RCP-2026-0102",
+          },
+        ],
+        receiptGroups: [
+          {
+            id: "sample-receipt-group",
+            receiptNo: "RCP-2026-0103",
+            paymentIds: ["sample-payment-one", "sample-payment-two"],
+            createdAt: new Date().toISOString(),
           },
         ],
       },
@@ -90,9 +109,117 @@ const synthetic = {
   meta: { updatedAt: new Date().toISOString(), counters: { invoice: 0, receipt: 0 } },
 };
 
+async function captureDocumentVariants(context, origin, output) {
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.goto(origin, { waitUntil: "domcontentloaded" });
+  await page.locator(".os-topbar").waitFor();
+  const profile = await page.evaluate(async () => {
+    const response = await fetch("/assets/images/logo.png");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return {
+      brandName: "Solomantalgo",
+      tagline: "Web Design",
+      location: "Kampala, Uganda",
+      website: "solomantalgo.com",
+      ownerName: "Solomon Kisense",
+      ownerTitle: "Owner, Solomantalgo Web Design",
+      logoDataUri: `data:image/png;base64,${btoa(binary)}`,
+      showLogoA4: true,
+      showLogoThermal: false,
+      invoiceDueDays: 14,
+      termsText: "Payment is due by the date shown. Contact us if you need to discuss a payment schedule.",
+    };
+  });
+  const invoice = {
+    number: "SWD-2026-0573",
+    date: today,
+    dueDate: addDays(14),
+    clientName: "William Kalule",
+    business: "Kalule Auto & General Supplies",
+    items: [
+      { title: "Website design", amount: 500000 },
+      { title: "Online booking setup", amount: 400000 },
+    ],
+    total: 900000,
+    paid: 250000,
+  };
+  const receipt = {
+    number: "RCP-2026-0573",
+    date: today,
+    invoiceNo: invoice.number,
+    clientName: invoice.clientName,
+    business: invoice.business,
+    lines: [{ title: "Initial deposit · Website design", amount: 100000 }],
+    received: 100000,
+    invoiceTotal: 900000,
+    previouslyPaid: 0,
+    method: "MTN MoMo",
+    reference: "SYNTHETIC-REF-01",
+  };
+  const groupedReceipt = {
+    ...receipt,
+    number: "RCP-2026-0574",
+    lines: [
+      { title: "Initial deposit · Website design", amount: 100000 },
+      { title: "Second payment · Booking setup", amount: 150000 },
+    ],
+    received: 250000,
+    payments: [
+      { date: yesterday, method: "MTN MoMo", amount: 100000 },
+      { date: today, method: "Cash", amount: 150000 },
+    ],
+  };
+  const longInvoice = {
+    ...invoice,
+    items: Array.from({ length: 38 }, (_, index) => ({
+      title: `Custom website implementation item ${index + 1}: responsive layout, content and integration`,
+      amount: 15000,
+    })),
+    total: 570000,
+  };
+  const variants = [
+    ["invoice-paid-a4", "Invoice", { ...invoice, paid: 900000 }, "a4"],
+    ["invoice-partial-a4", "Invoice", invoice, "a4"],
+    ["receipt-single-a4", "Receipt", receipt, "a4"],
+    ["receipt-partial-a4", "Receipt", { ...receipt, received: 100000 }, "a4"],
+    ["receipt-group-a4", "Receipt", groupedReceipt, "a4"],
+    ["invoice-long-a4", "Invoice", longInvoice, "a4"],
+    ["invoice-58mm", "Invoice", invoice, "thermal58"],
+    ["receipt-58mm", "Receipt", receipt, "thermal58"],
+  ];
+  for (const [filename, type, model, format] of variants) {
+    const html = await page.evaluate(async ({ type, model, format, profile }) => {
+      const documents = await import("/src/documents.js");
+      return type === "Receipt"
+        ? documents.buildReceiptHtml(model, format, profile)
+        : documents.buildInvoiceHtml(model, format, profile);
+    }, { type, model, format, profile });
+    await page.setContent(html, { waitUntil: "load" });
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      await Promise.all([...document.images].map((image) => image.decode().catch(() => undefined)));
+    });
+    await page.screenshot({
+      path: path.join(output, `${filename}.png`),
+      fullPage: true,
+    });
+  }
+  await page.close();
+}
+
+function addDays(days) {
+  const date = new Date(`${today}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const failures = [];
+  const downloads = [];
   const sizes = process.argv[4]
     ? process.argv[4].split(",").map(Number)
     : [375, 768, 1280, 1440];
@@ -122,6 +249,7 @@ const synthetic = {
     });
     const page = await context.newPage();
     page.on("pageerror", (error) => failures.push(`${width}: ${error.message}`));
+    page.on("download", (download) => downloads.push(download));
     page.on("console", (message) => {
       if (message.type() === "error") {
         failures.push(`${width} console: ${message.text()}`);
@@ -275,12 +403,17 @@ const synthetic = {
     await page.locator(".cr-main").first().click();
     await page.locator(".cs-bar").waitFor();
     await page.screenshot({ path: path.join(output, `client-${width}.png`) });
+    const recordsBeforeDocuments = await page.evaluate(() => {
+      const saved = JSON.parse(localStorage.getItem("solo-sales-os-v1") || "{}");
+      return JSON.stringify(saved.clients || {});
+    });
 
     await page.locator(".cs-bar").getByRole("button", { name: "Edit" }).click();
     await page.locator(".ce-dialog").waitFor();
     await page.screenshot({ path: path.join(output, `client-editor-${width}.png`) });
     await page.locator(".ce-dialog button").filter({ hasText: "Cancel" }).click();
 
+    await page.getByRole("tab", { name: "Services & records" }).click();
     const service = page.locator(".cs-service").first();
     await service.getByRole("button", { name: "Edit" }).click();
     await page.locator(".ce-dialog").waitFor();
@@ -290,11 +423,94 @@ const synthetic = {
     await service.getByRole("button", { name: "Invoice" }).click();
     await page.locator(".print-dialog").waitFor();
     await page.screenshot({ path: path.join(output, `print-dialog-${width}.png`) });
+    await page.locator(".print-format button").filter({ hasText: "58 mm" }).click();
+    await page.locator(".print-preview iframe").waitFor();
+    await page.waitForFunction(() => {
+      const frame = document.querySelector(".print-preview iframe");
+      return frame?.contentDocument?.querySelector(".doc-ribbon") != null;
+    });
+    await page.screenshot({ path: path.join(output, `print-thermal-${width}.png`) });
+    await page.locator(".print-format button").filter({ hasText: "A4" }).click();
+    await page.waitForFunction(() => {
+      const button = [...document.querySelectorAll(".print-dialog button")]
+        .find((item) => item.textContent.trim() === "Print");
+      return button && !button.disabled;
+    });
+    await page.evaluate(() => {
+      const frame = document.querySelector(".print-preview iframe");
+      frame.contentWindow.print = () => { window.__brandRibbonPrintCalled = true; };
+    });
+    const downloadsBeforePrint = downloads.length;
+    await page.locator(".print-dialog button").filter({ hasText: "Print" }).click();
+    await page.waitForFunction(() => window.__brandRibbonPrintCalled === true);
+    if (downloads.length !== downloadsBeforePrint) {
+      failures.push(`${width}: Print unexpectedly triggered a file download.`);
+    }
+    const pdfDownloadPromise = page.waitForEvent("download");
+    await page.locator(".print-dialog button").filter({ hasText: "Download PDF" }).click();
+    const pdfDownload = await pdfDownloadPromise;
+    const pdfPath = path.join(output, pdfDownload.suggestedFilename());
+    await pdfDownload.saveAs(pdfPath);
+    const pdfBytes = fs.readFileSync(pdfPath);
+    if (pdfBytes.subarray(0, 5).toString() !== "%PDF-") {
+      failures.push(`${width}: Download PDF did not produce a PDF file.`);
+    }
+    if (!pdfDownload.suggestedFilename().endsWith(".pdf")) {
+      failures.push(`${width}: PDF download filename does not use .pdf.`);
+    }
     await page.locator(".print-dialog button").filter({ hasText: "Cancel" }).click();
+
+    await page.getByRole("tab", { name: "Finances" }).click();
+    const receiptGroup = page.locator(".cs-receipt-group").first();
+    if (await receiptGroup.count()) {
+      await receiptGroup.getByRole("button", { name: "Expand" }).click();
+    }
+    const payment = page.locator(".cs-payment").first();
+    await payment.getByRole("button", { name: "Receipt" }).click();
+    await page.locator(".print-dialog").waitFor();
+    await page.screenshot({ path: path.join(output, `receipt-preview-${width}.png`) });
+    const receiptHtml = await page.locator(".print-preview iframe").evaluate((frame) =>
+      frame.contentDocument.body.innerText,
+    );
+    if (!receiptHtml.includes("Amount received") || !receiptHtml.includes("MTN MoMo")) {
+      failures.push(`${width}: receipt preview is missing its amount or payment method.`);
+    }
+    await page.locator(".print-format button").filter({ hasText: "58 mm" }).click();
+    await page.waitForFunction(() => {
+      const frame = document.querySelector(".print-preview iframe");
+      return frame?.contentDocument?.querySelector(".doc-ribbon") != null;
+    });
+    await page.screenshot({ path: path.join(output, `receipt-thermal-${width}.png`) });
+    await page.locator(".print-dialog button").filter({ hasText: "Cancel" }).click();
+    await page.locator(".cs-payments button").filter({ hasText: "Print" }).first().click();
+    await page.locator(".print-dialog").waitFor();
+    await page.locator(".print-format button").filter({ hasText: "A4" }).click();
+    await page.waitForFunction(() => {
+      const frame = document.querySelector(".print-preview iframe");
+      return frame?.contentDocument?.querySelector(".doc-ribbon") != null;
+    });
+    await page.screenshot({ path: path.join(output, `grouped-receipt-${width}.png`) });
+    const groupedHtml = await page.locator(".print-preview iframe").evaluate((frame) =>
+      frame.contentDocument.body.innerText,
+    );
+    if (!groupedHtml.includes("Payments included") || !groupedHtml.includes("250,000")) {
+      failures.push(`${width}: grouped receipt preview is missing its payment details or total.`);
+    }
+    await page.locator(".print-dialog button").filter({ hasText: "Cancel" }).click();
+    const recordsAfterDocuments = await page.evaluate(() => {
+      const saved = JSON.parse(localStorage.getItem("solo-sales-os-v1") || "{}");
+      return JSON.stringify(saved.clients || {});
+    });
+    if (recordsAfterDocuments !== recordsBeforeDocuments) {
+      failures.push(`${width}: document preview or output changed client records.`);
+    }
 
     await page.locator(".cs-actionbar").getByRole("button", { name: /Record payment/ }).click();
     await page.locator(".ce-dialog").waitFor();
     await page.screenshot({ path: path.join(output, `payment-editor-${width}.png`) });
+    if (width === Math.max(...sizes)) {
+      await captureDocumentVariants(context, origin, output);
+    }
     await context.close();
   }
   await browser.close();
@@ -302,6 +518,6 @@ const synthetic = {
     console.error(failures.join("\n"));
     process.exitCode = 1;
   } else {
-    console.log(`Captured ${sizes.length} widths with synthetic records; no overflow or runtime errors.`);
+    console.log(`Captured ${sizes.length} widths with synthetic records; no overflow, runtime errors, or print/download path issues.`);
   }
 })();

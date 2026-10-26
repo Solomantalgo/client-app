@@ -1,16 +1,22 @@
-import { useMemo, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 import Card from "../components/Card.jsx";
 import { Icon } from "../components/Icon.jsx";
+import { ClientActions } from "../clients/ClientActions.js";
 import {
-  buildMonthCsv,
   classifyEarning,
   comparisonPeriods,
   currentKampalaMonth,
-  monthDateRange,
   summarizeMonth,
   summarizeRange,
   summarizeYear,
 } from "../reporting/earnings.js";
+import {
+  buildMonthlyCsv,
+  buildMonthlyDocx,
+  buildMonthlyPdf,
+  createMonthlyReportModel,
+  monthlyReportFilename,
+} from "../reporting/monthlyExports.js";
 import "./MonthlyEarnings.css";
 
 const money = (amount) =>
@@ -36,18 +42,47 @@ const reportClassText = (summary) =>
     ? `${money(summary.unclassified)} needs review`
     : "All receipts classified";
 
+function downloadReport(blob, filename) {
+  if (!(blob instanceof Blob) || blob.size === 0) {
+    throw new Error("The report file could not be generated.");
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function currentBusinessDate() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Kampala",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(
+    parts.map(({ type, value }) => [type, value]),
+  );
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 export default function MonthlyEarnings({
   data,
   initialMonth,
   onSave,
   onSelectTransaction,
 }) {
+  const actions = useContext(ClientActions);
   const currentMonth = currentKampalaMonth();
   const [month, setMonth] = useState(initialMonth || currentMonth);
   const [series, setSeries] = useState("earned");
   const [sourceFilter, setSourceFilter] = useState("All");
   const [fullMonthComparison, setFullMonthComparison] = useState(false);
   const [targetDraft, setTargetDraft] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportStatus, setExportStatus] = useState("");
+  const [exportError, setExportError] = useState("");
   const summary = useMemo(() => summarizeMonth(data, month), [data, month]);
   const year = useMemo(
     () => summarizeYear(data, Number(month.slice(0, 4))),
@@ -78,6 +113,27 @@ export default function MonthlyEarnings({
     }
     return sourceName(transaction) === sourceFilter;
   });
+  const report = useMemo(
+    () =>
+      createMonthlyReportModel({
+        month,
+        summary,
+        transactions,
+        year,
+        filterLabel: sourceFilter,
+        profile: actions?.profile || data.settings?.business || {},
+        generatedAt: currentBusinessDate(),
+      }),
+    [
+      month,
+      summary,
+      transactions,
+      year,
+      sourceFilter,
+      actions?.profile,
+      data.settings?.business,
+    ],
+  );
   const maxChartValue = Math.max(
     1,
     ...year.months.flatMap((item) => [
@@ -119,20 +175,35 @@ export default function MonthlyEarnings({
     setTargetDraft("");
   };
 
-  const exportCsv = () => {
-    const range = monthDateRange(month);
-    const blob = new Blob([buildMonthCsv(summary, range, {
-      transactions,
-      filterLabel: sourceFilter,
-    })], {
-      type: "text/csv;charset=utf-8",
-    });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.href = url;
-    link.download = `monthly-earnings-${month}.csv`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const exportReport = async (format) => {
+    setExportOpen(false);
+    setExportStatus("");
+    setExportError("");
+    try {
+      if (format === "csv") {
+        const blob = new Blob([buildMonthlyCsv(report)], {
+          type: "text/csv;charset=utf-8",
+        });
+        downloadReport(blob, monthlyReportFilename(month, "csv"));
+      } else if (format === "pdf") {
+        downloadReport(
+          buildMonthlyPdf(report),
+          monthlyReportFilename(month, "pdf"),
+        );
+      } else {
+        const blob = await buildMonthlyDocx(report);
+        downloadReport(blob, monthlyReportFilename(month, "docx"));
+      }
+      setExportStatus(
+        `${format.toUpperCase()} report downloaded for ${monthLabel(month)}.`,
+      );
+    } catch (error) {
+      setExportError(
+        error instanceof Error
+          ? error.message
+          : "The report could not be exported.",
+      );
+    }
   };
 
   return (
@@ -146,13 +217,48 @@ export default function MonthlyEarnings({
             was invoiced.
           </p>
         </div>
-        <button
-          className="btn btn-secondary earnings-export"
-          onClick={exportCsv}
-        >
-          <Icon name="Download" size={18} /> Export CSV
-        </button>
+        <div className="earnings-export-wrap">
+          <button
+            className="btn btn-secondary earnings-export"
+            aria-haspopup="menu"
+            aria-expanded={exportOpen}
+            onClick={() => setExportOpen((open) => !open)}
+          >
+            <Icon name="Download" size={18} /> Export report
+          </button>
+          {exportOpen && (
+            <div
+              className="earnings-export-menu"
+              role="menu"
+              aria-label="Export report"
+            >
+              <p>
+                Exports {monthLabel(month)} using the current report filter:{" "}
+                {sourceFilter}.
+              </p>
+              <button role="menuitem" onClick={() => exportReport("csv")}>
+                CSV
+              </button>
+              <button role="menuitem" onClick={() => exportReport("pdf")}>
+                PDF
+              </button>
+              <button role="menuitem" onClick={() => exportReport("docx")}>
+                Word (.docx)
+              </button>
+            </div>
+          )}
+        </div>
       </header>
+      {exportStatus && (
+        <p className="earnings-export-status" role="status">
+          {exportStatus}
+        </p>
+      )}
+      {exportError && (
+        <p className="earnings-export-error" role="alert">
+          {exportError}
+        </p>
+      )}
 
       <section className="earnings-period" aria-label="Report period">
         <button

@@ -1,352 +1,468 @@
 import qrcode from "qrcode-generator";
 
 export function esc(value) {
-  return String(value ?? "").replace(
-    /[&<>"']/g,
-    (character) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      })[character],
-  );
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
 }
 
-const cash = (value) =>
+export const formatDocumentMoney = (value) =>
   `UGX ${Math.max(0, Math.round(Number(value) || 0)).toLocaleString("en-UG")}`;
-const methodName = (value) =>
-  ({
+
+export function receiptSummary(model) {
+  const linesTotal = (model.lines || []).reduce(
+    (sum, line) => sum + (Number(line.amount) || 0),
+    0,
+  );
+  const received = Math.max(0, Number(model.received ?? model.total ?? linesTotal));
+  const invoiceTotal = Math.max(0, Number(model.invoiceTotal ?? model.total) || 0);
+  const previouslyPaid = Math.max(0, Number(model.previouslyPaid) || 0);
+  const balance = Math.max(0, invoiceTotal - previouslyPaid - received);
+  return {
+    received,
+    invoiceTotal,
+    previouslyPaid,
+    balance,
+    paidInFull: balance === 0 && invoiceTotal > 0,
+  };
+}
+
+export function invoiceSummary(model) {
+  const total = Math.max(0, Number(model.total) || 0);
+  const paid = Math.max(0, Number(model.paid) || 0);
+  const balance = Math.max(0, total - paid);
+  const status = balance === 0 ? "PAID IN FULL" : paid ? "PARTIAL PAYMENT" : "AWAITING PAYMENT";
+  return { total, paid, balance, status, paidInFull: balance === 0 };
+}
+
+function methodName(value) {
+  const name = String(value || "").trim();
+  if (!name) return "Not specified";
+  return ({
     cash: "Cash",
     bank: "Bank",
     "mobile-money": "MTN MoMo",
     momo: "MTN MoMo",
-  })[String(value || "").toLowerCase()] ||
-  value ||
-  "Not specified";
-
-function qrMarkup(profile) {
-  const website =
-    profile.qrUrl || `https://${profile.website || "solomantalgo.com"}`;
-  const qr = qrcode(0, "M");
-  qr.addData(website);
-  qr.make();
-  const svg = qr.createSvgTag(4, 0).replace(/<\?xml[^>]*>/, "");
-  return `<div class="qr">${svg}</div>`;
+  })[name.toLowerCase()] || name;
 }
 
-function fontMarkup(profile) {
-  const declarations = [profile.font400Url, profile.font500Url]
-    .filter(Boolean)
-    .map(
-      (url, index) =>
-        `@font-face{font-family:'DM Mono';font-weight:${index ? 500 : 400};src:url('${esc(url)}') format('woff2');}`,
-    )
-    .join("");
-  return `<style>${declarations}</style>`;
+function displayDate(value) {
+  if (!value) return "";
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return String(value);
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+function qrMarkup(profile, thermal = false) {
+  const website = profile.website || "solomantalgo.com";
+  const destination = profile.qrUrl || `https://${website}`;
+  const qr = qrcode(0, "M");
+  qr.addData(destination);
+  qr.make();
+  return `<div class="doc-qr${thermal ? " thermal-qr" : ""}">
+    ${qr.createSvgTag(3, 4).replace(/<\?xml[^>]*>/, "")}
+    <span>Scan to visit ${esc(website)}</span>
+  </div>`;
 }
 
 function logoMarkup(profile, format) {
-  const enabled =
-    format === "a4"
-      ? profile.showLogoA4 !== false
-      : profile.showLogoThermal === true;
-  return enabled && profile.logoDataUri
-    ? `<img class="logo" src="${esc(profile.logoDataUri)}" alt="">`
-    : "";
+  const enabled = format === "a4" ? profile.showLogoA4 !== false : profile.showLogoThermal === true;
+  if (!enabled || !profile.logoDataUri) {
+    return `<b class="brand-fallback">${esc(profile.brandName || "Solomantalgo")}</b>`;
+  }
+  return `<img class="doc-logo" src="${esc(profile.logoDataUri)}" alt="">`;
 }
 
-function brand(profile, format) {
-  return `<header class="brand">${logoMarkup(profile, format)}<b>${esc(profile.brandName || "Solomantalgo")}</b>
-<strong>${esc(profile.tagline || "Web Design")}</strong><span>${esc(profile.location || "Kampala, Uganda")}</span>
-<span>${esc(profile.website || "solomantalgo.com")}</span></header>`;
+function brandDetails(profile) {
+  return [profile.tagline, profile.location, profile.website]
+    .filter(Boolean)
+    .map((value) => `<span>${esc(value)}</span>`)
+    .join('<i aria-hidden="true">·</i>');
+}
+
+function ribbon(profile, model, type, middle, format) {
+  return `<header class="doc-ribbon">
+    <div class="doc-brand">
+      ${logoMarkup(profile, format)}
+      <div class="doc-brand-details">${brandDetails(profile)}</div>
+    </div>
+    <div class="doc-id">
+      <h1>${type === "Receipt" ? "PAYMENT RECEIPT" : "INVOICE"}</h1>
+      <b>${esc(model.number || "")}</b>
+      ${middle}
+    </div>
+  </header>`;
+}
+
+function ribbonMarkup(profile, model, type, format) {
+  const middle = type === "Receipt"
+    ? ""
+    : `<span>Issued ${esc(displayDate(model.date))}</span>
+      ${model.dueDate ? `<span>Due ${esc(displayDate(model.dueDate))}</span>` : ""}`;
+  return ribbon(profile, model, type, middle, format);
 }
 
 function paymentDetails(profile) {
-  const rows = [];
-  if (profile.bankName || profile.bankAccountName || profile.bankAccountNo) {
-    rows.push(`<b>Bank Transfer</b>${profile.bankName ? `<div>${esc(profile.bankName)}</div>` : ""}
-${profile.bankAccountName ? `<div>Account Name: ${esc(profile.bankAccountName)}</div>` : ""}
-${profile.bankAccountNo ? `<div>Account No: ${esc(profile.bankAccountNo)}</div>` : ""}`);
+  const bank = profile.bankName || profile.bankAccountName || profile.bankAccountNo;
+  const momo = profile.momoNumber || profile.momoName;
+  if (!bank && !momo) return "";
+  const blocks = [];
+  if (bank) {
+    blocks.push(`<section><b>Bank transfer</b>
+      ${profile.bankName ? `<span>${esc(profile.bankName)}</span>` : ""}
+      ${profile.bankAccountName ? `<span>${esc(profile.bankAccountName)}</span>` : ""}
+      ${profile.bankAccountNo ? `<span>${esc(profile.bankAccountNo)}</span>` : ""}
+    </section>`);
   }
-  if (profile.momoNumber || profile.momoName) {
-    rows.push(`<b>Mobile Money (MTN)</b>${profile.momoNumber ? `<div>Number: ${esc(profile.momoNumber)}</div>` : ""}
-${profile.momoName ? `<div>Name: ${esc(profile.momoName)}</div>` : ""}`);
+  if (momo) {
+    blocks.push(`<section><b>Mobile Money (MTN)</b>
+      ${profile.momoNumber ? `<span>${esc(profile.momoNumber)}</span>` : ""}
+      ${profile.momoName ? `<span>${esc(profile.momoName)}</span>` : ""}
+    </section>`);
   }
-  return rows.length
-    ? `<section class="payment-details"><label>PAYMENT DETAILS</label>${rows.join("<div class='detail-gap'></div>")}</section>`
-    : "";
+  return `<section class="payment-details">
+    <h2>Payment details</h2><div class="payment-detail-grid">${blocks.join("")}</div>
+  </section>`;
 }
 
-function signature(profile) {
-  return `<section class="signature"><b>${esc(profile.ownerName || "")}</b>
-<span>${esc(profile.ownerTitle || "")}</span></section>`;
+function receiptLines(model) {
+  return (model.lines || [])
+    .filter((line) => line.title || Number(line.amount))
+    .map((line) => `<div class="description-line">
+      <span>${esc(line.title || "")}</span><b>${formatDocumentMoney(line.amount)}</b>
+    </div>`)
+    .join("");
 }
 
-function styles(format) {
-  const base = `*{color:#000!important;background:#fff!important;box-sizing:border-box}
-html,body{margin:0;font-family:'DM Mono','Courier New',monospace;color:#000;background:#fff}
-.brand,.c{text-align:center}.brand{display:flex;align-items:center;flex-direction:column;gap:2px}
-.brand b,.brand strong{font-size:1.15em}.logo{object-fit:contain;max-width:100%;height:18mm}
-.rule{border-top:3px solid #000;margin:12px 0}.thin{border-width:1px;margin:8px 0}
-.doc-title{text-align:center;font-size:1.5em;font-weight:700;letter-spacing:.08em}
-.doc-meta{text-align:center;line-height:1.8}.block{margin:12px 0}.label{font-size:.78em;letter-spacing:.08em}
-.row{display:flex;justify-content:space-between;gap:8px;padding:4px 0}.row b,.grand{font-weight:700}
-.lines{margin:10px 0}.line{display:flex;justify-content:space-between;gap:8px;padding:5px 0}
-.line-name{min-width:0;overflow-wrap:anywhere}.stamp{border:2px solid #000;text-align:center;padding:8px;font-weight:700;margin:14px 0}
-.signature{display:flex;flex-direction:column;gap:3px;margin-top:18px}.qr{text-align:center;margin:12px auto}.qr svg{width:30mm;height:30mm}
-.qr svg path{fill:#000!important}.detail-gap{height:7px}.wrap{overflow-wrap:anywhere}.included{margin:10px 0}`;
-  if (format === "thermal58")
-    return `@page{size:58mm auto;margin:0}html,body{width:58mm;margin:0}
-body{width:48mm;padding:3mm 5mm 8mm;font:9px/1.35 'DM Mono','Courier New',monospace}
-${base.replace("height:18mm", "height:12mm").replace("width:30mm;height:30mm", "width:26mm;height:26mm")}
-.brand{gap:1px}.rule{margin:7px 0}.thin{margin:5px 0}.doc-title{font-size:1.35em}
-.block{margin:8px 0}.label{font-size:7px}.row{padding:2px 0}.line{display:block;padding:3px 0}
-.line .amount{display:block;text-align:right}.stamp{padding:3px;margin:6px 0}.qr{margin:7px auto}`;
-  return `@page{size:A4;margin:16mm}body{max-width:170mm;margin:0 auto;padding:0;font:12.5px/1.55 'DM Mono','Courier New',monospace}
-${base}.brand{gap:4px}.logo{height:18mm}.rule{margin:20px 0}.thin{margin:12px 0}
-.doc-title{font-size:23px}.block{margin:18px 0}.label{font-size:9px}.row{padding:8px 0}
-.line{padding:8px 0}.stamp{padding:12px;margin:24px auto}.qr{margin:22px auto}.qr svg{width:30mm;height:30mm}`;
+function includedPayments(model) {
+  if (!model.payments?.length) return "";
+  return `<section class="included-payments">
+    <h2>Payments included</h2>
+    ${model.payments.map((payment) => `<div class="financial-row">
+      <span>${esc(displayDate(payment.date))} · ${esc(methodName(payment.method))}
+        ${payment.reference ? ` · Ref ${esc(payment.reference)}` : ""}</span>
+      <b>${formatDocumentMoney(payment.amount)}</b>
+    </div>`).join("")}
+  </section>`;
 }
 
-function page(title, content, format, profile) {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>${fontMarkup(profile)}
-<style>${styles(format)}</style></head><body>${content}</body></html>`;
+function issuer(profile) {
+  if (!profile.ownerName && !profile.ownerTitle) return "";
+  return `<div class="issuer-copy"><span>Issued by</span>
+    ${profile.ownerName ? `<b>${esc(profile.ownerName)}</b>` : ""}
+    ${profile.ownerTitle ? `<span>${esc(profile.ownerTitle)}</span>` : ""}
+  </div>`;
+}
+
+function footer(model, profile) {
+  return `<footer class="doc-footer">
+    <span>${esc(model.number || "")}</span>
+    <span>${esc(profile.brandName || "Solomantalgo")} · ${esc(profile.website || "")}</span>
+    <span>Page <i class="page-current">1</i> of <i class="page-total">1</i></span>
+  </footer>`;
 }
 
 function a4Styles() {
-  return `@page{size:A4;margin:16mm}*{box-sizing:border-box;color:#000}
-html,body{margin:0;background:#fff;font:12px/1.45 'DM Mono','Courier New',monospace;color:#000}
-body{max-width:170mm;margin:0 auto}
-.page{position:relative;min-height:258mm;padding-bottom:12mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}.brand-a4{display:flex;align-items:center;gap:10px}
-.brand-a4 img{max-width:38mm;height:16mm;object-fit:contain}.brand-copy{display:flex;flex-direction:column;gap:2px}
-.brand-copy b{font:600 18px/1.2 Arial,sans-serif;white-space:nowrap}.doc-a4{text-align:right;min-width:60mm}
-.doc-a4 h1{font:600 27px/1.05 Arial,sans-serif;letter-spacing:.12em;margin:0 0 7px}.doc-a4 div{line-height:1.7}
-.ink-rule{border-top:2.5px solid #000;margin:10px 0 12px}.info{display:flex;justify-content:space-between;gap:16px;min-height:20mm}
-.info section{flex:1}.info-right{text-align:right}.eyebrow{font-size:9px;letter-spacing:.08em;text-transform:uppercase}
-.info b{display:block;font-size:14px}.sub{color:#333}.included{margin-top:7px}.included .row{padding:2px 0}
-.row{display:flex;justify-content:space-between;gap:12px;padding:5px 0}.row b,.amount{font-variant-numeric:tabular-nums}
-.receipt-summary{max-width:125mm;margin:11px 0 0 auto}
-.received{font-size:15.5px;font-weight:700;border-top:2.5px solid #000;border-bottom:2.5px solid #000;padding:9px 0}
-.balance-band,.paid-band{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;margin-top:8px;font-weight:700}
-.balance-band{border:2px solid #000}.paid-band{background:#C3F83E}.paid-band *{background:#C3F83E}
-.invoice-table{width:100%;border-collapse:collapse;margin:14px 0}.invoice-table th{text-align:left;border-bottom:2px solid #000;padding:7px 4px}
-.invoice-table th:last-child,.invoice-table td:last-child{text-align:right}.invoice-table td{border-bottom:1px solid #999;padding:8px 4px;vertical-align:top}
-.totals{width:80mm;margin-left:auto}.stamp-qr{display:flex;justify-content:space-between;align-items:center;margin:12px 0}
-.stamp{border:2.5px solid #000;padding:10px 18px;font:bold 13px Arial,sans-serif;transform:rotate(-4deg);text-align:center}
-.stamp.paid{background:#C3F83E}.qrbox{text-align:center;font-size:9px}.qrbox svg{width:25mm;height:25mm;display:block;margin:0 auto 4px}
-.qrbox svg path{fill:#000!important}
-.details{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin:12px 0}
-.details-title{grid-column:1/-1}.details section{min-width:0}
-.terms{margin:10px 0}
-.signature-a4{text-align:right;margin:12px 0 5px}
-.sig-line{display:block;width:62mm;margin-left:auto;border-top:1px solid #000;padding-top:5px}
-.thanks{text-align:right;font-style:italic;margin:7px 0}
-.footer{position:absolute;right:0;bottom:0;left:0;border-top:1px solid #000;padding-top:5px;
-font-size:9px;display:flex;justify-content:space-between}
-.lines-page-break{break-inside:avoid}@media print{tr{break-inside:avoid}}`;
+  return `
+    @page { size: A4 portrait; margin: 0; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    html, body { margin: 0; padding: 0; background: #fff; color: #171717;
+      font: 10.5pt/1.45 Arial, Helvetica, sans-serif; }
+    .doc-page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 15mm 16mm 23mm; }
+    .doc-ribbon { height: 34mm; display: flex; align-items: center; justify-content: space-between;
+      gap: 8mm; padding: 4mm 7mm; border-left: 3mm solid #C3FF4D; background: #202020; color: #fff; }
+    .doc-brand { display: flex; min-width: 0; flex: 1; flex-direction: column; justify-content: center; gap: 1.6mm; }
+    .doc-logo { display: block; width: 55mm; height: 18mm; object-fit: contain; object-position: left center; }
+    .brand-fallback { color: #fff; font-size: 18pt; }
+    .doc-brand-details { display: flex; flex-wrap: wrap; align-items: center; gap: 1.5mm 2.2mm;
+      color: #f4f4f4; font-size: 8.5pt; }
+    .doc-brand-details i { color: #fff; font-style: normal; }
+    .doc-id { display: flex; max-width: 76mm; flex-direction: column; align-items: flex-end; gap: 1mm;
+      color: #fff; text-align: right; font-size: 8.5pt; }
+    .doc-id h1 { margin: 0 0 1mm; color: #fff; font-size: 19pt; line-height: 1.08;
+      letter-spacing: .035em; white-space: nowrap; }
+    .doc-id b { color: #fff; font-size: 10pt; letter-spacing: .04em; }
+    .doc-content { padding-top: 8mm; }
+    .recipient-row { display: grid; grid-template-columns: 1fr auto; gap: 10mm; padding: 0 0 7mm;
+      border-bottom: 1px solid #DADADA; }
+    .recipient-row > section { display: flex; min-width: 0; flex-direction: column; gap: .8mm; }
+    .recipient-meta { min-width: 50mm; text-align: right; }
+    .doc-kicker { color: #555; font-size: 9pt; }
+    .recipient-row strong { color: #171717; font-size: 13pt; overflow-wrap: anywhere; }
+    .recipient-row .business-name { color: #555; }
+    .document-reference { color: #555; font-size: 9.5pt; }
+    .doc-description { display: grid; gap: 2mm; padding: 6mm 0; border-bottom: 1px solid #DADADA; }
+    .doc-description h2, .included-payments h2, .payment-details h2 { margin: 0; font-size: 9pt;
+      font-weight: 500; color: #555; }
+    .description-line { display: flex; justify-content: space-between; gap: 8mm; padding: 1mm 0; }
+    .description-line span { min-width: 0; overflow-wrap: anywhere; }
+    .description-line b, .financial-row b { flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+    .amount-row { display: flex; align-items: center; justify-content: space-between; gap: 6mm;
+      padding: 7mm 0 6mm; border-bottom: 1px solid #DADADA; }
+    .amount-row > div { display: flex; min-width: 0; flex-direction: column; gap: 1mm; }
+    .amount-label { color: #555; font-size: 9.5pt; }
+    .amount-value { font-size: 30pt; font-weight: 700; line-height: 1.06; letter-spacing: -.025em;
+      font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .amount-value::after { display: block; width: 18mm; margin-top: 2mm; border-bottom: 1.4mm solid #C3FF4D;
+      content: ""; }
+    .status-badge { flex: none; padding: 2.2mm 3mm; border-radius: 2mm; background: #EDF8D9;
+      color: #171717; font-size: 9pt; font-weight: 700; }
+    .status-badge.pending { border: 1px solid #999; background: #fff; }
+    .financial-summary { width: 100%; margin: 3mm 0 0; }
+    .financial-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8mm;
+      padding: 2.3mm 0; border-bottom: 1px solid #DADADA; }
+    .financial-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+    .financial-row b { font-weight: 600; font-variant-numeric: tabular-nums; }
+    .financial-row.balance { margin-top: 1.5mm; padding: 3mm; border: 0; background: #EDF8D9; font-weight: 700; }
+    .financial-row.balance b { font-size: 12pt; }
+    .included-payments { display: grid; gap: 1.5mm; margin-top: 4mm; padding-top: 3mm;
+      border-top: 1px solid #DADADA; }
+    .included-payments .financial-row { padding: 1mm 0; font-size: 9pt; }
+    .method-row { display: flex; flex-wrap: wrap; gap: 2mm 8mm; padding: 4mm 0; border-bottom: 1px solid #DADADA; }
+    .method-row strong { font-weight: 600; }
+    .payment-details { margin-top: 5mm; }
+    .payment-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5mm; margin-top: 2mm; }
+    .payment-detail-grid section { display: flex; min-width: 0; flex-direction: column; gap: 1mm; padding: 3mm;
+      border: 1px solid #DADADA; overflow-wrap: anywhere; }
+    .payment-detail-grid b { margin-bottom: 1mm; }
+    .invoice-table { width: 100%; margin: 5mm 0; border-collapse: collapse; }
+    .invoice-table thead { display: table-header-group; }
+    .invoice-table th { padding: 2.8mm 2mm; border-bottom: 1.5px solid #777; color: #555;
+      font-size: 9pt; font-weight: 500; text-align: left; }
+    .invoice-table td { padding: 3mm 2mm; border-bottom: 1px solid #DADADA; vertical-align: top; }
+    .invoice-table td:first-child { overflow-wrap: anywhere; }
+    .invoice-table th:last-child, .invoice-table td:last-child { width: 42mm; text-align: right; }
+    .invoice-totals { width: 78mm; margin: 2mm 0 0 auto; }
+    .thermal-invoice-lines { margin: 2mm 0; }
+    .thermal-invoice-line { display: grid; gap: 1mm; padding: 1.7mm 0;
+      border-bottom: 1px solid #000; overflow-wrap: anywhere; }
+    .thermal-invoice-line b { text-align: right; }
+    .invoice-primary { margin-top: 5mm; }
+    .terms { margin-top: 5mm; padding-top: 3mm; border-top: 1px solid #DADADA; }
+    .terms h2 { margin: 0 0 2mm; font-size: 9pt; font-weight: 500; color: #555; }
+    .terms-content { overflow-wrap: anywhere; white-space: pre-wrap; }
+    .issuer-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 8mm;
+      margin-top: 8mm; break-inside: avoid; }
+    .issuer-copy { display: flex; min-width: 0; flex-direction: column; gap: 1mm; }
+    .issuer-copy > span:first-child { color: #555; font-size: 9pt; }
+    .issuer-copy b { font-size: 11pt; }
+    .issuer-copy span:last-child { color: #555; }
+    .doc-qr { display: flex; flex: none; flex-direction: column; align-items: center; gap: 1mm; color: #555;
+      font-size: 8.5pt; text-align: center; }
+    .doc-qr svg { display: block; width: 24mm; height: 24mm; background: #fff; }
+    .doc-thanks { margin: 5mm 0 0; color: #555; font-style: italic; text-align: right; }
+    .doc-footer { display: flex; justify-content: space-between; gap: 5mm; margin-top: 8mm; padding-top: 2mm;
+      border-top: 1px solid #DADADA; color: #555; font-size: 8.5pt; }
+    .doc-footer > span { min-width: 0; overflow-wrap: anywhere; }
+    .doc-footer i { font-style: normal; }
+    .page-current::after, .page-total::after { content: ""; }
+    .keep-together { break-inside: avoid; }
+    @media print {
+      .doc-page { margin: 0; }
+      .doc-footer { position: fixed; right: 16mm; bottom: 5mm; left: 16mm; margin: 0; }
+      .page-current, .page-total { font-size: 0; }
+      .page-current::after { content: counter(page); font-size: 8.5pt; }
+      .page-total::after { content: counter(pages); font-size: 8.5pt; }
+      .invoice-table tr { break-inside: avoid; }
+    }
+  `;
 }
 
-function a4Header(profile, model, type, format, middle) {
-  return `<header class="head"><div class="brand-a4">${logoMarkup(profile, format)}<div class="brand-copy">
-<b>${esc(profile.brandName || "Solomantalgo")}</b><span>${esc(profile.location || "Kampala, Uganda")}</span>
-<span>${esc(profile.website || "solomantalgo.com")}</span></div></div><div class="doc-a4"><h1>${type.toUpperCase()}</h1>
-<div><b>${esc(model.number || "")}</b></div>${middle}<div>Date: ${esc(model.date || "")}</div></div></header>
-<div class="ink-rule"></div>`;
+function thermalStyles() {
+  return `
+    @page { size: 58mm auto; margin: 0; }
+    * { box-sizing: border-box; color: #000; background: #fff; }
+    html, body { width: 58mm; margin: 0; padding: 0; font: 9px/1.35 Arial, Helvetica, sans-serif; }
+    .doc-page { width: 58mm; margin: 0; padding: 3mm 5mm 5mm; }
+    .doc-ribbon { display: block; height: auto; padding: 0 0 3mm; border: 0; border-bottom: 1px solid #000;
+      background: #fff; color: #000; text-align: center; }
+    .doc-brand { align-items: center; gap: 1mm; }
+    .doc-logo { width: 38mm; height: 12mm; object-position: center; filter: grayscale(1) contrast(1.3); }
+    .brand-fallback { color: #000; font-size: 12px; }
+    .doc-brand-details { justify-content: center; gap: 1mm; color: #000; font-size: 7.5px; }
+    .doc-brand-details i { color: #000; }
+    .doc-id { max-width: none; align-items: center; gap: .5mm; margin-top: 2mm; color: #000; font-size: 8px; }
+    .doc-id h1 { margin: 0; color: #000; font-size: 12px; }
+    .doc-id b { color: #000; font-size: 8px; }
+    .doc-content { padding-top: 3mm; }
+    .recipient-row { grid-template-columns: 1fr; gap: 2mm; padding-bottom: 2.5mm; }
+    .recipient-meta { min-width: 0; text-align: left; }
+    .recipient-row strong { font-size: 10px; }
+    .doc-kicker { font-size: 8px; }
+    .document-reference { font-size: 8px; }
+    .doc-description { gap: 1mm; padding: 2.5mm 0; }
+    .description-line { display: block; padding: 1mm 0; }
+    .description-line b { display: block; margin-top: .5mm; text-align: right; }
+    .amount-row { align-items: flex-start; padding: 3mm 0; }
+    .amount-label { font-size: 8px; }
+    .amount-value { font-size: 17px; }
+    .amount-value::after { width: 10mm; margin-top: 1mm; border-bottom-width: 1mm; }
+    .status-badge { padding: 1mm; border: 1px solid #000; border-radius: 0; background: #fff; font-size: 7px; }
+    .financial-row { display: grid; grid-template-columns: 1fr; gap: .5mm; padding: 1.4mm 0; font-size: 8px; }
+    .financial-row b { justify-self: end; }
+    .financial-row.balance { margin-top: 1mm; padding: 1.5mm; border: 1px solid #000; background: #fff; }
+    .financial-row.balance b { font-size: 9px; }
+    .included-payments { gap: 1mm; margin-top: 2mm; padding-top: 2mm; }
+    .included-payments .financial-row { font-size: 7.5px; }
+    .method-row { display: grid; gap: 1mm; padding: 2mm 0; font-size: 8px; }
+    .payment-details { margin-top: 2mm; }
+    .payment-detail-grid { grid-template-columns: 1fr; gap: 1.5mm; }
+    .payment-detail-grid section { gap: .5mm; padding: 1.5mm; }
+    .thermal-invoice-lines { font-size: 8px; }
+    .invoice-totals { width: 100%; margin-top: 2mm; }
+    .terms { margin-top: 2mm; padding-top: 2mm; }
+    .terms-content { font-size: 8px; }
+    .issuer-row { display: grid; justify-items: center; gap: 1mm; margin-top: 3mm; }
+    .issuer-copy { align-items: center; text-align: center; }
+    .issuer-copy > span:first-child { font-size: 7.5px; }
+    .issuer-copy b { font-size: 9px; }
+    .issuer-copy span:last-child { font-size: 7.5px; }
+    .doc-qr { font-size: 7px; }
+    .doc-qr svg { width: 19mm; height: 19mm; }
+    .doc-thanks { margin-top: 2mm; font-size: 8px; text-align: center; }
+    .doc-footer { display: grid; justify-content: center; gap: .5mm; margin-top: 2mm; padding-top: 1.5mm;
+      border-top: 1px dashed #000; font-size: 7px; text-align: center; }
+    @media print { .doc-footer { position: static; } }
+  `;
 }
 
-function a4Details(profile) {
-  const blocks = [];
-  if (profile.bankName || profile.bankAccountName || profile.bankAccountNo) {
-    blocks.push(`<section><b>Bank Transfer</b>${profile.bankName ? `<div>${esc(profile.bankName)}</div>` : ""}
-${profile.bankAccountName ? `<div>Account Name: ${esc(profile.bankAccountName)}</div>` : ""}
-${profile.bankAccountNo ? `<div>Account No: ${esc(profile.bankAccountNo)}</div>` : ""}</section>`);
+function documentPage(title, content, format) {
+  const style = format === "thermal58" ? thermalStyles() : a4Styles();
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${esc(title)}</title><style>${style}</style></head>
+    <body><main class="doc-page">${content}</main></body></html>`;
+}
+
+function recipient(model, label, status = "") {
+  const isReceipt = label === "Received from";
+  return `<section class="recipient-row">
+    <section><span class="doc-kicker">${label}</span>
+      <strong>${esc(model.clientName || "")}</strong>
+      ${model.business ? `<span class="business-name">${esc(model.business)}</span>` : ""}
+    </section>
+    <section class="recipient-meta"><span class="doc-kicker">${isReceipt ? "Date" : "Status"}</span>
+      <strong>${esc(isReceipt ? displayDate(model.date) : status)}</strong>
+      ${isReceipt && model.invoiceNo
+        ? `<span class="document-reference">Invoice ref. ${esc(model.invoiceNo)}</span>`
+        : ""}
+      ${isReceipt && model.reference
+        ? `<span class="document-reference">Reference ${esc(model.reference)}</span>`
+        : ""}
+    </section>
+  </section>`;
+}
+
+function amountReceived(summary) {
+  const status = summary.paidInFull ? "Paid in full" : "Partial payment";
+  return `<section class="amount-row"><div><span class="amount-label">Amount received</span>
+    <strong class="amount-value">${formatDocumentMoney(summary.received)}</strong></div>
+    <b class="status-badge${summary.paidInFull ? "" : " pending"}">${status}</b></section>`;
+}
+
+function receiptFinancials(summary) {
+  return `<section class="financial-summary">
+    <div class="financial-row"><span>Invoice total</span><b>${formatDocumentMoney(summary.invoiceTotal)}</b></div>
+    <div class="financial-row"><span>Previously paid</span><b>${formatDocumentMoney(summary.previouslyPaid)}</b></div>
+    <div class="financial-row balance"><span>Remaining balance</span><b>${formatDocumentMoney(summary.balance)}</b></div>
+  </section>`;
+}
+
+function invoiceAmount(summary) {
+  const settled = summary.balance === 0;
+  const label = settled ? "Invoice total" : "Balance due";
+  const amount = settled ? summary.total : summary.balance;
+  return `<section class="amount-row invoice-primary"><div><span class="amount-label">${label}</span>
+    <strong class="amount-value">${formatDocumentMoney(amount)}</strong></div>
+    <b class="status-badge${settled ? "" : " pending"}">${esc(summary.status)}</b></section>`;
+}
+
+function paymentMethod(model) {
+  if (model.payments?.length) {
+    return `<section class="method-row"><strong>Payment methods</strong>
+      <span>${[...new Set(model.payments.map((payment) => methodName(payment.method)))].map(esc).join(", ")}</span>
+      ${model.reference ? `<span>Reference ${esc(model.reference)}</span>` : ""}
+    </section>`;
   }
-  if (profile.momoNumber || profile.momoName) {
-    blocks.push(`<section><b>Mobile Money (MTN)</b>${profile.momoNumber ? `<div>Number: ${esc(profile.momoNumber)}</div>` : ""}
-${profile.momoName ? `<div>Name: ${esc(profile.momoName)}</div>` : ""}</section>`);
+  return `<section class="method-row"><strong>Payment method</strong>
+    <span>${esc(methodName(model.method || model.payment?.accountName || model.payment?.accountId))}</span>
+    ${model.reference ? `<span>Reference ${esc(model.reference)}</span>` : ""}
+  </section>`;
+}
+
+function issuerAndQr(profile) {
+  return `<section class="issuer-row keep-together">${issuer(profile)}${qrMarkup(profile)}</section>`;
+}
+
+function receiptContent(model, profile, format) {
+  const summary = receiptSummary(model);
+  const descriptions = receiptLines(model);
+  const forBlock = descriptions
+    ? `<section class="doc-description"><h2>For</h2>${descriptions}</section>`
+    : "";
+  const included = includedPayments(model);
+  return `${ribbonMarkup(profile, model, "Receipt", format)}
+    <div class="doc-content">${recipient(model, "Received from")}
+      ${forBlock}${included}${amountReceived(summary)}${receiptFinancials(summary)}
+      ${paymentMethod(model)}${paymentDetails(profile)}${issuerAndQr(profile)}
+      <p class="doc-thanks">Thank you for your business.</p>
+      ${footer(model, profile)}
+    </div>`;
+}
+
+function invoiceTable(model, format) {
+  if (format === "thermal58") {
+    return `<section class="thermal-invoice-lines">${(model.items || []).map((item) => `
+      <div class="thermal-invoice-line"><span>${esc(item.title || "")}</span>
+        <b>${formatDocumentMoney(item.amount)}</b></div>`).join("")}</section>`;
   }
-  return blocks.length
-    ? `<div class="details"><span class="eyebrow details-title">PAYMENT DETAILS</span>${blocks.join("")}</div>`
-    : "";
+  return `<table class="invoice-table"><thead><tr><th>Description</th><th>Amount</th></tr></thead>
+    <tbody>${(model.items || []).map((item) => `<tr>
+      <td>${esc(item.title || "")}</td><td>${formatDocumentMoney(item.amount)}</td>
+    </tr>`).join("")}</tbody></table>`;
 }
 
-function a4StampQr(profile, stamp, paid) {
-  return `<div class="stamp-qr"><div class="stamp${paid ? " paid" : ""}">${esc(stamp)}</div>
-<div class="qrbox">${qrMarkup(profile)}<span>Scan to visit ${esc(profile.website || "solomantalgo.com")}</span></div></div>`;
-}
-
-function a4Footer(model, profile) {
-  return `<footer class="footer"><span>${esc(model.number || "")}</span>
-<span>${esc(profile.brandName || "Solomantalgo")} · ${esc(profile.website || "solomantalgo.com")}</span>
-<span>Page 1 of 1</span></footer>`;
-}
-
-function buildA4Receipt(model, profile) {
-  const total = Number(
-    model.total ??
-      (model.lines || []).reduce(
-        (sum, line) => sum + (Number(line.amount) || 0),
-        0,
-      ),
-  );
-  const received = Math.max(0, Number(model.received ?? total));
-  const previous = Math.max(0, Number(model.previouslyPaid) || 0);
-  const balance = Math.max(
-    0,
-    Number(model.invoiceTotal || 0) - previous - received,
-  );
-  const paid = balance === 0 && Number(model.invoiceTotal || model.total) > 0;
-  const reference = model.invoiceNo
-    ? `<div>Ref Invoice: ${esc(model.invoiceNo)}</div>`
-    : "";
-  const paymentMethod = `<div class="info-right"><span class="eyebrow">Payment method</span><b>${esc(methodName(model.method))}</b></div>`;
-  const included = model.payments?.length
-    ? `<section class="included"><b>PAYMENTS INCLUDED</b>${model.payments
-        .map(
-          (payment) =>
-            `<div class="row"><span>${esc(payment.date)} · ${esc(methodName(payment.method))}</span><b>${cash(payment.amount)}</b></div>`,
-        )
-        .join("")}</section>`
-    : "";
-  const summary = `<section class="receipt-summary"><div class="row"><span>Invoice Total</span><b>${cash(model.invoiceTotal || model.total)}</b></div>
-<div class="row"><span>Previously Paid</span><b>${cash(previous)}</b></div>
-<div class="row received"><span>AMOUNT RECEIVED</span><b>${cash(received)}</b></div>
-<div class="balance-band${balance === 0 ? " paid-band" : ""}"><span>REMAINING BALANCE</span><b>${cash(balance)}</b></div></section>`;
-  const content = `<main class="page">${a4Header(profile, model, "Receipt", "a4", reference)}
-<div class="info"><section><span class="eyebrow">Received from</span><b>${esc(model.clientName)}</b>
-<span class="sub">${esc(model.business || "")}</span>${included}</section>${paymentMethod}</div>${summary}
-${a4Details(profile)}${a4StampQr(profile, paid ? "PAID IN FULL" : "PARTIAL PAYMENT", paid)}
-<div class="signature-a4"><span class="sig-line"><b>${esc(profile.ownerName || "")}</b><br>${esc(profile.ownerTitle || "")}</span></div>
-<div class="thanks">Thank you for your business.</div>${a4Footer(model, profile)}</main>`;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(titleFile("Receipt", model.number, model.clientName))}</title>
-${fontMarkup(profile)}<style>${a4Styles()}</style></head><body>${content}</body></html>`;
-}
-
-function buildA4Invoice(model, profile) {
-  const total = Math.max(0, Number(model.total) || 0);
-  const paid = Math.max(0, Number(model.paid) || 0);
-  const balance = Math.max(0, total - paid);
-  const isPaid = balance === 0;
-  const status = isPaid
-    ? "PAID IN FULL"
-    : paid
-      ? "PARTIAL PAYMENT"
-      : "AWAITING PAYMENT";
-  const rows = (model.items || [])
-    .map(
-      (item) =>
-        `<tr><td>${esc(item.title)}</td><td>${cash(item.amount)}</td></tr>`,
-    )
-    .join("");
-  const middle = `<div>Issued: ${esc(model.date || "")}</div><div>Due: ${esc(model.dueDate || "")}</div>`;
-  const totals = `<section class="totals"><div class="row"><span>Total</span><b>${cash(total)}</b></div>
-<div class="row"><span>Paid</span><b>${cash(paid)}</b></div><div class="balance-band${isPaid ? " paid-band" : ""}">
-<span>BALANCE DUE</span><b>${cash(balance)}</b></div></section>`;
+function invoiceContent(model, profile, format) {
+  const summary = invoiceSummary(model);
+  const totals = `<section class="invoice-totals financial-summary">
+    <div class="financial-row"><span>Total</span><b>${formatDocumentMoney(summary.total)}</b></div>
+    <div class="financial-row"><span>Paid</span><b>${formatDocumentMoney(summary.paid)}</b></div>
+    <div class="financial-row balance"><span>Balance due</span><b>${formatDocumentMoney(summary.balance)}</b></div>
+  </section>`;
   const terms = profile.termsText
-    ? `<section class="terms"><span class="eyebrow">Terms</span>
-<div>${esc(profile.termsText)}</div></section>`
+    ? `<section class="terms"><h2>Terms</h2><div class="terms-content">${esc(profile.termsText)}</div></section>`
     : "";
-  const content = `<main class="page">${a4Header(profile, model, "Invoice", "a4", middle)}<div class="info">
-<section><span class="eyebrow">Billed to</span><b>${esc(model.clientName)}</b><span class="sub">${esc(model.business || "")}</span></section>
-<div class="info-right"><span class="eyebrow">Status</span><b>${status}</b></div></div>
-<table class="invoice-table"><thead><tr><th>Description</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table>${totals}
-${terms}${a4Details(profile)}${a4StampQr(profile, status, isPaid)}<div class="signature-a4"><span class="sig-line">
-<b>${esc(profile.ownerName || "")}</b><br>${esc(profile.ownerTitle || "")}</span></div>
-<div class="thanks">Thank you for your business.</div>${a4Footer(model, profile)}</main>`;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(titleFile("Invoice", model.number, model.clientName))}</title>
-${fontMarkup(profile)}<style>${a4Styles()}</style></head><body>${content}</body></html>`;
+  return `${ribbonMarkup(profile, model, "Invoice", format)}
+    <div class="doc-content">${recipient(model, "Billed to", summary.status)}${invoiceTable(model, format)}
+      ${totals}${invoiceAmount(summary)}${paymentDetails(profile)}${terms}
+      ${issuerAndQr(profile)}<p class="doc-thanks">Thank you for your business.</p>
+      ${footer(model, profile)}
+    </div>`;
 }
 
-function titleFile(type, number, name) {
-  return `${type}-${number}-${String(name || "Client").replace(/[^\p{L}\p{N}-]+/gu, "-")}`;
-}
-
-function clientBlock(model) {
-  return `<section class="block"><label class="label">${model.docType === "Receipt" ? "RECEIVED FROM" : "BILLED TO"}</label>
-<div><b>${esc(model.clientName)}</b></div><div>${esc(model.business || "")}</div></section>`;
-}
-
-function linesBlock(items) {
-  return `<section class="lines">${(items || [])
-    .map(
-      (item) => `<div class="line">
-<div class="line-name">${esc(item.title)}</div><b class="amount">${cash(item.amount)}</b></div>`,
-    )
-    .join("")}</section>`;
+function titleFile(type, model) {
+  const number = String(model.number || "Document").replace(/[^\p{L}\p{N}-]+/gu, "-");
+  const client = String(model.clientName || "Client").replace(/[^\p{L}\p{N}-]+/gu, "-");
+  return `${type}-${number}-${client}`;
 }
 
 export function buildReceiptHtml(model, format = "a4", profile = {}) {
-  if (format === "a4") return buildA4Receipt(model, profile);
-  const total = Number(
-    model.total ??
-      (model.lines || []).reduce(
-        (sum, line) => sum + (Number(line.amount) || 0),
-        0,
-      ),
-  );
-  const received = Math.max(0, Number(model.received ?? total));
-  const previous = Math.max(0, Number(model.previouslyPaid) || 0);
-  const balance = Math.max(
-    0,
-    Number(model.invoiceTotal || 0) - previous - received,
-  );
-  const method = methodName(
-    model.method || model.payment?.accountName || model.payment?.accountId,
-  );
-  const invoiceRef = model.invoiceNo
-    ? `<div>Ref Invoice: ${esc(model.invoiceNo)}</div>`
-    : "";
-  const included = model.payments?.length
-    ? `<section class="included"><b>PAYMENTS INCLUDED</b>${model.payments
-        .map(
-          (payment) =>
-            `<div class="row"><span>${esc(payment.date)} · ${esc(methodName(payment.method))}</span><b>${cash(payment.amount)}</b></div>`,
-        )
-        .join("")}</section>`
-    : "";
-  const paidFull = balance === 0 && model.invoiceTotal > 0;
-  const content = `${brand(profile, format)}<div class="rule"></div><div class="doc-title">RECEIPT</div>
-<div class="doc-meta"><b>${esc(model.number || "")}</b><div>Date: ${esc(model.date || "")}</div>${invoiceRef}</div>
-<div class="rule thin"></div>${clientBlock({ ...model, docType: "Receipt" })}${included}
-${model.lines?.length ? linesBlock(model.lines) : ""}<div class="row"><span>Invoice Total</span><b>${cash(model.invoiceTotal || model.total)}</b></div>
-<div class="row"><span>Previously Paid</span><span>${cash(previous)}</span></div><div class="rule thin"></div>
-<div class="row grand"><span>AMOUNT RECEIVED</span><b>${cash(received)}</b></div><div class="rule thin"></div>
-<div class="row grand"><span>REMAINING BALANCE</span><b>${cash(balance)}</b></div><section class="block">
-<label class="label">PAYMENT METHOD</label><div><b>${esc(method)}</b></div></section>${paymentDetails(profile)}
-<div class="stamp">${paidFull ? "PAID IN FULL" : "PARTIAL PAYMENT"}</div>${balance ? `<div class="c"><b>BALANCE DUE ${cash(balance)}</b></div>` : ""}
-${signature(profile)}${qrMarkup(profile)}<div class="c">${esc(profile.website || "solomantalgo.com")}</div>
-<div class="c block">Thank you for your business.</div>`;
-  return page(
-    titleFile("Receipt", model.number || "", model.clientName),
-    content,
-    format,
-    profile,
-  );
+  const title = titleFile("Receipt", model);
+  return documentPage(title, receiptContent(model, profile, format), format);
 }
 
 export function buildInvoiceHtml(model, format = "a4", profile = {}) {
-  if (format === "a4") return buildA4Invoice(model, profile);
-  const total = Math.max(0, Number(model.total) || 0);
-  const paid = Math.max(0, Number(model.paid) || 0);
-  const balance = Math.max(0, total - paid);
-  const dueDate = model.dueDate || "";
-  const content = `${brand(profile, format)}<div class="rule"></div><div class="doc-title">INVOICE</div>
-<div class="doc-meta"><b>${esc(model.number || "")}</b><div>Issue date: ${esc(model.date || "")}</div>
-<div>Due date: ${esc(dueDate)}</div></div><div class="rule thin"></div>${clientBlock({ ...model, docType: "Invoice" })}
-${linesBlock(model.items || [])}<div class="rule thin"></div><div class="row"><span>Total</span><b>${cash(total)}</b></div>
-<div class="row"><span>Paid</span><span>${cash(paid)}</span></div><div class="row grand"><span>BALANCE DUE</span><b>${cash(balance)}</b></div>
-<div class="stamp">${esc(model.stamp || (balance === 0 ? "PAID IN FULL" : paid ? "PARTIAL PAYMENT" : "AWAITING PAYMENT"))}</div>
-${paymentDetails(profile)}
-${profile.termsText ? `<section class="block"><label class="label">TERMS</label>
-<div class="wrap">${esc(profile.termsText)}</div></section>` : ""}
-${signature(profile)}${qrMarkup(profile)}<div class="c">${esc(profile.website || "solomantalgo.com")}</div>`;
-  return page(
-    titleFile("Invoice", model.number || "", model.clientName),
-    content,
-    format,
-    profile,
-  );
+  const title = titleFile("Invoice", model);
+  return documentPage(title, invoiceContent(model, profile, format), format);
 }
+
+export { methodName as formatPaymentMethod, titleFile as documentFilename };

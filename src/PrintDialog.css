@@ -1,42 +1,258 @@
-.print-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
-  padding: 16px; overflow: auto; background: rgba(0,0,0,.78); }
-.print-dialog { display: flex; width: min(720px, 100%); max-height: calc(100dvh - 32px); flex-direction: column;
-  gap: 12px; overflow: auto; padding: 18px; border: 1px solid var(--line-2); border-radius: var(--r-card);
-  background: var(--s1); color: var(--text); }
-.print-dialog header, .print-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.print-dialog h2 { margin: 0; font-size: 18px; }
-.print-format { display: flex; flex-direction: column; gap: 7px; }
-.print-stage { min-height: 300px; display: flex; justify-content: center; overflow: auto; padding: 14px;
-  background: var(--s3); border-radius: var(--r-ctl); }
-.print-preview { width: 100%; min-height: 300px; }
-.print-preview iframe { display: block; width: 100%; height: 420px; border: 0; background: var(--text); }
-.print-stage.thermal58 .print-preview { width: 220px; flex: none; }
-.print-stage.thermal58 iframe { height: 470px; }
-.print-stage.a4 .print-preview { min-width: 500px; }
-.print-dialog p { margin: 0; color: var(--text-2); }
-.print-dialog > a { min-height: 44px; display: flex; align-items: center; color: var(--blue); }
-.print-dialog footer { justify-content: flex-end; }
+.print-overlay {
+  position: fixed;
+  z-index: 2000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 78%);
+}
+
+.print-dialog {
+  display: grid;
+  width: min(1120px, 96vw);
+  height: min(900px, 92dvh);
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  gap: 12px;
+  overflow: hidden;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--studio-border);
+  border-radius: 16px;
+  background: var(--studio-sidebar);
+  color: var(--studio-text);
+}
+
+.print-dialog-header {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+}
+
+.print-dialog-header > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.print-eyebrow {
+  color: var(--studio-muted);
+  font-size: 12px;
+}
+
+.print-dialog h2 {
+  margin: 2px 0 0;
+  color: var(--studio-text);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.print-back {
+  display: none;
+}
+
+.print-close {
+  flex: none;
+}
+
+.print-toolbar {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.print-format {
+  display: grid;
+  width: min(330px, 100%);
+  min-height: 44px;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--studio-border);
+  border-radius: 999px;
+  background: var(--studio-panel);
+}
+
+.print-format button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--studio-text-2);
+  font: 600 14px var(--font-ui);
+  cursor: pointer;
+}
+
+.print-format button.active {
+  background: var(--studio-violet);
+  color: var(--studio-on-violet);
+}
+
+.print-config-note {
+  color: var(--studio-blue);
+  font-size: 13px;
+  text-align: right;
+}
+
+.print-stage {
+  position: relative;
+  display: grid;
+  min-height: 0;
+  place-items: start center;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
+  border: 1px solid var(--studio-border);
+  border-radius: 12px;
+  background: var(--studio-canvas);
+  scrollbar-color: var(--studio-muted) transparent;
+}
+
+.print-preview-shell {
+  position: relative;
+  flex: none;
+  margin: 0 auto;
+}
+
+.print-preview {
+  width: max-content;
+  transform-origin: top left;
+}
+
+.print-preview iframe {
+  display: block;
+  max-width: none;
+  border: 0;
+  background: white;
+}
+
+.print-loading {
+  position: sticky;
+  top: 8px;
+  align-self: start;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  background: var(--studio-sidebar);
+  color: var(--studio-text-2);
+  font-size: 13px;
+}
+
+.print-hint,
+.print-error {
+  margin: 0;
+  color: var(--studio-text-2);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.print-error {
+  color: var(--studio-danger);
+}
+
+.print-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.print-actions .btn {
+  min-width: 132px;
+  min-height: 46px;
+}
+
+.print-cancel {
+  margin-right: auto;
+}
+
+.print-fallback-link {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--studio-violet-hover);
+  font-size: 14px;
+}
+
+.print-dialog button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 @media (max-width: 899px) {
-  .print-overlay { align-items: flex-end; padding: 0; }
-  .print-dialog { width: 100%; max-height: 94dvh; padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
-    border-radius: 16px 16px 0 0; }
-  .print-preview iframe { height: 300px; }
-  .print-stage.a4 {
-    min-height: 210px;
-    overflow: hidden;
+  .print-overlay {
+    display: block;
+    padding: 0;
+    background: var(--studio-sidebar);
   }
-  .print-stage.a4 .print-preview {
-    width: 700px;
-    min-width: 700px;
-    height: 190px;
-    flex: none;
-    margin-right: -378px;
-    margin-bottom: -226px;
-    transform: scale(0.46);
-    transform-origin: top left;
+
+  .print-dialog {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+    gap: 8px;
+    padding: calc(8px + env(safe-area-inset-top)) 12px
+      calc(8px + env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
   }
-  .print-stage.a4 .print-preview iframe {
-    width: 700px;
-    height: 420px;
+
+  .print-dialog-header {
+    min-height: 48px;
+  }
+
+  .print-back {
+    display: inline-grid;
+  }
+
+  .print-close {
+    display: none;
+  }
+
+  .print-dialog h2 {
+    font-size: 18px;
+  }
+
+  .print-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .print-format {
+    width: 100%;
+  }
+
+  .print-config-note {
+    text-align: left;
+  }
+
+  .print-stage {
+    padding: 12px 8px;
+  }
+
+  .print-hint {
+    font-size: 12px;
+  }
+
+  .print-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding-bottom: 2px;
+  }
+
+  .print-actions .btn {
+    width: 100%;
+    min-width: 0;
+    min-height: 46px;
+  }
+
+  .print-cancel {
+    margin: 0;
   }
 }

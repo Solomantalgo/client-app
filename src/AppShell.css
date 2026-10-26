@@ -1336,6 +1336,82 @@
 }
 
 @media (max-width: 560px) {
+  .cs-bar {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) 44px;
+    gap: 8px 10px;
+  }
+
+  .cs-back {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    justify-self: start;
+  }
+
+  .cs-avatar {
+    grid-column: 1;
+    grid-row: 2;
+    width: 40px;
+    height: 40px;
+  }
+
+  .cs-title {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .cs-title h2 {
+    font-size: 19px;
+    line-height: 1.25;
+  }
+
+  .cs-bar > button:last-child {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .cs-summary .cs-totals {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .cs-summary .cs-totals > div {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+    padding: 8px 10px;
+  }
+
+  .cs-summary .cs-totals b {
+    flex: 0 1 auto;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .cs-service .cs-totals {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .cs-service .cs-totals > div {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+  }
+
+  .cs-service .cs-totals b {
+    font-size: 12px;
+    text-align: right;
+    white-space: nowrap;
+  }
+
   .profile-grid,
   .ce-grid {
     grid-template-columns: minmax(0, 1fr);

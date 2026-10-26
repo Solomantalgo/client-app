@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { useContext, useRef, useState } from "react";
 import {
   clientTotals,
   getClientServices,
@@ -16,7 +16,13 @@ import { usePrintDialog } from "../PrintDialog.jsx";
 import { buildInvoiceHtml, buildReceiptHtml } from "../documents.js";
 import { getInvoiceNum, getReceiptNum } from "./documentNumbers.js";
 import { Icon } from "../components/Icon.jsx";
-import { addDays, fmtDate, fmtUGX, todayStr, toWaNumber } from "../lib/format.js";
+import {
+  addDays,
+  fmtDate,
+  fmtUGX,
+  todayStr,
+  toWaNumber,
+} from "../lib/format.js";
 import "../ClientCard.css";
 
 const newPaymentId = () =>
@@ -110,6 +116,7 @@ function printInvoice(
   };
   print({
     docType: "Invoice",
+    model,
     profile,
     build: (format, business) => buildInvoiceHtml(model, format, business),
   });
@@ -160,9 +167,11 @@ function printReceipt(
       profile.accounts?.find((account) => account.id === payment.accountId)
         ?.name ||
       payment.accountId,
+    reference: payment.reference || "",
   };
   print({
     docType: "Receipt",
+    model,
     profile,
     build: (format, business) => buildReceiptHtml(model, format, business),
   });
@@ -222,10 +231,12 @@ function printReceiptGroup(
           ?.name ||
         payment.accountId,
       amount: payment.amount,
+      reference: payment.reference || "",
     })),
   };
   print({
     docType: "Receipt",
+    model,
     profile,
     build: (format, business) => buildReceiptHtml(model, format, business),
   });
@@ -274,12 +285,19 @@ function printCombinedInvoice(
   };
   print({
     docType: "Invoice",
+    model,
     profile,
     build: (format, business) => buildInvoiceHtml(model, format, business),
   });
 }
 // ── Client Card
-export default function ClientScreen({ client: c, date, onUpdate, onBack, packageTemplates = [] }) {
+export default function ClientScreen({
+  client: c,
+  date,
+  onUpdate,
+  onBack,
+  packageTemplates = [],
+}) {
   const actions = useContext(ClientActions);
   const print = usePrintDialog();
   const ask = useConfirm();
@@ -309,6 +327,8 @@ export default function ClientScreen({ client: c, date, onUpdate, onBack, packag
   const [selectedPayments, setSelectedPayments] = useState([]);
   const [receiptMergeMode, setReceiptMergeMode] = useState(false);
   const [expandedReceiptGroups, setExpandedReceiptGroups] = useState([]);
+  const [section, setSection] = useState("overview");
+  const sectionTabs = useRef([]);
   const today = todayStr();
   const isLead = c.status !== "ongoing";
   const services = getClientServices(c);
@@ -596,7 +616,7 @@ export default function ClientScreen({ client: c, date, onUpdate, onBack, packag
       );
   };
   return (
-    <div className="cs">
+    <div className={`cs${isLead ? " cs-lead" : ""}`} data-section={section}>
       <header className="cs-bar">
         <button type="button" className="cs-back" onClick={onBack}>
           <Icon name="Back" size={18} /> Back
@@ -655,437 +675,356 @@ export default function ClientScreen({ client: c, date, onUpdate, onBack, packag
           </div>
         </section>
       )}
-      <div className="cs-grid">
-        <div className="cs-col">
-          <div className="cs-chips">
-            <span
-              className={
-                isLead ? (c.temp === "cold" ? "cold" : "warm") : "lime"
-              }
-            >
-              {isLead ? "LEAD" : "ONGOING"}
-            </span>
-            <span>
-              {isLead
-                ? c.followUp === "needed"
-                  ? "FOLLOW-UP NEEDED"
-                  : "FOLLOW-UP DONE"
-                : "CLIENT"}
-            </span>
-            <span>Demo {c.demoShown === "yes" ? "✓" : "×"}</span>
-            {c.paused && <span className="cr-paused">PAUSED</span>}
-          </div>
-          {c.phone && (
-            <div className="cs-contact">
-              {c.hasWhatsApp !== "no" && (
-                <a
-                  href={`https://wa.me/${toWaNumber(c.phone)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  WhatsApp
-                </a>
-              )}
-              <a href={`tel:${c.phone}`}>Call {c.phone}</a>
+      <div className="cs-sections" role="tablist" aria-label="Client sections">
+        {[
+          ["overview", "Overview"],
+          ["finances", "Finances"],
+          ["services", "Services & records"],
+          ["activity", "Activity"],
+        ].map(([id, label], index) => (
+          <button
+            aria-controls="client-section-panel"
+            aria-selected={section === id}
+            className={section === id ? "active" : ""}
+            id={`client-tab-${id}`}
+            key={id}
+            onClick={() => setSection(id)}
+            onKeyDown={(event) => {
+              if (
+                !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+              )
+                return;
+              event.preventDefault();
+              const nextIndex =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? 3
+                    : (index + (event.key === "ArrowRight" ? 1 : 3)) % 4;
+              const nextId = ["overview", "finances", "services", "activity"][
+                nextIndex
+              ];
+              setSection(nextId);
+              sectionTabs.current[nextIndex]?.focus();
+            }}
+            ref={(element) => {
+              sectionTabs.current[index] = element;
+            }}
+            role="tab"
+            tabIndex={section === id ? 0 : -1}
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div
+        aria-labelledby={`client-tab-${section}`}
+        className="cs-section-panel"
+        id="client-section-panel"
+        role="tabpanel"
+        tabIndex={0}
+      >
+        <div className="cs-grid">
+          <div className="cs-col">
+            <div className="cs-chips">
+              <span
+                className={
+                  isLead ? (c.temp === "cold" ? "cold" : "warm") : "lime"
+                }
+              >
+                {isLead ? "LEAD" : "ONGOING"}
+              </span>
+              <span>
+                {isLead
+                  ? c.followUp === "needed"
+                    ? "FOLLOW-UP NEEDED"
+                    : "FOLLOW-UP DONE"
+                  : "CLIENT"}
+              </span>
+              <span>Demo {c.demoShown === "yes" ? "✓" : "×"}</span>
+              {c.paused && <span className="cr-paused">PAUSED</span>}
             </div>
-          )}
-          <div className="cs-actions cs-actionbar">
-            {isLead ? (
-              <>
-                <button onClick={markDone}>
-                  {c.followUp === "needed" ? "Mark done" : "Follow up"}
-                </button>
-                <button onClick={() => setIsRescheduleForm(true)}>
-                  Timeline
-                </button>
-                <button
-                  onClick={() =>
-                    onUpdate(c.id, {
-                      temp: c.temp === "warm" ? "cold" : "warm",
-                    })
-                  }
-                >
-                  {c.temp === "warm" ? "Warm" : "Cold"}
-                </button>
-                <button className="primary" onClick={() => setIsWinForm(true)}>
-                  Won!
-                </button>
-                {(!c.quotedPrice || !c.servicesToOffer) && (
-                  <button onClick={suggest}>Suggest</button>
+            {c.phone && (
+              <div className="cs-contact">
+                {c.hasWhatsApp !== "no" && (
+                  <a
+                    href={`https://wa.me/${toWaNumber(c.phone)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    WhatsApp
+                  </a>
                 )}
-              </>
-            ) : (
-              <>
-                <button className="primary" onClick={() => openPaymentForm()}>
-                  Record payment
-                </button>
-                <button onClick={() => setSvcEditor({ service: null })}>
-                  + Add service
-                </button>
-                {c.paused ? (
+                <a href={`tel:${c.phone}`}>Call {c.phone}</a>
+              </div>
+            )}
+            <div className="cs-actions cs-actionbar">
+              {isLead ? (
+                <>
+                  <button onClick={markDone}>
+                    {c.followUp === "needed" ? "Mark done" : "Follow up"}
+                  </button>
+                  <button onClick={() => setIsRescheduleForm(true)}>
+                    Timeline
+                  </button>
                   <button
                     onClick={() =>
                       onUpdate(c.id, {
-                        paused: false,
-                        pausedAt: "",
-                        pauseReason: "",
+                        temp: c.temp === "warm" ? "cold" : "warm",
                       })
                     }
                   >
-                    Resume client
+                    {c.temp === "warm" ? "Warm" : "Cold"}
                   </button>
-                ) : (
-                  <button onClick={() => setPauseOpen(true)}>
-                    Pause client
+                  <button
+                    className="primary"
+                    onClick={() => setIsWinForm(true)}
+                  >
+                    Won!
                   </button>
-                )}
-              </>
-            )}
-          </div>
-          <section className="cs-card">
-            <header>
-              <h3>Client details</h3>
-              <button onClick={() => setInfoOpen(true)}>Edit</button>
-            </header>
-            <dl>
-              <div>
-                <dt>Phone</dt>
-                <dd>{c.phone || "Not provided"}</dd>
-              </div>
-              <div>
-                <dt>Pitch method</dt>
-                <dd>{c.pitchMethod || "Not provided"}</dd>
-              </div>
-              <div>
-                <dt>Owner around</dt>
-                <dd>{c.ownerAround || "unknown"}</dd>
-              </div>
-              <div>
-                <dt>WhatsApp</dt>
-                <dd>{c.hasWhatsApp === "no" ? "No" : "Yes"}</dd>
-              </div>
-              {isLead && (
-                <>
-                  <div>
-                    <dt>Temperature</dt>
-                    <dd>{c.temp || "warm"}</dd>
-                  </div>
-                  <div>
-                    <dt>Quoted price</dt>
-                    <dd>{c.quotedPrice || "Not provided"}</dd>
-                  </div>
-                </>
-              )}
-            </dl>
-            {isLead && c.servicesToOffer && (
-              <div className="cs-tags">
-                {c.servicesToOffer.split(",").map((item, index) => (
-                  <span key={index}>{item.trim()}</span>
-                ))}
-              </div>
-            )}
-            {c.notes && <p className="cs-notes">{c.notes}</p>}
-          </section>
-        </div>
-        <div className="cs-col">
-          {isLead && (
-            <section className="cs-card">
-              <header>
-                <h3>Follow-up</h3>
-                <button onClick={() => setIsRescheduleForm(true)}>
-                  Timeline
-                </button>
-              </header>
-              <p>
-                {c.followUpDate ? fmtDate(c.followUpDate) : "No timeline set"}
-              </p>
-              <p className="cs-notes">{c.notes || "No notes yet."}</p>
-            </section>
-          )}
-          {!isLead && (
-            <>
-              <section className="cs-card cs-payments">
-                <header>
-                  <h3>Payments &amp; receipts</h3>
-                  {(c.payments || []).length > 1 && (
-                    <button
-                      onClick={() => {
-                        setReceiptMergeMode((value) => !value);
-                        setSelectedPayments([]);
-                      }}
-                    >
-                      {receiptMergeMode ? "Cancel receipts" : "Merge receipts"}
-                    </button>
+                  {(!c.quotedPrice || !c.servicesToOffer) && (
+                    <button onClick={suggest}>Suggest</button>
                   )}
-                </header>
-                <div className="cs-receipt-groups">
-                  {(c.receiptGroups || []).map((group) => {
-                    const grouped = (c.payments || []).filter((payment) =>
-                      group.paymentIds.includes(payment.id),
-                    );
-                    const total = grouped.reduce(
-                      (sum, payment) => sum + (Number(payment.amount) || 0),
-                      0,
-                    );
-                    const expanded = expandedReceiptGroups.includes(group.id);
-                    return (
-                      <article className="cs-receipt-group" key={group.id}>
-                        <strong>
-                          Receipt {group.receiptNo || getReceiptNum(group)} ·{" "}
-                          {grouped.length} payments · {fmtUGX(total)}
-                        </strong>
-                        <button
-                          onClick={() =>
-                            printReceiptGroup(
-                              { ...c, date },
-                              group,
-                              actions?.assignDocumentNumber,
-                              actions?.profile,
-                              print,
-                            )
-                          }
-                        >
-                          Print
-                        </button>
-                        <button
-                          onClick={() =>
-                            setExpandedReceiptGroups((ids) =>
-                              expanded
-                                ? ids.filter((id) => id !== group.id)
-                                : [...ids, group.id],
-                            )
-                          }
-                        >
-                          {expanded ? "Collapse" : "Expand"}
-                        </button>
-                        <button onClick={() => unmergeReceiptGroup(group)}>
-                          Unmerge
-                        </button>
-                        {expanded &&
-                          grouped.map((payment) => (
-                            <div className="cs-group-payment" key={payment.id}>
-                              {payment.note || "Payment"} ·{" "}
-                              {fmtUGX(payment.amount)}
-                            </div>
-                          ))}
-                      </article>
-                    );
-                  })}
-                </div>
-                {receiptMergeMode && (
-                  <div className="cs-receipt-select">
-                    {(c.payments || []).map((payment) => {
-                      const grouped = (c.receiptGroups || []).some((group) =>
-                        group.paymentIds.includes(payment.id),
-                      );
-                      return (
-                        <label key={payment.id}>
-                          <input
-                            type="checkbox"
-                            disabled={grouped}
-                            checked={selectedPayments.includes(payment.id)}
-                            onChange={(event) =>
-                              setSelectedPayments((ids) =>
-                                event.target.checked
-                                  ? [...ids, payment.id]
-                                  : ids.filter((id) => id !== payment.id),
-                              )
-                            }
-                          />
-                          {payment.note || "Payment"} · {fmtUGX(payment.amount)}
-                        </label>
-                      );
-                    })}
+                </>
+              ) : (
+                <>
+                  <button className="primary" onClick={() => openPaymentForm()}>
+                    Record payment
+                  </button>
+                  <button onClick={() => setSvcEditor({ service: null })}>
+                    + Add service
+                  </button>
+                  {c.paused ? (
                     <button
-                      disabled={selectedPayments.length < 2}
-                      onClick={mergeReceiptGroup}
-                    >
-                      Merge receipts ({selectedPayments.length})
-                    </button>
-                  </div>
-                )}
-                {(c.payments || []).map((payment) => {
-                  const group = (c.receiptGroups || []).find((item) =>
-                    item.paymentIds.includes(payment.id),
-                  );
-                  if (group && !expandedReceiptGroups.includes(group.id))
-                    return null;
-                  const serviceId = payment.serviceId || services[0]?.id || "";
-                  return (
-                    <div
-                      className="cs-payment"
-                      data-payment-id={payment.id}
-                      key={payment.id}
-                    >
-                      <span>
-                        {payment.date || "Date unknown"} ·{" "}
-                        {payment.note || "Payment"} · {fmtUGX(payment.amount)}
-                      </span>
-                      <button
-                        onClick={() => openEditPaymentForm(payment, serviceId)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="danger"
-                        onClick={() => deleteClientPayment(payment)}
-                      >
-                        Delete
-                      </button>
-                      <button
-                        onClick={() =>
-                          printReceipt(
-                            { ...c, date },
-                            payment,
-                            actions?.assignDocumentNumber,
-                            actions?.profile,
-                            print,
-                            actions?.showBanner,
-                          )
-                        }
-                      >
-                        Receipt
-                      </button>
-                    </div>
-                  );
-                })}
-              </section>
-              <section className="cs-card cs-services">
-                <header>
-                  <h3>Services ({services.length})</h3>
-                  <div className="cs-service-tools">
-                    <button onClick={() => setSvcEditor({ service: null })}>
-                      + Add service
-                    </button>
-                    {services.length > 1 && (
-                      <button
-                        onClick={() => {
-                          setMergeMode((value) => !value);
-                          setSelectedServices([]);
-                        }}
-                      >
-                        {mergeMode ? "Cancel select" : "Select"}
-                      </button>
-                    )}
-                  </div>
-                </header>
-                {mergeMode && (
-                  <div className="cs-merge-tools">
-                    <button
-                      disabled={selectedServices.length < 2}
-                      onClick={() => setMergeOpen(true)}
-                    >
-                      Merge ({selectedServices.length})
-                    </button>
-                    <button
-                      disabled={selectedServices.length < 2}
                       onClick={() =>
-                        printCombinedInvoice(
-                          { ...c, date },
-                          services.filter((service) =>
-                            selectedServices.includes(service.id),
-                          ),
-                          actions?.assignDocumentNumber,
-                          actions?.profile,
-                          print,
-                        )
+                        onUpdate(c.id, {
+                          paused: false,
+                          pausedAt: "",
+                          pauseReason: "",
+                        })
                       }
                     >
-                      Print combined invoice
+                      Resume client
                     </button>
-                  </div>
+                  ) : (
+                    <button onClick={() => setPauseOpen(true)}>
+                      Pause client
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+            <section className="cs-card">
+              <header>
+                <h3>Client details</h3>
+                <button onClick={() => setInfoOpen(true)}>Edit</button>
+              </header>
+              <dl>
+                <div>
+                  <dt>Phone</dt>
+                  <dd>{c.phone || "Not provided"}</dd>
+                </div>
+                <div>
+                  <dt>Pitch method</dt>
+                  <dd>{c.pitchMethod || "Not provided"}</dd>
+                </div>
+                <div>
+                  <dt>Owner around</dt>
+                  <dd>{c.ownerAround || "unknown"}</dd>
+                </div>
+                <div>
+                  <dt>WhatsApp</dt>
+                  <dd>{c.hasWhatsApp === "no" ? "No" : "Yes"}</dd>
+                </div>
+                {isLead && (
+                  <>
+                    <div>
+                      <dt>Temperature</dt>
+                      <dd>{c.temp || "warm"}</dd>
+                    </div>
+                    <div>
+                      <dt>Quoted price</dt>
+                      <dd>{c.quotedPrice || "Not provided"}</dd>
+                    </div>
+                  </>
                 )}
-                {services.length === 0 && (
-                  <p className="cs-empty">No services yet. Add service.</p>
-                )}
-                {services.map((service) => {
-                  const paid = servicePaid(c, service.id);
-                  const total = serviceTotal(service, c);
-                  const balance = total - paid;
-                  return (
-                    <article
-                      className="cs-service"
-                      data-service-id={service.id}
-                      key={service.id}
-                    >
-                      {mergeMode && !service.mergedFrom?.length && (
-                        <label className="cs-select-service">
-                          <input
-                            type="checkbox"
-                            checked={selectedServices.includes(service.id)}
-                            onChange={(event) =>
-                              setSelectedServices((ids) =>
-                                event.target.checked
-                                  ? [...ids, service.id]
-                                  : ids.filter((id) => id !== service.id),
+              </dl>
+              {isLead && c.servicesToOffer && (
+                <div className="cs-tags">
+                  {c.servicesToOffer.split(",").map((item, index) => (
+                    <span key={index}>{item.trim()}</span>
+                  ))}
+                </div>
+              )}
+              {c.notes && <p className="cs-notes">{c.notes}</p>}
+            </section>
+          </div>
+          <div className="cs-col">
+            {isLead && (
+              <section className="cs-card">
+                <header>
+                  <h3>Follow-up</h3>
+                  <button onClick={() => setIsRescheduleForm(true)}>
+                    Timeline
+                  </button>
+                </header>
+                <p>
+                  {c.followUpDate ? fmtDate(c.followUpDate) : "No timeline set"}
+                </p>
+                <p className="cs-notes">{c.notes || "No notes yet."}</p>
+              </section>
+            )}
+            {!isLead && (
+              <>
+                <section className="cs-card cs-payments">
+                  <header>
+                    <h3>Payments &amp; receipts</h3>
+                    {(c.payments || []).length > 1 && (
+                      <button
+                        onClick={() => {
+                          setReceiptMergeMode((value) => !value);
+                          setSelectedPayments([]);
+                        }}
+                      >
+                        {receiptMergeMode
+                          ? "Cancel receipts"
+                          : "Merge receipts"}
+                      </button>
+                    )}
+                  </header>
+                  <div className="cs-receipt-groups">
+                    {(c.receiptGroups || []).map((group) => {
+                      const grouped = (c.payments || []).filter((payment) =>
+                        group.paymentIds.includes(payment.id),
+                      );
+                      const total = grouped.reduce(
+                        (sum, payment) => sum + (Number(payment.amount) || 0),
+                        0,
+                      );
+                      const expanded = expandedReceiptGroups.includes(group.id);
+                      return (
+                        <article className="cs-receipt-group" key={group.id}>
+                          <strong>
+                            Receipt {group.receiptNo || getReceiptNum(group)} ·{" "}
+                            {grouped.length} payments · {fmtUGX(total)}
+                          </strong>
+                          <button
+                            onClick={() =>
+                              printReceiptGroup(
+                                { ...c, date },
+                                group,
+                                actions?.assignDocumentNumber,
+                                actions?.profile,
+                                print,
                               )
                             }
-                          />
-                          Select service
-                        </label>
-                      )}
-                      <header className="cs-service-head">
-                        <div>
-                          <h4>{service.title}</h4>
-                          <small>
-                            {service.dueDate
-                              ? `Due ${fmtDate(service.dueDate)}`
-                              : "No due date"}
-                          </small>
-                        </div>
-                        {service.mergedFrom?.length > 0 && (
-                          <span className="cs-merged-badge">
-                            MERGED ×{service.mergedFrom.length}
-                          </span>
-                        )}
-                        <b className={balance > 0 ? "warm" : "lime"}>
-                          {balance > 0 ? fmtUGX(balance) : "Paid"}
-                        </b>
-                      </header>
-                      <div className="cs-totals">
-                        {[
-                          ["FEE", total],
-                          ["PAID", paid],
-                          ["BALANCE", balance],
-                        ].map(([label, value]) => (
-                          <div key={label}>
-                            <small>{label}</small>
-                            <b
-                              className={
-                                c.paused && label === "BALANCE"
-                                  ? "paused-balance"
-                                  : ""
+                          >
+                            Print
+                          </button>
+                          <button
+                            onClick={() =>
+                              setExpandedReceiptGroups((ids) =>
+                                expanded
+                                  ? ids.filter((id) => id !== group.id)
+                                  : [...ids, group.id],
+                              )
+                            }
+                          >
+                            {expanded ? "Collapse" : "Expand"}
+                          </button>
+                          <button onClick={() => unmergeReceiptGroup(group)}>
+                            Unmerge
+                          </button>
+                          {expanded &&
+                            grouped.map((payment) => (
+                              <div
+                                className="cs-group-payment"
+                                key={payment.id}
+                              >
+                                {payment.note || "Payment"} ·{" "}
+                                {fmtUGX(payment.amount)}
+                              </div>
+                            ))}
+                        </article>
+                      );
+                    })}
+                  </div>
+                  {!(c.payments || []).length && (
+                    <p className="cs-empty">
+                      Payment history and receipts will appear here after you
+                      record a payment.
+                    </p>
+                  )}
+                  {receiptMergeMode && (
+                    <div className="cs-receipt-select">
+                      {(c.payments || []).map((payment) => {
+                        const grouped = (c.receiptGroups || []).some((group) =>
+                          group.paymentIds.includes(payment.id),
+                        );
+                        return (
+                          <label key={payment.id}>
+                            <input
+                              type="checkbox"
+                              disabled={grouped}
+                              checked={selectedPayments.includes(payment.id)}
+                              onChange={(event) =>
+                                setSelectedPayments((ids) =>
+                                  event.target.checked
+                                    ? [...ids, payment.id]
+                                    : ids.filter((id) => id !== payment.id),
+                                )
                               }
-                            >
-                              {c.paused && label === "BALANCE"
-                                ? `${fmtUGX(value)} excluded`
-                                : fmtUGX(value)}
-                            </b>
-                          </div>
-                        ))}
-                      </div>
-                      {(service.items || []).map((item) => (
-                        <div className="cs-item" key={item.id}>
-                          <span>{item.title}</span>
-                          <span>
-                            {Number(item.price) > 0
-                              ? fmtUGX(item.price)
-                              : "Included"}
-                          </span>
-                        </div>
-                      ))}
-                      <div className="cs-service-actions">
-                        <button onClick={() => openPaymentForm(service.id)}>
-                          Record payment
-                        </button>
-                        <button onClick={() => setSvcEditor({ service })}>
+                            />
+                            {payment.note || "Payment"} ·{" "}
+                            {fmtUGX(payment.amount)}
+                          </label>
+                        );
+                      })}
+                      <button
+                        disabled={selectedPayments.length < 2}
+                        onClick={mergeReceiptGroup}
+                      >
+                        Merge receipts ({selectedPayments.length})
+                      </button>
+                    </div>
+                  )}
+                  {(c.payments || []).map((payment) => {
+                    const group = (c.receiptGroups || []).find((item) =>
+                      item.paymentIds.includes(payment.id),
+                    );
+                    if (group && !expandedReceiptGroups.includes(group.id))
+                      return null;
+                    const serviceId =
+                      payment.serviceId || services[0]?.id || "";
+                    return (
+                      <div
+                        className="cs-payment"
+                        data-payment-id={payment.id}
+                        key={payment.id}
+                      >
+                        <span>
+                          {payment.date || "Date unknown"} ·{" "}
+                          {payment.note || "Payment"} · {fmtUGX(payment.amount)}
+                        </span>
+                        <button
+                          onClick={() =>
+                            openEditPaymentForm(payment, serviceId)
+                          }
+                        >
                           Edit
                         </button>
                         <button
+                          className="danger"
+                          onClick={() => deleteClientPayment(payment)}
+                        >
+                          Delete
+                        </button>
+                        <button
                           onClick={() =>
-                            printInvoice(
+                            printReceipt(
                               { ...c, date },
-                              service,
+                              payment,
                               actions?.assignDocumentNumber,
                               actions?.profile,
                               print,
@@ -1093,27 +1032,224 @@ export default function ClientScreen({ client: c, date, onUpdate, onBack, packag
                             )
                           }
                         >
-                          Invoice
+                          Receipt
                         </button>
-                        <button
-                          className="danger"
-                          onClick={() => deleteService(service)}
-                        >
-                          Delete
-                        </button>
-                        {service.mergedFrom?.length > 0 && (
-                          <button onClick={() => unmerge(service)}>
-                            Unmerge
-                          </button>
-                        )}
                       </div>
-                    </article>
-                  );
-                })}
-              </section>
-            </>
-          )}
+                    );
+                  })}
+                </section>
+                <section className="cs-card cs-services">
+                  <header>
+                    <h3>Services ({services.length})</h3>
+                    <div className="cs-service-tools">
+                      <button onClick={() => setSvcEditor({ service: null })}>
+                        + Add service
+                      </button>
+                      {services.length > 1 && (
+                        <button
+                          onClick={() => {
+                            setMergeMode((value) => !value);
+                            setSelectedServices([]);
+                          }}
+                        >
+                          {mergeMode ? "Cancel select" : "Select"}
+                        </button>
+                      )}
+                    </div>
+                  </header>
+                  {mergeMode && (
+                    <div className="cs-merge-tools">
+                      <button
+                        disabled={selectedServices.length < 2}
+                        onClick={() => setMergeOpen(true)}
+                      >
+                        Merge ({selectedServices.length})
+                      </button>
+                      <button
+                        disabled={selectedServices.length < 2}
+                        onClick={() =>
+                          printCombinedInvoice(
+                            { ...c, date },
+                            services.filter((service) =>
+                              selectedServices.includes(service.id),
+                            ),
+                            actions?.assignDocumentNumber,
+                            actions?.profile,
+                            print,
+                          )
+                        }
+                      >
+                        Print combined invoice
+                      </button>
+                    </div>
+                  )}
+                  {services.length === 0 && (
+                    <p className="cs-empty">No services yet. Add service.</p>
+                  )}
+                  {services.map((service) => {
+                    const paid = servicePaid(c, service.id);
+                    const total = serviceTotal(service, c);
+                    const balance = total - paid;
+                    return (
+                      <article
+                        className="cs-service"
+                        data-service-id={service.id}
+                        key={service.id}
+                      >
+                        {mergeMode && !service.mergedFrom?.length && (
+                          <label className="cs-select-service">
+                            <input
+                              type="checkbox"
+                              checked={selectedServices.includes(service.id)}
+                              onChange={(event) =>
+                                setSelectedServices((ids) =>
+                                  event.target.checked
+                                    ? [...ids, service.id]
+                                    : ids.filter((id) => id !== service.id),
+                                )
+                              }
+                            />
+                            Select service
+                          </label>
+                        )}
+                        <header className="cs-service-head">
+                          <div>
+                            <h4>{service.title}</h4>
+                            <small>
+                              {service.dueDate
+                                ? `Due ${fmtDate(service.dueDate)}`
+                                : "No due date"}
+                            </small>
+                          </div>
+                          {service.mergedFrom?.length > 0 && (
+                            <span className="cs-merged-badge">
+                              MERGED ×{service.mergedFrom.length}
+                            </span>
+                          )}
+                          <b className={balance > 0 ? "warm" : "lime"}>
+                            {balance > 0 ? fmtUGX(balance) : "Paid"}
+                          </b>
+                        </header>
+                        <div className="cs-totals">
+                          {[
+                            ["FEE", total],
+                            ["PAID", paid],
+                            ["BALANCE", balance],
+                          ].map(([label, value]) => (
+                            <div key={label}>
+                              <small>{label}</small>
+                              <b
+                                className={
+                                  c.paused && label === "BALANCE"
+                                    ? "paused-balance"
+                                    : ""
+                                }
+                              >
+                                {c.paused && label === "BALANCE"
+                                  ? `${fmtUGX(value)} excluded`
+                                  : fmtUGX(value)}
+                              </b>
+                            </div>
+                          ))}
+                        </div>
+                        {(service.items || []).map((item) => (
+                          <div className="cs-item" key={item.id}>
+                            <span>{item.title}</span>
+                            <span>
+                              {Number(item.price) > 0
+                                ? fmtUGX(item.price)
+                                : "Included"}
+                            </span>
+                          </div>
+                        ))}
+                        <div className="cs-service-actions">
+                          <button onClick={() => openPaymentForm(service.id)}>
+                            Record payment
+                          </button>
+                          <button onClick={() => setSvcEditor({ service })}>
+                            Edit
+                          </button>
+                          <button
+                            onClick={() =>
+                              printInvoice(
+                                { ...c, date },
+                                service,
+                                actions?.assignDocumentNumber,
+                                actions?.profile,
+                                print,
+                                actions?.showBanner,
+                              )
+                            }
+                          >
+                            Invoice
+                          </button>
+                          <button
+                            className="danger"
+                            onClick={() => deleteService(service)}
+                          >
+                            Delete
+                          </button>
+                          {service.mergedFrom?.length > 0 && (
+                            <button onClick={() => unmerge(service)}>
+                              Unmerge
+                            </button>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </section>
+              </>
+            )}
+          </div>
         </div>
+        {isLead && section === "finances" && (
+          <section className="cs-card cs-finance-empty" aria-live="polite">
+            <h3>Finances</h3>
+            <p>
+              Payment history and invoice records will appear here after this
+              lead becomes a client.
+            </p>
+          </section>
+        )}
+        {isLead && section === "services" && (
+          <section className="cs-card cs-finance-empty" aria-live="polite">
+            <h3>Services &amp; records</h3>
+            <p>
+              Services and agreements will appear here after this lead becomes a
+              client.
+            </p>
+          </section>
+        )}
+        <section className="cs-card cs-activity-panel">
+          <header>
+            <h3>Activity</h3>
+            {c.followUpDate && <span>{fmtDate(c.followUpDate)}</span>}
+          </header>
+          <div className="cs-activity-row">
+            <span className="cs-activity-marker" aria-hidden="true" />
+            <div>
+              <strong>{isLead ? "Lead added" : "Client added"}</strong>
+              <p>{fmtDate(date)}</p>
+            </div>
+          </div>
+          {c.followUpDate && (
+            <div className="cs-activity-row">
+              <span className="cs-activity-marker" aria-hidden="true" />
+              <div>
+                <strong>
+                  {c.followUp === "needed"
+                    ? "Follow-up pending"
+                    : "Follow-up marked done"}
+                </strong>
+                <p>Follow-up date {fmtDate(c.followUpDate)}</p>
+              </div>
+            </div>
+          )}
+          <p className="cs-activity-note">
+            This client record does not contain a separate dated activity log.
+          </p>
+        </section>
       </div>
       <section className="cs-danger">
         {!isLead && <button onClick={moveBack}>Move back to lead</button>}
@@ -1403,4 +1539,3 @@ export default function ClientScreen({ client: c, date, onUpdate, onBack, packag
     </div>
   );
 }
-
