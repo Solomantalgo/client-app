@@ -9,7 +9,6 @@ import {
 } from "../money.js";
 import { outstandingBalances, pausedBalances } from "../clients.js";
 import { useConfirm } from "../Confirm.jsx";
-import { useEffect } from "react";
 import Card from "../components/Card.jsx";
 import Overview from "./Overview.jsx";
 import Transactions from "./Transactions.jsx";
@@ -55,9 +54,6 @@ export default function MoneyView({
   const [resetOpening, setResetOpening] = useState("0");
   const [resetNote, setResetNote] = useState("");
   const [borrowShortfall, setBorrowShortfall] = useState(false);
-  useEffect(() => {
-    if (initialForm) onInitialFormConsumed?.();
-  }, [initialForm, onInitialFormConsumed]);
   const [draft, setDraft] = useState({
     date: today(),
     amount: "",
@@ -142,6 +138,7 @@ export default function MoneyView({
     setEditing(null);
     setMessage("");
     setBorrowShortfall(false);
+    onInitialFormConsumed?.();
   };
   const submit = () => {
     const amount = Math.round(Number(draft.amount));
@@ -583,7 +580,7 @@ export default function MoneyView({
             <Overview totals={totals} transactions={transactions} clients={data.clients || {}} activeBuckets={activeBuckets} finance={finance} assignedBalance={assignedBalance} onChangeTab={changeTab} onEditBucket={(bucket) => startForm("bucket", bucket)} onResetBucket={(bucket) => { setResetBucket(bucket); setResetOpening("0"); }} onArchiveBucket={archiveBucket} onUndoBucketClear={undoBucketClear} onEditTransaction={(row) => editTransaction(row, startForm)} onSetAccount={setPaymentAccount} />
           )}
           {["Income", "Expenses"].includes(tab) && (
-            <Transactions rows={visible} filter={filter} setFilter={setFilter} searchText={searchText} setSearchText={setSearchText} onCreateExpense={createManualExpense} showExpenseAction={tab !== "Expenses"} onEdit={(row) => editTransaction(row, startForm)} onDelete={archiveTransaction} finance={finance} onSetAccount={setPaymentAccount} onAddSource={() => startForm("source")} />
+            <Transactions rows={visible} filter={filter} setFilter={setFilter} searchText={searchText} setSearchText={setSearchText} onCreateExpense={createManualExpense} showExpenseAction onEdit={(row) => editTransaction(row, startForm)} onDelete={archiveTransaction} finance={finance} onSetAccount={setPaymentAccount} onAddSource={() => startForm("source")} />
           )}
           {tab === "Allocations" && (
             <Purposes buckets={finance.buckets.slice().sort((a, b) => a.sortOrder - b.sortOrder)} totals={totals} allocationTotal={allocationTotal} assignedBalance={assignedBalance} available={totals.available} onAdd={() => startForm("bucket")} onEdit={(bucket) => startForm("bucket", bucket)} onArchive={archiveBucket} onRestore={restoreBucket} onReset={(bucket) => { setResetBucket(bucket); setResetOpening("0"); }} onUndo={undoBucketClear} onReorder={reorderBucket} />

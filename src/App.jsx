@@ -1766,7 +1766,7 @@ function AppBody() {
         {tab === "ongoing" && <OngoingPage clients={data.clients} />}
         {tab === "payments" && (
           <MoneyView
-          key={`${moneyRoute.tab}-${moneyRoute.query}`}
+          key={`${moneyRoute.tab}-${moneyRoute.query}-${moneyRoute.form || ""}`}
             data={data}
             query={moneyRoute.query}
             initialTab={moneyRoute.tab}
