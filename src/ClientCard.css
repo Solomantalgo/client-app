@@ -216,26 +216,32 @@
 }
 
 .cs-sections {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
   margin-top: 14px;
   padding: 4px;
-  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-ctl);
   background: var(--s1);
-  scrollbar-width: thin;
 }
 
 .cs-sections button {
   min-height: 44px;
-  flex: 1 0 auto;
-  padding: 0 14px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
   border: 0;
   border-radius: calc(var(--r-ctl) - 3px);
   background: transparent;
   color: var(--text-2);
   font: 600 14px var(--font-ui);
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
   cursor: pointer;
 }
 
@@ -247,6 +253,12 @@
 .cs-sections button:focus-visible {
   position: relative;
   z-index: 1;
+}
+
+.cs-tab-check {
+  display: inline-flex;
+  flex: none;
+  color: var(--studio-lime);
 }
 
 .cs-activity-panel,

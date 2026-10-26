@@ -518,6 +518,10 @@ export default function MoneyView({
           .join(" ")
           .toLocaleLowerCase()
           .includes(searchText.toLocaleLowerCase()),
+    )
+    .slice()
+    .sort((first, second) =>
+      String(second.date || "").localeCompare(String(first.date || "")),
     );
   const createManualIncome = () => startForm("income");
   const createManualExpense = () => startForm("expense");

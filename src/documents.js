@@ -184,7 +184,7 @@ function a4Styles() {
     .doc-logo { display: block; width: 55mm; height: 18mm; object-fit: contain; object-position: left center; }
     .brand-fallback { color: #fff; font-size: 18pt; }
     .doc-brand-details { display: flex; flex-wrap: wrap; align-items: center; gap: 1.5mm 2.2mm;
-      color: #f4f4f4; font-size: 8.5pt; }
+      color: #f4f4f4; font-size: 9pt; line-height: 1.25; }
     .doc-brand-details i { color: #fff; font-style: normal; }
     .doc-id { display: flex; max-width: 76mm; flex-direction: column; align-items: flex-end; gap: 1mm;
       color: #fff; text-align: right; font-size: 8.5pt; }
@@ -215,8 +215,8 @@ function a4Styles() {
     .amount-value::after { display: block; width: 18mm; margin-top: 2mm; border-bottom: 1.4mm solid #C3FF4D;
       content: ""; }
     .status-badge { flex: none; padding: 2.2mm 3mm; border-radius: 2mm; background: #EDF8D9;
-      color: #171717; font-size: 9pt; font-weight: 700; }
-    .status-badge.pending { border: 1px solid #999; background: #fff; }
+      color: #171717; font-size: 9pt; font-weight: 700; letter-spacing: normal; white-space: nowrap; }
+    .status-badge.pending { border: 0; background: #FFF3DE; color: #4C3A20; }
     .financial-summary { width: 100%; margin: 3mm 0 0; }
     .financial-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8mm;
       padding: 2.3mm 0; border-bottom: 1px solid #DADADA; }
@@ -227,8 +227,9 @@ function a4Styles() {
     .included-payments { display: grid; gap: 1.5mm; margin-top: 4mm; padding-top: 3mm;
       border-top: 1px solid #DADADA; }
     .included-payments .financial-row { padding: 1mm 0; font-size: 9pt; }
-    .method-row { display: flex; flex-wrap: wrap; gap: 2mm 8mm; padding: 4mm 0; border-bottom: 1px solid #DADADA; }
-    .method-row strong { font-weight: 600; }
+    .method-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2mm 8mm;
+      padding: 5mm 0; border-bottom: 1px solid #DADADA; font-size: 10pt; line-height: 1.35; }
+    .method-row strong { font-weight: 600; white-space: nowrap; }
     .payment-details { margin-top: 5mm; }
     .payment-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5mm; margin-top: 2mm; }
     .payment-detail-grid section { display: flex; min-width: 0; flex-direction: column; gap: 1mm; padding: 3mm;
@@ -261,7 +262,7 @@ function a4Styles() {
     .doc-qr svg { display: block; width: 24mm; height: 24mm; background: #fff; }
     .doc-thanks { margin: 5mm 0 0; color: #555; font-style: italic; text-align: right; }
     .doc-footer { display: flex; justify-content: space-between; gap: 5mm; margin-top: 8mm; padding-top: 2mm;
-      border-top: 1px solid #DADADA; color: #555; font-size: 8.5pt; }
+      border-top: 1px solid #DADADA; color: #555; font-size: 9pt; line-height: 1.25; }
     .doc-footer > span { min-width: 0; overflow-wrap: anywhere; }
     .doc-footer i { font-style: normal; }
     .page-current::after, .page-total::after { content: ""; }

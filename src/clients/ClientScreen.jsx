@@ -715,6 +715,11 @@ export default function ClientScreen({
             type="button"
           >
             {label}
+            {section === id && (
+              <span className="cs-tab-check" aria-hidden="true">
+                <Icon name="Check" size={14} />
+              </span>
+            )}
           </button>
         ))}
       </div>

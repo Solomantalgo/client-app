@@ -265,6 +265,29 @@ async function downloadExport(page, format, targetDirectory) {
     }
     await page.keyboard.press("Escape");
     await goClient(page, width);
+    const tabLayout = await page.locator(".cs-sections").evaluate((tabs) => {
+      const styles = getComputedStyle(tabs);
+      const bounds = tabs.getBoundingClientRect();
+      const buttons = [...tabs.querySelectorAll('[role="tab"]')];
+      return {
+        columns: styles.gridTemplateColumns.split(" ").length,
+        overflow: tabs.scrollWidth > tabs.clientWidth + 1,
+        tabCount: buttons.length,
+        tabsVisible: buttons.every((button) => {
+          const rect = button.getBoundingClientRect();
+          return rect.left >= bounds.left && rect.right <= bounds.right;
+        }),
+      };
+    });
+    const expectedColumns = width <= 560 ? 2 : 4;
+    if (tabLayout.columns !== expectedColumns || tabLayout.overflow) {
+      errors.push(
+        `${width}px client sections expected ${expectedColumns} columns with no horizontal scroll.`,
+      );
+    }
+    if (tabLayout.tabCount !== 4 || !tabLayout.tabsVisible) {
+      errors.push(`${width}px did not show all four client section tabs.`);
+    }
     const storedBefore = await page.evaluate(() =>
       localStorage.getItem("solo-sales-os-v1"),
     );

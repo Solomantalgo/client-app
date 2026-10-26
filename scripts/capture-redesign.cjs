@@ -475,6 +475,18 @@ function addDays(days) {
     if (!receiptHtml.includes("Amount received") || !receiptHtml.includes("MTN MoMo")) {
       failures.push(`${width}: receipt preview is missing its amount or payment method.`);
     }
+    const receiptPdfPromise = page.waitForEvent("download");
+    await page.locator(".print-dialog button").filter({ hasText: "Download PDF" }).click();
+    const receiptPdf = await receiptPdfPromise;
+    const receiptPdfPath = path.join(output, receiptPdf.suggestedFilename());
+    await receiptPdf.saveAs(receiptPdfPath);
+    const receiptPdfBytes = fs.readFileSync(receiptPdfPath);
+    if (receiptPdfBytes.subarray(0, 5).toString() !== "%PDF-") {
+      failures.push(`${width}: receipt Download PDF did not produce a PDF file.`);
+    }
+    if (!receiptPdfBytes.toString("latin1").includes("/Subtype /Image")) {
+      failures.push(`${width}: receipt PDF did not embed the configured logo.`);
+    }
     await page.locator(".print-format button").filter({ hasText: "58 mm" }).click();
     await page.waitForFunction(() => {
       const frame = document.querySelector(".print-preview iframe");

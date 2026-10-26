@@ -155,6 +155,24 @@ test("receipt totals use received-date model amounts and never show negative bal
   assert.equal(invoiceSummary({ total: 500_000, paid: 100_000 }).balance, 400_000);
 });
 
+test("partial receipt status is clear and a missing payment method stays truthful", async () => {
+  const html = buildReceiptHtml({ ...receipt, method: "" }, "a4", profile);
+  assert.match(html, /Partial payment/);
+  assert.match(html, /status-badge pending/);
+  assert.match(html, /background: #FFF3DE/);
+  assert.match(html, /Not specified/);
+
+  const blob = await createDocumentPdf(
+    { ...receipt, method: "", payment: undefined },
+    "Receipt",
+    "a4",
+    profile,
+  );
+  const pdf = new Uint8Array(await blob.arrayBuffer());
+  assert.equal(new TextDecoder().decode(pdf.slice(0, 5)), "%PDF-");
+  assert.ok(pdf.byteLength > 1_000);
+});
+
 test("A4 and thermal PDF downloads are genuine selectable-text PDFs", async () => {
   for (const [docType, model, format] of [
     ["Invoice", invoice, "a4"],

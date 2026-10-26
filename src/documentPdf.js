@@ -22,6 +22,27 @@ function setTextStyle(doc, size, bold = false, color = INK) {
   doc.setFont("helvetica", bold ? "bold" : "normal");
   doc.setFontSize(size);
   doc.setTextColor(...color);
+  doc.setCharSpace(0);
+}
+
+function addContainedLogo(doc, dataUri, x, y, maxWidth, maxHeight) {
+  const properties = doc.getImageProperties(dataUri);
+  const scale = Math.min(
+    maxWidth / properties.width,
+    maxHeight / properties.height,
+  );
+  const width = properties.width * scale;
+  const height = properties.height * scale;
+  doc.addImage(
+    dataUri,
+    properties.fileType || "PNG",
+    x + (maxWidth - width) / 2,
+    y + (maxHeight - height) / 2,
+    width,
+    height,
+    undefined,
+    "FAST",
+  );
 }
 
 function wrapped(doc, value, width, size) {
@@ -73,7 +94,7 @@ function drawA4Ribbon(doc, model, type, profile) {
   const logoEnabled = profile.showLogoA4 !== false && profile.logoDataUri;
   if (logoEnabled) {
     try {
-      doc.addImage(profile.logoDataUri, "PNG", x + 8, y + 4, 56, 19, undefined, "FAST");
+      addContainedLogo(doc, profile.logoDataUri, x + 8, y + 4, 56, 17);
     } catch {
       setTextStyle(doc, 18, true, [255, 255, 255]);
       doc.text(profile.brandName || "Solomantalgo", x + 8, y + 16);
@@ -85,9 +106,9 @@ function drawA4Ribbon(doc, model, type, profile) {
 
   const details = [profile.tagline, profile.location, profile.website]
     .filter(Boolean)
-    .join("  |  ");
+    .join("  ·  ");
   setTextStyle(doc, 8.5, false, [244, 244, 244]);
-  doc.text(details, x + 8, y + 29, { maxWidth: 93 });
+  doc.text(doc.splitTextToSize(details, 92), x + 8, y + 27);
 
   const right = x + width - 8;
   setTextStyle(doc, type === "Receipt" ? 17 : 20, true, [255, 255, 255]);
@@ -185,16 +206,27 @@ function drawDescriptionRows(state, rows, width = CONTENT_WIDTH) {
 
 function drawBadge(doc, text, x, y, paid, thermal = false) {
   setTextStyle(doc, thermal ? 7 : 9, true, INK);
-  const width = doc.getTextWidth(text) + (thermal ? 4 : 7);
-  const height = thermal ? 6 : 8;
+  const width = doc.getTextWidth(text) + (thermal ? 5 : 10);
+  const height = thermal ? 6 : 9;
   if (paid && !thermal) {
     doc.setFillColor(...PAID);
     doc.setDrawColor(...PAID);
+  } else if (!thermal) {
+    doc.setFillColor(255, 243, 222);
+    doc.setDrawColor(255, 243, 222);
   } else {
     doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(...(thermal ? INK : LINE));
+    doc.setDrawColor(...INK);
   }
-  doc.roundedRect(x, y - height + 1, width, height, thermal ? 0 : 1, thermal ? 0 : 1, "FD");
+  doc.roundedRect(
+    x,
+    y - height + 1,
+    width,
+    height,
+    thermal ? 0 : 1.5,
+    thermal ? 0 : 1.5,
+    thermal ? "FD" : "F",
+  );
   setTextStyle(doc, thermal ? 7 : 9, true, INK);
   doc.text(text, x + width / 2, y - height / 2 + 1, { align: "center" });
 }
@@ -228,8 +260,12 @@ function drawFinancialRow(state, label, amount, options = {}) {
   doc.text(formatDocumentMoney(amount), MARGIN + CONTENT_WIDTH - (options.balance ? 2 : 0), state.y, {
     align: "right",
   });
-  if (!options.balance) drawRule(state);
-  else state.y += 7;
+  if (!options.balance) {
+    state.y += 2;
+    drawRule(state);
+  } else {
+    state.y += 7;
+  }
 }
 
 function drawIncludedPayments(state, payments = []) {
@@ -249,10 +285,19 @@ function drawMethod(state, model) {
     : [formatPaymentMethod(model.method || model.payment?.accountName || model.payment?.accountId)];
   const label = model.payments?.length ? "Payment methods" : "Payment method";
   state.ensure(10);
-  setTextStyle(state.doc, 9, true);
-  state.doc.text(label, MARGIN, state.y);
-  drawWrapped(state, methods.join(", "), MARGIN + 32, CONTENT_WIDTH - 32, { size: 9 });
-  state.y += 2;
+  const rowY = state.y;
+  setTextStyle(state.doc, 9.5, true);
+  state.doc.text(label, MARGIN, rowY);
+  const labelWidth = state.doc.getTextWidth(label);
+  const valueX = MARGIN + labelWidth + 7;
+  drawWrapped(
+    state,
+    methods.join(", "),
+    valueX,
+    MARGIN + CONTENT_WIDTH - valueX,
+    { size: 9.5, lineHeight: 4.7 },
+  );
+  state.y = Math.max(rowY + 4.7, state.y) + 3;
   drawRule(state);
 }
 
@@ -357,11 +402,16 @@ function drawA4Receipt(doc, model, profile) {
   drawA4Ribbon(doc, model, "Receipt", profile);
   const state = createA4State(doc, model, "Receipt");
   drawRecipient(state, model, "Received from");
+  state.y += 4;
   drawDescriptionRows(state, model.lines || []);
+  state.y += 4;
   drawHero(state, "Amount received", summary.received,
     summary.paidInFull ? "Paid in full" : "Partial payment", summary.paidInFull);
+  state.y += 2;
   drawFinancialRow(state, "Invoice total", summary.invoiceTotal);
+  state.y += 2;
   drawFinancialRow(state, "Previously paid", summary.previouslyPaid);
+  state.y += 2;
   drawFinancialRow(state, "Remaining balance", summary.balance, {
     balance: true,
     paid: summary.balance === 0,
@@ -369,6 +419,7 @@ function drawA4Receipt(doc, model, profile) {
   drawIncludedPayments(state, model.payments);
   drawMethod(state, model);
   drawPaymentDetails(state, profile);
+  state.y = Math.max(state.y + 8, A4_BOTTOM - 65);
   drawIssuerAndQr(state, profile, "a4");
   drawThanks(state);
   return state;
@@ -433,7 +484,7 @@ function drawThermalHeader(doc, model, type, profile) {
   let y = 5;
   if (profile.showLogoThermal && profile.logoDataUri) {
     try {
-      doc.addImage(profile.logoDataUri, "PNG", 13, y, 32, 11, undefined, "FAST");
+      addContainedLogo(doc, profile.logoDataUri, 13, y, 32, 11);
       y += 13;
     } catch {
       setTextStyle(doc, 11, true);

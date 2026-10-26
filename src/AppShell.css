@@ -1336,6 +1336,17 @@
 }
 
 @media (max-width: 560px) {
+  .cs-sections {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    overflow: visible;
+  }
+
+  .cs-sections button {
+    min-height: 44px;
+    font-size: 13px;
+  }
+
   .cs-bar {
     display: grid;
     grid-template-columns: 40px minmax(0, 1fr) 44px;
